@@ -15,134 +15,170 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your_super_secret_key_here') # Get secret key from .env or use fallback
 
-# --- User Management ---
-# Users now get their credentials from environment variables
-USERS = {
-    os.getenv('APP_ADMIN_USERNAME', 'admin'): {"password": os.getenv('APP_ADMIN_PASSWORD', 'password123'), "role": "admin"},
-    os.getenv('APP_SALES_USERNAME', 'sales'): {"password": os.getenv('APP_SALES_PASSWORD', 'password123'), "role": "sales"} # Set sales password as per request
-}
+# --- Global User Management (for super admin) ---
+# Super admin credentials (for managing businesses)
+SUPER_ADMIN_USERNAME = os.getenv('SUPER_ADMIN_USERNAME', 'superadmin')
+SUPER_ADMIN_PASSWORD = os.getenv('SUPER_ADMIN_PASSWORD', 'superpassword')
 
 # --- Arkesel SMS API Configuration ---
 ARKESEL_API_KEY = os.getenv('ARKESEL_API_KEY', 'b0FrYkNNVlZGSmdrendVT3hwUHk') # Get API key from .env
 ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'PHARMACY') # Get Sender ID from .env
-# Corrected Arkesel SMS URL for GET request with query parameters
 ARKESEL_SMS_URL = "https://sms.arkesel.com/sms/api" 
 ADMIN_PHONE_NUMBER = os.getenv('ADMIN_PHONE_NUMBER', '233547096268') # Get admin phone from .env
-ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME', 'My Pharmacy') # Get enterprise name from .env
-# NEW: Pharmacy Contact Information for Receipt
-PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Ahafo - Kenyasi N1, Ghana')
-PHARMACY_ADDRESS = os.getenv('PHARMACY_ADDRESS', '123 Main St, BH')
+# Global pharmacy info (will be overridden by business-specific info if available)
+# These are fallbacks if business_info is not set in session
+ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME', 'Zion Business Center') 
+PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Kenyasi, Ghana')
+PHARMACY_ADDRESS = os.getenv('PHARMACY_ADDRESS', '123 Main St, Kenyasi')
 PHARMACY_CONTACT = os.getenv('PHARMACY_CONTACT', '+233547096268')
 
 
 # --- CSV Database Configuration ---
 CSV_DIR = 'data'
-INVENTORY_FILE = os.path.join(CSV_DIR, 'inventory.csv')
-SALES_FILE = os.path.join(CSV_DIR, 'sales.csv')
+BUSINESSES_FILE = os.path.join(CSV_DIR, 'businesses.csv')
+INVENTORY_FILE_NAME = 'inventory.csv'
+SALES_FILE_NAME = 'sales.csv'
+USERS_FILE_NAME = 'users.csv' # For business-specific users
 
-# Ensure the data directory exists
+# Ensure the base data directory exists
 if not os.path.exists(CSV_DIR):
     os.makedirs(CSV_DIR)
 
-# --- CSV Helper Functions ---
+# --- CSV Helper Functions (Generalized) ---
 
-def init_csv_files():
-    """Initializes CSV files with headers if they don't exist."""
-    # Added 'unit_price_per_tab' to inventory, and 'sale_unit_type' to sales
-    # 'current_stock' and price fields will be stored as strings to handle potential floats.
-    if not os.path.exists(INVENTORY_FILE):
-        with open(INVENTORY_FILE, 'w', newline='', encoding='utf-8') as f:
+def _init_csv_file(filepath, headers):
+    """Initializes a CSV file with headers if it doesn't exist."""
+    if not os.path.exists(filepath):
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
-                             'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab'])
-    if not os.path.exists(SALES_FILE):
-        with open(SALES_FILE, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            # Added 'reference_number' to sales file header
-            writer.writerow(['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
-                             'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
-                             'sales_person_name', 'reference_number'])
+            writer.writerow(headers)
 
-def load_data(filename):
-    """Loads data from a CSV file into a list of dictionaries, converting numeric strings to floats."""
+def _load_csv_file(filepath):
+    """Loads data from a CSV file into a list of dictionaries."""
     data = []
-    if os.path.exists(filename):
-        with open(filename, 'r', newline='', encoding='utf-8') as f:
+    if os.path.exists(filepath):
+        with open(filepath, 'r', newline='', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                # Convert relevant fields to float for calculations
-                if filename == INVENTORY_FILE:
-                    row['purchase_price'] = float(row.get('purchase_price', 0.0))
-                    row['sale_price'] = float(row.get('sale_price', 0.0))
-                    row['current_stock'] = float(row.get('current_stock', 0.0))
-                    row['number_of_tabs'] = int(row.get('number_of_tabs', 1))
-                    row['unit_price_per_tab'] = float(row.get('unit_price_per_tab', 0.0)) # New field
-                elif filename == SALES_FILE:
-                    row['quantity_sold'] = float(row.get('quantity_sold', 0.0)) # Can be float for tabs
-                    row['price_at_time_per_unit_sold'] = float(row.get('price_at_time_per_unit_sold', 0.0)) # Renamed
-                    row['total_amount'] = float(row.get('total_amount', 0.0))
-                    # Ensure reference_number exists, default to empty string if not found in old data
-                    row['reference_number'] = row.get('reference_number', '') 
                 data.append(row)
     return data
 
-def save_data(filename, data):
-    """Saves a list of dictionaries to a CSV file, ensuring numeric values are formatted as strings."""
-    if not data: 
-        headers = []
-        if filename == INVENTORY_FILE:
-            headers = ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
-                       'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab']
-        elif filename == SALES_FILE:
-            # Added 'reference_number' to sales file header for saving
-            headers = ['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
-                       'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
-                       'sales_person_name', 'reference_number']
-        with open(filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-        return
-
-    all_keys = set()
-    for row in data:
-        all_keys.update(row.keys())
+def _save_csv_file(filepath, data, headers):
+    """Saves a list of dictionaries to a CSV file."""
+    # Ensure directory exists before saving
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     
-    # Define a preferred order for headers, including new fields
-    preferred_order_inventory = ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
-                                 'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab']
-    # Added 'reference_number' to preferred sales order
-    preferred_order_sales = ['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
-                             'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
-                             'sales_person_name', 'reference_number']
-    
-    fieldnames = []
-    if filename == INVENTORY_FILE:
-        fieldnames = [key for key in preferred_order_inventory if key in all_keys]
-    elif filename == SALES_FILE:
-        fieldnames = [key for key in preferred_order_sales if key in all_keys]
-    else:
-        fieldnames = sorted(list(all_keys))
-
-    with open(filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    with open(filepath, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
-        
-        # Format numeric fields back to string for saving
-        for row in data:
-            if filename == INVENTORY_FILE:
-                row['purchase_price'] = f"{row['purchase_price']:.2f}"
-                row['sale_price'] = f"{row['sale_price']:.2f}"
-                row['current_stock'] = f"{row['current_stock']:.2f}" # Keep stock as float string
-                row['number_of_tabs'] = str(row['number_of_tabs'])
-                row['unit_price_per_tab'] = f"{row['unit_price_per_tab']:.2f}" # New field formatting
-            elif filename == SALES_FILE:
-                row['quantity_sold'] = f"{row['quantity_sold']:.2f}" # Quantity sold can be float for tabs
-                row['price_at_time_per_unit_sold'] = f"{row['price_at_time_per_unit_sold']:.2f}"
-                row['total_amount'] = f"{row['total_amount']:.2f}"
-            writer.writerow(row)
+        writer.writerows(data)
 
-# Initialize CSV files on app startup
-init_csv_files()
+def init_businesses_csv():
+    """Initializes the main businesses CSV file."""
+    # Added new headers for business contact information
+    _init_csv_file(BUSINESSES_FILE, ['id', 'name', 'address', 'location', 'contact'])
+
+def load_businesses():
+    """Loads all registered businesses."""
+    businesses = _load_csv_file(BUSINESSES_FILE)
+    # Ensure all businesses have the new fields, provide defaults if missing (for old data)
+    for business in businesses:
+        business['address'] = business.get('address', '')
+        business['location'] = business.get('location', '')
+        business['contact'] = business.get('contact', '')
+    return businesses
+
+def save_businesses(businesses):
+    """Saves all registered businesses."""
+    # Updated headers for saving
+    _save_csv_file(BUSINESSES_FILE, businesses, ['id', 'name', 'address', 'location', 'contact'])
+
+def init_business_data_files(business_id):
+    """Initializes CSV files for a new business."""
+    business_dir = os.path.join(CSV_DIR, business_id)
+    os.makedirs(business_dir, exist_ok=True)
+
+    # Added 'expiry_date' to inventory headers
+    _init_csv_file(os.path.join(business_dir, INVENTORY_FILE_NAME), 
+                   ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
+                    'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 'expiry_date'])
+    _init_csv_file(os.path.join(business_dir, SALES_FILE_NAME), 
+                   ['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
+                    'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
+                    'sales_person_name', 'reference_number'])
+    _init_csv_file(os.path.join(business_dir, USERS_FILE_NAME), 
+                   ['username', 'password', 'role'])
+
+# --- Business-specific data access functions ---
+
+def load_inventory_for_business(business_id):
+    filepath = os.path.join(CSV_DIR, business_id, INVENTORY_FILE_NAME)
+    data = _load_csv_file(filepath)
+    # Convert numeric fields to float/int after loading
+    for row in data:
+        row['purchase_price'] = float(row.get('purchase_price', 0.0))
+        row['sale_price'] = float(row.get('sale_price', 0.0))
+        row['current_stock'] = float(row.get('current_stock', 0.0))
+        row['number_of_tabs'] = int(row.get('number_of_tabs', 1))
+        row['unit_price_per_tab'] = float(row.get('unit_price_per_tab', 0.0))
+        row['item_type'] = row.get('item_type', 'Pharmacy') # Default for old entries
+        row['expiry_date'] = row.get('expiry_date', '') # Load new expiry_date field
+    return data
+
+def save_inventory_for_business(business_id, items):
+    filepath = os.path.join(CSV_DIR, business_id, INVENTORY_FILE_NAME)
+    # Format numeric fields back to string for saving
+    formatted_items = []
+    for item in items:
+        formatted_item = item.copy()
+        formatted_item['purchase_price'] = f"{item['purchase_price']:.2f}"
+        formatted_item['sale_price'] = f"{item['sale_price']:.2f}"
+        formatted_item['current_stock'] = f"{item['current_stock']:.2f}"
+        formatted_item['number_of_tabs'] = str(item['number_of_tabs'])
+        formatted_item['unit_price_per_tab'] = f"{item['unit_price_per_tab']:.2f}"
+        formatted_items.append(formatted_item)
+    # Updated headers for saving, including 'expiry_date'
+    _save_csv_file(filepath, formatted_items, 
+                   ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
+                    'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 'expiry_date'])
+
+def load_sales_for_business(business_id):
+    filepath = os.path.join(CSV_DIR, business_id, SALES_FILE_NAME)
+    data = _load_csv_file(filepath)
+    # Convert numeric fields to float after loading
+    for row in data:
+        row['quantity_sold'] = float(row.get('quantity_sold', 0.0))
+        row['price_at_time_per_unit_sold'] = float(row.get('price_at_time_per_unit_sold', 0.0))
+        row['total_amount'] = float(row.get('total_amount', 0.0))
+        row['reference_number'] = row.get('reference_number', '') # Default for old entries
+        row['sale_unit_type'] = row.get('sale_unit_type', 'pack') # Default for old entries
+    return data
+
+def save_sales_for_business(business_id, sales_records):
+    filepath = os.path.join(CSV_DIR, business_id, SALES_FILE_NAME)
+    # Format numeric fields back to string for saving
+    formatted_sales = []
+    for sale in sales_records:
+        formatted_sale = sale.copy()
+        formatted_sale['quantity_sold'] = f"{sale['quantity_sold']:.2f}"
+        formatted_sale['price_at_time_per_unit_sold'] = f"{sale['price_at_time_per_unit_sold']:.2f}"
+        formatted_sale['total_amount'] = f"{sale['total_amount']:.2f}"
+        formatted_sales.append(formatted_sale)
+    _save_csv_file(filepath, formatted_sales, 
+                   ['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
+                    'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
+                    'sales_person_name', 'reference_number'])
+
+def load_users_for_business(business_id):
+    filepath = os.path.join(CSV_DIR, business_id, USERS_FILE_NAME)
+    return _load_csv_file(filepath)
+
+def save_users_for_business(business_id, users):
+    filepath = os.path.join(CSV_DIR, business_id, USERS_FILE_NAME)
+    _save_csv_file(filepath, users, ['username', 'password', 'role'])
+
+# Initialize the main businesses CSV file on app startup
+init_businesses_csv()
 
 # --- Authentication Routes ---
 
@@ -150,7 +186,12 @@ init_csv_files()
 def index():
     """Redirects to the login page if not logged in, otherwise to the dashboard."""
     if 'username' in session:
-        return redirect(url_for('dashboard'))
+        if session.get('role') == 'super_admin':
+            return redirect(url_for('super_admin_dashboard'))
+        elif 'business_id' in session:
+            return redirect(url_for('dashboard'))
+        else: # Logged in but no business selected (e.g., after logout from a business)
+            return redirect(url_for('business_selection'))
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -160,10 +201,41 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        if username in USERS and USERS[username]["password"] == password:
+        # 1. Check for Super Admin
+        if username == SUPER_ADMIN_USERNAME and password == SUPER_ADMIN_PASSWORD:
+            session.clear() # Clear any previous session
             session['username'] = username
-            session['role'] = USERS[username]["role"] # Store the user's role in session
-            flash(f'Welcome, {username} ({session["role"].capitalize()})!', 'success')
+            session['role'] = 'super_admin'
+            flash(f'Welcome, Super Admin!', 'success')
+            return redirect(url_for('super_admin_dashboard'))
+
+        # 2. Check for Business-specific users
+        businesses = load_businesses()
+        authenticated = False
+        for business in businesses:
+            business_id = business['id']
+            business_users = load_users_for_business(business_id)
+            for user_data in business_users:
+                if user_data['username'] == username and user_data['password'] == password:
+                    session.clear() # Clear any previous session
+                    session['username'] = username
+                    session['role'] = user_data['role']
+                    session['business_id'] = business_id
+                    session['business_name'] = business['name'] # Store business name for display
+                    # Store full business info in session for easy access
+                    session['business_info'] = {
+                        'name': business['name'],
+                        'address': business['address'],
+                        'location': business['location'],
+                        'contact': business['contact']
+                    }
+                    authenticated = True
+                    break
+            if authenticated:
+                break
+        
+        if authenticated:
+            flash(f'Welcome, {username} ({session["role"].replace("_", " ").title()}) to {session["business_name"]}!', 'success')
             return redirect(url_for('dashboard'))
         else:
             flash('Invalid username or password. Please try again.', 'danger')
@@ -173,60 +245,414 @@ def login():
 def logout():
     """Logs out the current user."""
     session.pop('username', None)
-    session.pop('role', None) # Clear role from session
+    session.pop('role', None)
+    session.pop('business_id', None)
+    session.pop('business_name', None)
+    session.pop('business_info', None) # Clear business info from session
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
+
+@app.route('/business_selection', methods=['GET', 'POST'])
+def business_selection():
+    """Allows authenticated users (not super admin) to select a business."""
+    if 'username' not in session or session.get('role') == 'super_admin':
+        flash('Please log in or you are a Super Admin.', 'warning')
+        return redirect(url_for('login'))
+
+    businesses = load_businesses()
+    user_businesses = [] # Businesses this user belongs to
+    
+    # Filter businesses to only show ones the current user has an account in
+    current_username = session['username']
+    for business in businesses:
+        business_users = load_users_for_business(business['id'])
+        if any(user['username'] == current_username for user in business_users):
+            user_businesses.append(business)
+
+    if request.method == 'POST':
+        selected_business_id = request.form['business_id']
+        selected_business = next((b for b in businesses if b['id'] == selected_business_id), None)
+
+        if selected_business:
+            # Re-verify user's role for this business
+            business_users = load_users_for_business(selected_business_id)
+            user_data = next((u for u in business_users if u['username'] == session['username']), None)
+            
+            if user_data:
+                session['business_id'] = selected_business_id
+                session['business_name'] = selected_business['name']
+                session['role'] = user_data['role'] # Update role in case it changed
+                session['business_info'] = { # Update business info in session
+                    'name': selected_business['name'],
+                    'address': selected_business['address'],
+                    'location': selected_business['location'],
+                    'contact': selected_business['contact']
+                }
+                flash(f'Switched to business: {session["business_name"]}', 'success')
+                return redirect(url_for('dashboard'))
+            else:
+                flash('You do not have access to the selected business.', 'danger')
+        else:
+            flash('Invalid business selection.', 'danger')
+    
+    if not user_businesses:
+        flash('No businesses found for your account. Please contact an administrator.', 'danger')
+
+    return render_template('business_selection.html', businesses=user_businesses)
+
 
 # --- Dashboard Route ---
 
 @app.route('/dashboard')
 def dashboard():
-    """Administrator dashboard."""
+    """Main dashboard for business-specific users."""
     if 'username' not in session:
         flash('Please log in to access this page.', 'warning')
         return redirect(url_for('login'))
-    return render_template('dashboard.html', username=session['username'], user_role=session.get('role'))
+    if session.get('role') == 'super_admin':
+        return redirect(url_for('super_admin_dashboard'))
+    if 'business_id' not in session:
+        return redirect(url_for('business_selection')) # Force selection if not set
+
+    return render_template('dashboard.html', 
+                           username=session['username'], 
+                           user_role=session.get('role'),
+                           business_name=session.get('business_name'))
+
+# --- Super Admin Routes ---
+
+@app.route('/super_admin_dashboard')
+def super_admin_dashboard():
+    """Dashboard for the super admin to manage businesses."""
+    if session.get('role') != 'super_admin':
+        flash('Access denied. Super Admin role required.', 'danger')
+        return redirect(url_for('login'))
+    
+    businesses = load_businesses()
+    return render_template('super_admin_dashboard.html', businesses=businesses, user_role=session.get('role'))
+
+@app.route('/super_admin/add_business', methods=['GET', 'POST'])
+def add_business():
+    """Allows super admin to add a new business."""
+    if session.get('role') != 'super_admin':
+        flash('Access denied. Super Admin role required.', 'danger')
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        business_name = request.form['business_name'].strip()
+        business_address = request.form['business_address'].strip()
+        business_location = request.form['business_location'].strip()
+        business_contact = request.form['business_contact'].strip()
+        initial_admin_username = request.form['initial_admin_username'].strip()
+        initial_admin_password = request.form['initial_admin_password'].strip()
+
+        businesses = load_businesses()
+        if any(b['name'].lower() == business_name.lower() for b in businesses):
+            flash('Business with this name already exists.', 'danger')
+            return render_template('add_edit_business.html', title='Add New Business', business={
+                'name': business_name,
+                'address': business_address,
+                'location': business_location,
+                'contact': business_contact,
+                'initial_admin_username': initial_admin_username,
+                'initial_admin_password': initial_admin_password
+            })
+        
+        new_business_id = str(uuid.uuid4())
+        businesses.append({
+            'id': new_business_id, 
+            'name': business_name,
+            'address': business_address,
+            'location': business_location,
+            'contact': business_contact
+        })
+        save_businesses(businesses)
+
+        # Initialize data files for the new business
+        init_business_data_files(new_business_id)
+
+        # Add initial admin user for this business
+        business_users = [{'username': initial_admin_username, 'password': initial_admin_password, 'role': 'admin'}]
+        save_users_for_business(new_business_id, business_users)
+
+        flash(f'Business "{business_name}" added successfully with initial admin "{initial_admin_username}".', 'success')
+        return redirect(url_for('super_admin_dashboard'))
+    
+    return render_template('add_edit_business.html', title='Add New Business', business={})
+
+@app.route('/super_admin/edit_business/<business_id>', methods=['GET', 'POST'])
+def edit_business(business_id):
+    """Allows super admin to edit an existing business's details."""
+    if session.get('role') != 'super_admin':
+        flash('Access denied. Super Admin role required.', 'danger')
+        return redirect(url_for('login'))
+
+    businesses = load_businesses()
+    business_to_edit = next((b for b in businesses if b['id'] == business_id), None)
+
+    if not business_to_edit:
+        flash('Business not found.', 'danger')
+        return redirect(url_for('super_admin_dashboard'))
+
+    # Load the initial admin user for this business to pre-fill their credentials
+    business_users = load_users_for_business(business_id)
+    initial_admin = next((u for u in business_users if u['role'] == 'admin'), None)
+
+    if request.method == 'POST':
+        new_business_name = request.form['business_name'].strip()
+        new_business_address = request.form['business_address'].strip()
+        new_business_location = request.form['business_location'].strip()
+        new_business_contact = request.form['business_contact'].strip()
+        new_initial_admin_username = request.form['initial_admin_username'].strip()
+        new_initial_admin_password = request.form['initial_admin_password'].strip()
+
+        # Check for duplicate business name, excluding the current business being edited
+        if any(b['name'].lower() == new_business_name.lower() and b['id'] != business_id for b in businesses):
+            flash('Business with this name already exists.', 'danger')
+            # Pass current form data back to template
+            return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit["name"]}', business={
+                'id': business_id,
+                'name': new_business_name,
+                'address': new_business_address,
+                'location': new_business_location,
+                'contact': new_business_contact,
+                'initial_admin_username': new_initial_admin_username,
+                'initial_admin_password': new_initial_admin_password
+            })
+
+        business_to_edit['name'] = new_business_name
+        business_to_edit['address'] = new_business_address
+        business_to_edit['location'] = new_business_location
+        business_to_edit['contact'] = new_business_contact
+        save_businesses(businesses)
+
+        # Update initial admin user details
+        if initial_admin:
+            # Check for username change and potential conflict
+            if initial_admin['username'] != new_initial_admin_username:
+                if any(u['username'] == new_initial_admin_username for u in business_users if u['username'] != initial_admin['username']):
+                    flash('New admin username already exists for this business. Business details updated, but admin username not changed.', 'warning')
+                else:
+                    initial_admin['username'] = new_initial_admin_username
+            initial_admin['password'] = new_initial_admin_password
+            save_users_for_business(business_id, business_users)
+            flash(f'Business "{new_business_name}" and admin credentials updated successfully!', 'success')
+        else:
+            flash(f'Business "{new_business_name}" updated successfully, but initial admin not found/updated.', 'warning')
+        
+        return redirect(url_for('super_admin_dashboard'))
+
+    # For GET request, prepare data to pre-fill the form
+    business_data_for_form = business_to_edit.copy()
+    if initial_admin:
+        business_data_for_form['initial_admin_username'] = initial_admin['username']
+        business_data_for_form['initial_admin_password'] = initial_admin['password'] # SECURITY WARNING
+    else:
+        business_data_for_form['initial_admin_username'] = ''
+        business_data_for_form['initial_admin_password'] = ''
+
+    return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit["name"]}', business=business_data_for_form)
+
+
+@app.route('/super_admin/view_business_details/<business_id>')
+def view_business_details(business_id):
+    """Allows super admin to view details of a registered business, including initial admin credentials."""
+    if session.get('role') != 'super_admin':
+        flash('Access denied. Super Admin role required.', 'danger')
+        return redirect(url_for('login'))
+
+    businesses = load_businesses()
+    business = next((b for b in businesses if b['id'] == business_id), None)
+
+    if not business:
+        flash('Business not found.', 'danger')
+        return redirect(url_for('super_admin_dashboard'))
+
+    # Load users for this specific business to find the initial admin
+    business_users = load_users_for_business(business_id)
+    initial_admin = next((u for u in business_users if u['role'] == 'admin'), None)
+
+    # SECURITY WARNING: Displaying plain text passwords is a security risk.
+    # In a real application, passwords should be hashed and never displayed.
+    # This is implemented as per user request for demonstration purposes.
+    return render_template('view_business_details.html', business=business, initial_admin=initial_admin)
+
+
+@app.route('/super_admin/delete_business/<business_id>')
+def delete_business(business_id):
+    """Allows super admin to delete a business and all its data."""
+    if session.get('role') != 'super_admin':
+        flash('Access denied. Super Admin role required.', 'danger')
+        return redirect(url_for('login'))
+    
+    businesses = load_businesses()
+    original_len = len(businesses)
+    businesses = [b for b in businesses if b['id'] != business_id]
+
+    if len(businesses) < original_len:
+        save_businesses(businesses)
+        # Delete the business's data directory
+        business_dir = os.path.join(CSV_DIR, business_id)
+        if os.path.exists(business_dir):
+            import shutil
+            shutil.rmtree(business_dir) # DANGER: This permanently deletes data
+            flash(f'Business and its data (ID: {business_id}) deleted successfully!', 'success')
+        else:
+            flash(f'Business (ID: {business_id}) deleted, but data directory not found.', 'warning')
+    else:
+        flash('Business not found.', 'danger')
+    return redirect(url_for('super_admin_dashboard'))
+
+
+# --- Business User Management (Admin & Viewer Admin) ---
+
+@app.route('/manage_business_users')
+def manage_business_users():
+    """Allows business admin/viewer admin to manage users within their business."""
+    if 'username' not in session or session.get('role') not in ['admin', 'viewer_admin']:
+        flash('You do not have permission to manage users.', 'danger')
+        return redirect(url_for('dashboard'))
+    if 'business_id' not in session:
+        flash('No business selected.', 'warning')
+        return redirect(url_for('business_selection'))
+
+    business_id = session['business_id']
+    users = load_users_for_business(business_id)
+    return render_template('manage_business_users.html', users=users, user_role=session.get('role'))
+
+@app.route('/add_edit_business_user', methods=['GET', 'POST'])
+@app.route('/add_edit_business_user/<username>', methods=['GET', 'POST'])
+def add_edit_business_user(username=None):
+    """Allows business admin/viewer admin to add/edit users within their business."""
+    if 'username' not in session or session.get('role') not in ['admin', 'viewer_admin']:
+        flash('You do not have permission to manage users.', 'danger')
+        return redirect(url_for('dashboard'))
+    if 'business_id' not in session:
+        flash('No business selected.', 'warning')
+        return redirect(url_for('business_selection'))
+
+    business_id = session['business_id']
+    users = load_users_for_business(business_id)
+    user_to_edit = None
+    if username:
+        user_to_edit = next((u for u in users if u['username'] == username), None)
+        if not user_to_edit:
+            flash('User not found.', 'danger')
+            return redirect(url_for('manage_business_users'))
+        # Viewer admin cannot edit admin users
+        if session.get('role') == 'viewer_admin' and user_to_edit['role'] == 'admin':
+            flash('Viewer admins cannot edit admin users.', 'danger')
+            return redirect(url_for('manage_business_users'))
+
+    title = 'Add New User' if not username else f'Edit User: {username}'
+
+    if request.method == 'POST':
+        new_username = request.form['username'].strip()
+        new_password = request.form['password'].strip()
+        new_role = request.form['role'].strip()
+
+        # Viewer admin can only add/edit 'sales' users
+        if session.get('role') == 'viewer_admin' and new_role != 'sales':
+            flash('Viewer admins can only add/edit sales users.', 'danger')
+            return render_template('add_edit_business_user.html', title=title, user=request.form, user_role=session.get('role'))
+
+        if user_to_edit: # Editing an existing user
+            if new_username != username and any(u['username'] == new_username for u in users):
+                flash('Username already exists.', 'danger')
+                return render_template('add_edit_business_user.html', title=title, user=request.form, user_role=session.get('role'))
+            
+            user_to_edit['username'] = new_username
+            user_to_edit['password'] = new_password
+            user_to_edit['role'] = new_role
+            flash(f'User "{new_username}" updated successfully!', 'success')
+        else: # Adding a new user
+            if any(u['username'] == new_username for u in users):
+                flash('Username already exists.', 'danger')
+                return render_template('add_edit_business_user.html', title=title, user=request.form, user_role=session.get('role'))
+            
+            users.append({'username': new_username, 'password': new_password, 'role': new_role})
+            flash(f'User "{new_username}" added successfully!', 'success')
+        
+        save_users_for_business(business_id, users)
+        return redirect(url_for('manage_business_users'))
+
+    return render_template('add_edit_business_user.html', title=title, user=user_to_edit, user_role=session.get('role'))
+
+@app.route('/delete_business_user/<username>')
+def delete_business_user(username):
+    """Allows business admin to delete users within their business."""
+    if 'username' not in session or session.get('role') != 'admin': # Only full admin can delete users
+        flash('You do not have permission to delete users.', 'danger')
+        return redirect(url_for('dashboard'))
+    if 'business_id' not in session:
+        flash('No business selected.', 'warning')
+        return redirect(url_for('business_selection'))
+
+    business_id = session['business_id']
+    users = load_users_for_business(business_id)
+    
+    # Prevent admin from deleting themselves or other admins
+    user_to_delete = next((u for u in users if u['username'] == username), None)
+    if user_to_delete and user_to_delete['role'] == 'admin':
+        flash('Cannot delete another admin user or yourself.', 'danger')
+        return redirect(url_for('manage_business_users'))
+
+    original_len = len(users)
+    users = [u for u in users if u['username'] != username]
+    if len(users) < original_len:
+        save_users_for_business(business_id, users)
+        flash(f'User "{username}" deleted successfully!', 'success')
+    else:
+        flash('User not found.', 'danger')
+    return redirect(url_for('manage_business_users'))
+
 
 # --- Inventory Management Routes ---
 
 @app.route('/inventory')
 def inventory():
     """Displays the list of inventory items."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
+    if 'username' not in session or 'business_id' not in session:
+        flash('Please log in and select a business to access this page.', 'warning')
         return redirect(url_for('login'))
-    items = load_data(INVENTORY_FILE)
+    
+    items = load_inventory_for_business(session['business_id'])
     return render_template('inventory_list.html', items=items, user_role=session.get('role'))
 
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def add_inventory():
-    """Adds a new inventory item. Restricted to Admin.
-       If product already exists, it updates the stock instead of adding a new entry.
-       Sale price is automatically calculated (purchase price + 30%).
-    """
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
-    if session.get('role') != 'admin':
+    """Adds a new inventory item. Restricted to Admin."""
+    if 'username' not in session or session.get('role') not in ['admin'] or 'business_id' not in session:
         flash('You do not have permission to add inventory items.', 'danger')
-        return redirect(url_for('inventory')) # Redirect to inventory list if unauthorized
+        return redirect(url_for('inventory'))
         
     if request.method == 'POST':
-        items = load_data(INVENTORY_FILE)
+        items = load_inventory_for_business(session['business_id'])
         product_name = request.form['product_name'].strip()
         category = request.form['category'].strip()
         purchase_price = float(request.form['purchase_price'])
         added_stock = float(request.form['current_stock']) # Store stock as float
         batch_number = request.form['batch_number'].strip()
         number_of_tabs = int(request.form['number_of_tabs']) # Get number of tabs
+        item_type = request.form['item_type'] # Get new item type
+        expiry_date = request.form['expiry_date'].strip() # Get new expiry_date
 
         if number_of_tabs <= 0:
             flash('Number of tabs must be greater than zero.', 'danger')
             return render_template('add_edit_inventory.html', title='Add Inventory Item', item=request.form, user_role=session.get('role'))
 
-        # Calculation: Unit price per tab and then total sale price for the product/pack
+        # Calculate unit price per tab with conditional markup
         cost_per_tab = purchase_price / number_of_tabs
-        unit_price_per_tab_with_markup = cost_per_tab * 1.30 
+        unit_price_per_tab_with_markup = 0.0
+
+        if item_type == 'Provision Store':
+            if purchase_price >= 1000:
+                unit_price_per_tab_with_markup = cost_per_tab * 1.10 # 10% markup
+            else:
+                unit_price_per_tab_with_markup = cost_per_tab * 1.08 # 8% markup
+        else: # Default to Pharmacy or any other type
+            unit_price_per_tab_with_markup = cost_per_tab * 1.30 # 30% markup (original logic)
+        
         sale_price = unit_price_per_tab_with_markup * number_of_tabs 
 
         # Check if the product already exists by name (case-insensitive)
@@ -241,6 +667,8 @@ def add_inventory():
             existing_item['batch_number'] = batch_number
             existing_item['number_of_tabs'] = number_of_tabs # Update number of tabs
             existing_item['unit_price_per_tab'] = unit_price_per_tab_with_markup # Store new field
+            existing_item['item_type'] = item_type # Update item type
+            existing_item['expiry_date'] = expiry_date # Update expiry_date
             flash(f'Stock for {product_name} updated successfully! New stock: {existing_item["current_stock"]:.2f}', 'success')
         else:
             new_item = {
@@ -253,28 +681,25 @@ def add_inventory():
                 'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'batch_number': batch_number,
                 'number_of_tabs': number_of_tabs, # Add number of tabs
-                'unit_price_per_tab': unit_price_per_tab_with_markup # Add new field
+                'unit_price_per_tab': unit_price_per_tab_with_markup, # Add new field
+                'item_type': item_type, # Add new item type
+                'expiry_date': expiry_date # Add new expiry_date
             }
             items.append(new_item)
             flash('Inventory item added successfully!', 'success')
         
-        save_data(INVENTORY_FILE, items)
+        save_inventory_for_business(session['business_id'], items)
         return redirect(url_for('inventory'))
     return render_template('add_edit_inventory.html', title='Add Inventory Item', item={}, user_role=session.get('role'))
 
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 def edit_inventory(item_id):
-    """Edits an existing inventory item or updates its stock. Restricted to Admin.
-       Sale price is automatically calculated (purchase price + 30%).
-    """
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
-    if session.get('role') != 'admin':
+    """Edits an existing inventory item or updates its stock. Restricted to Admin."""
+    if 'username' not in session or session.get('role') not in ['admin'] or 'business_id' not in session:
         flash('You do not have permission to edit inventory items.', 'danger')
-        return redirect(url_for('inventory')) # Redirect to inventory list if unauthorized
+        return redirect(url_for('inventory'))
 
-    items = load_data(INVENTORY_FILE)
+    items = load_inventory_for_business(session['business_id'])
     item_to_edit = next((item for item in items if item['id'] == item_id), None)
 
     if not item_to_edit:
@@ -286,6 +711,8 @@ def edit_inventory(item_id):
         item_to_edit['category'] = request.form['category'].strip()
         purchase_price = float(request.form['purchase_price']) # Get updated purchase price
         number_of_tabs = int(request.form['number_of_tabs']) # Get updated number of tabs
+        item_type = request.form['item_type'] # Get new item type
+        expiry_date = request.form['expiry_date'].strip() # Get new expiry_date
 
         if number_of_tabs <= 0:
             flash('Number of tabs must be greater than zero.', 'danger')
@@ -293,9 +720,18 @@ def edit_inventory(item_id):
             return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_to_edit, user_role=session.get('role'))
 
 
-        # Calculation: Unit price per tab and then total sale price for the product/pack
+        # Calculate unit price per tab with conditional markup
         cost_per_tab = purchase_price / number_of_tabs
-        unit_price_per_tab_with_markup = cost_per_tab * 1.30 
+        unit_price_per_tab_with_markup = 0.0
+
+        if item_type == 'Provision Store':
+            if purchase_price >= 1000:
+                unit_price_per_tab_with_markup = cost_per_tab * 1.10 # 10% markup
+            else:
+                unit_price_per_tab_with_markup = cost_per_tab * 1.08 # 8% markup
+        else: # Default to Pharmacy or any other type
+            unit_price_per_tab_with_markup = cost_per_tab * 1.30 # 30% markup (original logic)
+        
         sale_price = unit_price_per_tab_with_markup * number_of_tabs 
         
         item_to_edit['purchase_price'] = purchase_price
@@ -305,7 +741,9 @@ def edit_inventory(item_id):
         item_to_edit['batch_number'] = request.form['batch_number'].strip()
         item_to_edit['number_of_tabs'] = number_of_tabs # Update number of tabs
         item_to_edit['unit_price_per_tab'] = unit_price_per_tab_with_markup # Store new field
-        save_data(INVENTORY_FILE, items)
+        item_to_edit['item_type'] = item_type # Update item type
+        item_to_edit['expiry_date'] = expiry_date # Update expiry_date
+        save_inventory_for_business(session['business_id'], items)
         flash('Inventory item updated successfully!', 'success')
         return redirect(url_for('inventory'))
 
@@ -314,18 +752,15 @@ def edit_inventory(item_id):
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory(item_id):
     """Deletes an inventory item. Restricted to Admin."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
-    if session.get('role') != 'admin':
+    if 'username' not in session or session.get('role') not in ['admin'] or 'business_id' not in session:
         flash('You do not have permission to delete inventory items.', 'danger')
-        return redirect(url_for('inventory')) # Redirect to inventory list if unauthorized
+        return redirect(url_for('inventory'))
 
-    items = load_data(INVENTORY_FILE)
+    items = load_inventory_for_business(session['business_id'])
     original_len = len(items)
     items = [item for item in items if item['id'] != item_id]
     if len(items) < original_len:
-        save_data(INVENTORY_FILE, items)
+        save_inventory_for_business(session['business_id'], items)
         flash('Inventory item deleted successfully!', 'success')
     else:
         flash('Inventory item not found.', 'danger')
@@ -336,10 +771,11 @@ def delete_inventory(item_id):
 @app.route('/sales')
 def sales():
     """Displays the list of sales records."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
+    if 'username' not in session or 'business_id' not in session:
+        flash('Please log in and select a business to access this page.', 'warning')
         return redirect(url_for('login'))
-    sales_records = load_data(SALES_FILE)
+    
+    sales_records = load_sales_for_business(session['business_id'])
     # Sort sales records by date in descending order
     sales_records.sort(key=lambda x: datetime.strptime(x['sale_date'], '%Y-%m-%d %H:%M:%S'), reverse=True)
     return render_template('sales_list.html', sales=sales_records, user_role=session.get('role'))
@@ -347,24 +783,24 @@ def sales():
 @app.route('/sales/add', methods=['GET', 'POST'])
 def add_sale():
     """Adds a new sales record. Accessible by Admin and Sales."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
+    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or 'business_id' not in session:
+        flash('You do not have permission to add sales records.', 'danger')
+        return redirect(url_for('sales'))
     
-    inventory_items = load_data(INVENTORY_FILE)
+    inventory_items = load_inventory_for_business(session['business_id'])
     # Filter out inventory items with 0 stock for selection (consider partial packs for tabs)
     available_inventory_items = [item for item in inventory_items if item['current_stock'] > 0]
 
-    # Pass pharmacy contact info to the template for the receipt
-    pharmacy_info = {
-        'name': ENTERPRISE_NAME,
+    # Use business-specific pharmacy info from session
+    pharmacy_info = session.get('business_info', {
+        'name': ENTERPRISE_NAME, # Fallback to global if not in session
         'location': PHARMACY_LOCATION,
         'address': PHARMACY_ADDRESS,
         'contact': PHARMACY_CONTACT
-    }
+    })
 
     if request.method == 'POST':
-        sales_records = load_data(SALES_FILE)
+        sales_records = load_sales_for_business(session['business_id'])
         product_id = request.form['product_id']
         quantity_sold_raw = float(request.form['quantity_sold']) # Read quantity as float
         sale_unit_type = request.form['sale_unit_type'] # 'pack' or 'tab'
@@ -441,7 +877,7 @@ def add_sale():
 
         # Update stock
         product['current_stock'] = current_stock_packs - quantity_to_deduct_packs
-        save_data(INVENTORY_FILE, inventory_items) # Save updated inventory
+        save_inventory_for_business(session['business_id'], inventory_items) # Save updated inventory
 
         new_sale = {
             'id': str(uuid.uuid4()),
@@ -457,20 +893,22 @@ def add_sale():
             'sales_person_name': sales_person_name
         }
         sales_records.append(new_sale)
-        save_data(SALES_FILE, sales_records)
+        save_sales_for_business(session['business_id'], sales_records)
         flash('Sale record added successfully and stock updated!', 'success')
 
         # Send SMS receipt if phone number is provided and valid
         if customer_phone:
+            # Get dynamic business name from session
+            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
             message = (
-                f"Pharmacy Receipt (Ref: {new_sale['reference_number']}):\n" # Include ref number
+                f"{business_name_for_sms} Receipt (Ref: {new_sale['reference_number']}):\n" 
                 f"Item: {product['product_name']}\n"
                 f"Qty: {quantity_for_record:.2f} {display_unit_text}\n"
                 f"Unit Price: GH₵{price_at_time_per_unit_sold:.2f} per {sale_unit_type}\n"
                 f"Total: GH₵{total_amount_sold:.2f}\n"
                 f"Date: {new_sale['sale_date']}\n\n"
                 f"Thank you for trading with us\n"
-                f"From: {ENTERPRISE_NAME}"
+                f"From: {business_name_for_sms}" # Use dynamic business name
             )
             sms_payload = {
                 'action': 'send-sms',
@@ -520,12 +958,12 @@ def edit_sale(sale_id):
     """Edits an existing sales record. Accessible by Admin and Sales.
        Sales personnel edits do NOT affect inventory stock.
     """
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
+    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or 'business_id' not in session:
+        flash('You do not have permission to edit sales records.', 'danger')
+        return redirect(url_for('sales'))
     
-    sales_records = load_data(SALES_FILE)
-    inventory_items = load_data(INVENTORY_FILE)
+    sales_records = load_sales_for_business(session['business_id'])
+    inventory_items = load_inventory_for_business(session['business_id'])
     sale_to_edit = next((sale for sale in sales_records if sale['id'] == sale_id), None)
 
     if not sale_to_edit:
@@ -534,13 +972,13 @@ def edit_sale(sale_id):
 
     available_inventory_items = inventory_items 
 
-    # Pass pharmacy contact info to the template for the receipt
-    pharmacy_info = {
-        'name': ENTERPRISE_NAME,
+    # Use business-specific pharmacy info from session
+    pharmacy_info = session.get('business_info', {
+        'name': ENTERPRISE_NAME, # Fallback to global if not in session
         'location': PHARMACY_LOCATION,
         'address': PHARMACY_ADDRESS,
         'contact': PHARMACY_CONTACT
-    }
+    })
 
     if request.method == 'POST':
         old_quantity_sold_record = sale_to_edit['quantity_sold']
@@ -625,7 +1063,7 @@ def edit_sale(sale_id):
                 return render_template('add_edit_sale.html', title='Edit Sale Record', sale=form_data, inventory_items=available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info)
             
             product['current_stock'] = adjusted_stock_after_revert - quantity_to_deduct_packs
-            save_data(INVENTORY_FILE, inventory_items)
+            save_inventory_for_business(session['business_id'], inventory_items)
             flash('Inventory stock adjusted due to sale edit (Admin action).', 'info')
         else:
             flash('Sales personnel edits do not affect inventory stock. Only the sale record is updated.', 'warning')
@@ -642,20 +1080,22 @@ def edit_sale(sale_id):
         # Preserve reference number on edit
         sale_to_edit['reference_number'] = sale_to_edit.get('reference_number', '')
 
-        save_data(SALES_FILE, sales_records)
+        save_sales_for_business(session['business_id'], sales_records)
         flash('Sale record updated successfully!', 'success')
 
         # Send SMS receipt if phone number is provided
         if customer_phone:
+            # Get dynamic business name from session
+            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
             message = (
-                f"Pharmacy Receipt (Edited - Ref: {sale_to_edit['reference_number']}):\n" # Include ref number
+                f"{business_name_for_sms} Receipt (Edited - Ref: {sale_to_edit['reference_number']}):\n" 
                 f"Item: {product['product_name']}\n"
                 f"Qty: {new_quantity_for_record:.2f} {display_unit_text}\n"
                 f"Unit Price: GH₵{new_price_at_time_per_unit_sold:.2f} per {new_sale_unit_type}\n"
                 f"Total: GH₵{new_total_amount_sold:.2f}\n"
                 f"Date: {sale_to_edit['sale_date']}\n\n"
                 f"Thank you for trading with us\n"
-                f"From: {ENTERPRISE_NAME}"
+                f"From: {business_name_for_sms}" # Use dynamic business name
             )
             sms_payload = {
                 'action': 'send-sms',
@@ -709,12 +1149,12 @@ def edit_sale(sale_id):
 @app.route('/sales/delete/<sale_id>')
 def delete_sale(sale_id):
     """Deletes a sales record and adjusts stock (dangerous for real systems). Accessible by Admin and Sales."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
+    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or 'business_id' not in session:
+        flash('You do not have permission to delete sales records.', 'danger')
+        return redirect(url_for('sales'))
     
-    sales_records = load_data(SALES_FILE)
-    inventory_items = load_data(INVENTORY_FILE)
+    sales_records = load_sales_for_business(session['business_id'])
+    inventory_items = load_inventory_for_business(session['business_id'])
     
     sale_to_delete = next((sale for sale in sales_records if sale['id'] == sale_id), None)
     
@@ -738,7 +1178,7 @@ def delete_sale(sale_id):
             quantity_to_add_packs = quantity_sold_record
             
         product['current_stock'] = product['current_stock'] + quantity_to_add_packs
-        save_data(INVENTORY_FILE, inventory_items)
+        save_inventory_for_business(session['business_id'], inventory_items)
         # Ensure product["current_stock"] is treated as float for formatting
         flash(f'Stock for {product["product_name"]} adjusted due to sale deletion. New stock: {float(product["current_stock"]):.2f} packs.', 'info')
     else:
@@ -748,7 +1188,7 @@ def delete_sale(sale_id):
     original_len = len(sales_records)
     sales_records = [sale for sale in sales_records if sale['id'] != sale_id]
     if len(sales_records) < original_len:
-        save_data(SALES_FILE, sales_records)
+        save_sales_for_business(session['business_id'], sales_records)
         flash('Sale record deleted successfully!', 'success')
     else:
         flash('Sale record not found.', 'danger')
@@ -758,17 +1198,17 @@ def delete_sale(sale_id):
 @app.route('/sales/return_item', methods=['GET', 'POST'])
 def return_item():
     """Handles customer returns and adjusts sales/inventory."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
+    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or 'business_id' not in session:
+        flash('You do not have permission to process returns.', 'danger')
+        return redirect(url_for('sales'))
     
     if request.method == 'POST':
         ref_number = request.form['reference_number'].strip().upper()
         return_quantity_raw = float(request.form['return_quantity']) # Quantity to return
         return_unit_type = request.form['return_unit_type'] # 'pack' or 'tab'
 
-        sales_records = load_data(SALES_FILE)
-        inventory_items = load_data(INVENTORY_FILE)
+        sales_records = load_sales_for_business(session['business_id'])
+        inventory_items = load_inventory_for_business(session['business_id'])
 
         # Find the original sale record by reference number
         original_sale = next((s for s in sales_records if s.get('reference_number', '').upper() == ref_number), None)
@@ -850,23 +1290,25 @@ def return_item():
             'sales_person_name': session.get('username', 'N/A') + " (Return)"
         }
         sales_records.append(return_sale_record)
-        save_data(SALES_FILE, sales_records)
+        save_sales_for_business(session['business_id'], sales_records)
 
         # Update inventory stock - add items back
         product['current_stock'] = product['current_stock'] + return_quantity_in_packs
-        save_data(INVENTORY_FILE, inventory_items)
+        save_inventory_for_business(session['business_id'], inventory_items)
 
         flash(f'Return processed for Reference Number {ref_number}. {return_quantity_raw:.2f} {display_unit_text} of {original_sale["product_name"]} returned. Total sales adjusted by GH₵{returned_amount:.2f}.', 'success')
         
         # Send SMS notification for return
         if original_sale.get('customer_phone'):
+            # Get dynamic business name from session
+            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
             message = (
-                f"Pharmacy Return Confirmation (Ref: {return_sale_record['reference_number']}):\n"
+                f"{business_name_for_sms} Return Confirmation (Ref: {return_sale_record['reference_number']}):\n"
                 f"Item: {original_sale['product_name']}\n"
                 f"Qty Returned: {quantity_for_return_record:.2f} {display_unit_text}\n"
                 f"Amount Refunded: GH₵{returned_amount:.2f}\n"
                 f"Date: {return_sale_record['sale_date']}\n\n"
-                f"From: {ENTERPRISE_NAME}"
+                f"From: {business_name_for_sms}" # Use dynamic business name
             )
             sms_payload = {
                 'action': 'send-sms',
@@ -901,12 +1343,12 @@ def return_item():
 @app.route('/reports')
 def reports():
     """Displays various statistics and reports."""
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
+    if 'username' not in session or 'business_id' not in session:
+        flash('Please log in and select a business to access this page.', 'warning')
         return redirect(url_for('login'))
 
-    inventory_items = load_data(INVENTORY_FILE)
-    sales_records = load_data(SALES_FILE)
+    inventory_items = load_inventory_for_business(session['business_id'])
+    sales_records = load_sales_for_business(session['business_id'])
 
     # 1. Statistics of Stocks Available
     stock_summary = [
@@ -960,11 +1402,11 @@ def reports():
 @app.route('/reports/send_daily_sms', methods=['POST'])
 def send_daily_sms_report():
     """Generates and sends a daily sales report via SMS to the admin."""
-    if 'username' not in session or session.get('role') != 'admin':
+    if 'username' not in session or session.get('role') not in ['admin'] or 'business_id' not in session:
         flash('You do not have permission to send daily SMS reports.', 'danger')
         return redirect(url_for('dashboard'))
 
-    sales_records = load_data(SALES_FILE)
+    sales_records = load_sales_for_business(session['business_id'])
     
     today = date.today()
     today_sales = [
@@ -986,6 +1428,9 @@ def send_daily_sms_report():
         key = f"{product_name} ({unit_type})"
         product_sales_summary[key] = product_sales_summary.get(key, 0.0) + quantity
 
+    # Get dynamic business name from session
+    business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+
     # Format the message
     message = f"Daily Sales Report ({today.strftime('%Y-%m-%d')}):\n"
     message += f"Total Revenue: GH₵{total_sales_amount:.2f}\n"
@@ -998,7 +1443,7 @@ def send_daily_sms_report():
         message += "No sales recorded today."
 
     message += f"\nThank you for trading with us\n"
-    message += f"From: {ENTERPRISE_NAME}"
+    message += f"From: {business_name_for_sms}" # Use dynamic business name
 
     if not ADMIN_PHONE_NUMBER:
         flash('Admin phone number is not configured for SMS reports.', 'danger')
@@ -1040,4 +1485,4 @@ def send_daily_sms_report():
 
 # --- Main entry point ---
 if __name__ == '__main__':
-        app.run(debug=True)
+    app.run(debug=True)
