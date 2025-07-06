@@ -1,0 +1,192 @@
+<!-- templates/reports.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports & Statistics - Pharmaceutical Store</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+           <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+   
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+    </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-5xl">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Reports & Statistics</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Stocks Available -->
+            <div>
+                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Current Stock Levels</h3>
+                {% if stock_summary %}
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stock (Packs)</th> {# Clarified header #}
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for item in stock_summary %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.product_name }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.current_stock }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-gray-500">No inventory data to display stock levels.</p>
+                {% endif %}
+            </div>
+
+            <!-- Sales per Day -->
+            <div>
+                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Day</h3>
+                {% if daily_sales %}
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for date, total in daily_sales %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ date }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-gray-500">No daily sales data available.</p>
+                {% endif %}
+            </div>
+
+            <!-- Sales per Week -->
+            <div>
+                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Week</h3>
+                {% if weekly_sales %}
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year-Week</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for week, total in weekly_sales %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ week }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-gray-500">No weekly sales data available.</p>
+                {% endif %}
+            </div>
+
+            <!-- Sales per Month -->
+            <div>
+                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Month</h3>
+                {% if monthly_sales %}
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year-Month</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for month, total in monthly_sales %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ month }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-gray-500">No monthly sales data available.</p>
+                {% endif %}
+            </div>
+
+            {# Sales Per Personnel #}
+            <div>
+                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Personnel</h3>
+                {% if sales_per_person %}
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Personnel</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for person, total in sales_per_person %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ person }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-center text-gray-500">No sales data by personnel available.</p>
+                {% endif %}
+            </div>
+
+        </div>
+
+        <div class="mt-8 flex justify-center gap-4">
+            <a href="{{ url_for('dashboard') }}"
+               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+            >
+                Back to Dashboard
+            </a>
+            {% if user_role == 'admin' %}
+            <form action="{{ url_for('send_daily_sms_report') }}" method="POST" class="inline-block">
+                <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Send Daily Sales Report SMS
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

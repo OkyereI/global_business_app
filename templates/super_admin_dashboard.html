@@ -1,0 +1,84 @@
+<!-- templates/super_admin_dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+           <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+   
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+    </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-5xl">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-bold text-gray-800">Super Admin Dashboard</h2>
+            <div class="flex space-x-4">
+                <a href="{{ url_for('add_business') }}"
+                   class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Add New Business
+                </a>
+                <a href="{{ url_for('logout') }}"
+                   class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Logout
+                </a>
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4 w-full">
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% if businesses %}
+        <div class="overflow-x-auto rounded-lg shadow-md w-full">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Business Name</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for business in businesses %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ business.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ business.address }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ business.location }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ business.contact }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <a href="{{ url_for('view_business_details', business_id=business.id) }}" class="text-blue-600 hover:text-blue-900 mr-3">View Details</a>
+                            <a href="{{ url_for('edit_business', business_id=business.id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
+                            <a href="{{ url_for('delete_business', business_id=business.id) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to delete business {{ business.name }} and ALL its data? This action cannot be undone.');">Delete</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-center text-gray-500 text-lg py-8">No businesses registered yet. Add one!</p>
+        {% endif %}
+    </div>
+</body>
+</html>

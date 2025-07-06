@@ -1,0 +1,148 @@
+<!-- templates/add_edit_inventory.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form action="" method="POST" class="space-y-4">
+            <div>
+                <label for="product_name" class="block text-sm font-medium text-gray-700">Product Name</label>
+                <input
+                    type="text"
+                    id="product_name"
+                    name="product_name"
+                    value="{{ item.product_name if item else '' }}"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., Paracetamol"
+                >
+            </div>
+            <div>
+                <label for="category" class="block text-sm font-medium text-gray-700">Category</label>
+                <input
+                    type="text"
+                    id="category"
+                    name="category"
+                    value="{{ item.category if item else '' }}"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., Painkillers"
+                >
+            </div>
+            <div>
+                <label for="purchase_price" class="block text-sm font-medium text-gray-700">Purchase Price (GH₵)</label>
+                <input
+                    type="number"
+                    id="purchase_price"
+                    name="purchase_price"
+                    value="{{ '%.2f' | format(item.purchase_price) if item and item.purchase_price is not none else '' }}"
+                    step="0.01"
+                    min="0"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., 10.50"
+                >
+            </div>
+            <div>
+                <label for="current_stock" class="block text-sm font-medium text-gray-700">Current Stock (Packs)</label>
+                <input
+                    type="number"
+                    id="current_stock"
+                    name="current_stock"
+                    value="{{ '%.2f' | format(item.current_stock) if item and item.current_stock is not none else '' }}"
+                    step="0.01"
+                    min="0"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., 100"
+                >
+            </div>
+            <div>
+                <label for="batch_number" class="block text-sm font-medium text-gray-700">Batch Number</label>
+                <input
+                    type="text"
+                    id="batch_number"
+                    name="batch_number"
+                    value="{{ item.batch_number if item else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., BN12345"
+                >
+            </div>
+            <div>
+                <label for="number_of_tabs" class="block text-sm font-medium text-gray-700">Number of Tabs/Units per Pack</label>
+                <input
+                    type="number"
+                    id="number_of_tabs"
+                    name="number_of_tabs"
+                    value="{{ item.number_of_tabs if item else 1 }}"
+                    min="1"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., 10"
+                >
+            </div>
+            <div>
+                <label for="item_type" class="block text-sm font-medium text-gray-700">Item Type</label>
+                <select
+                    id="item_type"
+                    name="item_type"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                    <option value="Pharmacy" {% if item and item.item_type == 'Pharmacy' %}selected{% endif %}>Pharmacy</option>
+                    <option value="Provision Store" {% if item and item.item_type == 'Provision Store' %}selected{% endif %}>Provision Store</option>
+                </select>
+            </div>
+            <div>
+                <label for="expiry_date" class="block text-sm font-medium text-gray-700">Expiry Date</label>
+                <input
+                    type="date"
+                    id="expiry_date"
+                    name="expiry_date"
+                    value="{{ item.expiry_date if item else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+            </div>
+            <button
+                type="submit"
+                class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+            >
+                Save Item
+            </button>
+        </form>
+        <div class="mt-6 text-center">
+            <a href="{{ url_for('inventory') }}"
+               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+            >
+                Cancel
+            </a>
+        </div>
+    </div>
+</body>
+</html>

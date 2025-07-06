@@ -1,0 +1,399 @@
+<!-- templates/add_edit_sale.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Pharmaceutical Store</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+          <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+   
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            body > *:not(#receipt-print-area) {
+                display: none;
+            }
+            #receipt-print-area {
+                display: block !important; /* Ensure it's visible for print */
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto; /* Allow content to define height */
+                padding: 20px;
+                box-sizing: border-box;
+                font-size: 14px; /* Adjust font size for print */
+                color: #000; /* Ensure text is black for printing */
+                background-color: #fff; /* Ensure background is white for printing */
+                box-shadow: none; /* Remove shadow for printing */
+                border: none; /* Remove border for printing */
+                page-break-after: always; /* Force page break after each receipt if multiple */
+            }
+            .no-print {
+                display: none !important;
+            }
+            /* Ensure the text is visible and not greyed out on print */
+            #receipt-print-area p, #receipt-print-area h3, #receipt-print-area h4 {
+                color: #000 !important;
+            }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form action="" method="POST" class="space-y-4">
+            {# Reference Number Display #}
+            {% if sale and sale.reference_number %}
+            <div>
+                <label for="reference_number_display" class="block text-sm font-medium text-gray-700">Reference Number</label>
+                <input
+                    type="text"
+                    id="reference_number_display"
+                    value="{{ sale.reference_number }}"
+                    readonly
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed sm:text-sm"
+                >
+            </div>
+            {% endif %}
+
+            <div>
+                <label for="product_id" class="block text-sm font-medium text-gray-700">Product</label>
+                <select
+                    id="product_id"
+                    name="product_id"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    onchange="updateProductDetails()"
+                >
+                    <option value="">-- Select a Product --</option>
+                    {% for product in inventory_items %}
+                        <option value="{{ product.id }}"
+                                data-stock="{{ product.current_stock }}"
+                                data-sale-price="{{ product.sale_price }}"
+                                data-number-of-tabs="{{ product.get('number_of_tabs', 'N/A') }}"
+                                data-unit-price-per-tab="{{ product.get('unit_price_per_tab', '0.00') }}" {# Pass new data #}
+                                {% if sale and sale.product_id == product.id %}selected{% endif %}
+                        >
+                            {{ product.product_name }} (Stock: {{ "%.2f"|format(product.current_stock|float) }} packs)
+                        </option>
+                    {% endfor %}
+                </select>
+                {% if not inventory_items %}
+                    <p class="text-sm text-red-500 mt-2">No products available. Please add inventory items first.</p>
+                {% endif %}
+            </div>
+
+            <div id="product-info" class="p-3 bg-gray-50 rounded-md text-sm text-gray-700 {% if not sale %}hidden{% endif %}">
+                <p>Available Stock (Packs): <span id="available_stock">0.00</span></p>
+                <p>Available Stock (Tabs): <span id="available_tabs">0</span></p> {# New display for tabs #}
+                <p>Price per Product (Pack): GH₵<span id="unit_price_pack">0.00</span></p> {# Clarified ID #}
+                <p>Unit Price per Tab: GH₵<span id="unit_price_tab">0.00</span></p> {# New display for tab price #}
+                <p>Number of Tabs per Pack: <span id="number_of_tabs_display">N/A</span></p>
+            </div>
+
+            {# New Radio buttons for sale unit type #}
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Sell By:</label>
+                <div class="flex space-x-4">
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="sale_unit_type" value="pack" class="form-radio text-green-600" onchange="updateQuantityInput()" {% if sale.sale_unit_type == 'pack' %}checked{% endif %}>
+                        <span class="ml-2 text-gray-800">Packs</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="sale_unit_type" value="tab" class="form-radio text-green-600" onchange="updateQuantityInput()" {% if sale.sale_unit_type == 'tab' %}checked{% endif %}>
+                        <span class="ml-2 text-gray-800">Tabs</span>
+                    </label>
+                </div>
+            </div>
+
+            <div>
+                <label for="quantity_sold" class="block text-sm font-medium text-gray-700" id="quantity_sold_label">Quantity Sold</label>
+                <input
+                    type="number"
+                    id="quantity_sold"
+                    name="quantity_sold"
+                    value="{{ '%.2f'|format(sale.quantity_sold|float) if sale and sale.quantity_sold else '' }}" {# Display as float #}
+                    min="1"
+                    step="0.01" {# Allow decimal input for tabs if needed #}
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    oninput="calculateTotal()"
+                >
+            </div>
+
+            <div>
+                <label for="total_amount_display" class="block text-sm font-medium text-gray-700">Total Amount (GH₵)</label>
+                <input
+                    type="text"
+                    id="total_amount_display"
+                    value="{{ '%.2f'|format(sale.total_amount|float) if sale and sale.total_amount else '0.00' }}"
+                    readonly
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed sm:text-sm"
+                >
+            </div>
+
+            <div>
+                <label for="customer_phone" class="block text-sm font-medium text-gray-700">Customer Phone (for SMS receipt, optional)</label>
+                <input
+                    type="tel"
+                    id="customer_phone"
+                    name="customer_phone"
+                    value="{{ sale.customer_phone if sale and sale.customer_phone else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    placeholder="e.g., 233241234567"
+                >
+            </div>
+            
+            {# Sales Person Name Input Field #}
+            <div>
+                <label for="sales_person_name" class="block text-sm font-medium text-gray-700">Sales Person Name</label>
+                <input
+                    type="text"
+                    id="sales_person_name"
+                    name="sales_person_name"
+                    value="{{ sale.sales_person_name if sale and sale.sales_person_name else session.get('username', 'N/A') }}"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+            </div>
+
+            <div class="flex flex-col sm:flex-row justify-between gap-4 mt-6">
+                <button
+                    type="submit"
+                    class="w-full sm:w-auto flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
+                    {% if not inventory_items %}disabled{% endif %}
+                >
+                    Save Sale
+                </button>
+                <button
+                    type="button"
+                    onclick="printReceipt()"
+                    class="w-full sm:w-auto flex-1 justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out opacity-50 cursor-not-allowed" 
+                    id="print-receipt-btn"
+                    disabled 
+                >
+                    Print Receipt
+                </button>
+            </div>
+        </form>
+        <div class="mt-6 text-center">
+            <a href="{{ url_for('sales') }}"
+               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+            >
+                Cancel
+            </a>
+        </div>
+    </div>
+
+    <!-- Receipt Print Area (Hidden by default, styled for print) -->
+    <div id="receipt-print-area" style="display: none; position: absolute; left: 0; top: 0;">
+        <h3 class="text-xl font-bold text-center mb-4">{{ pharmacy_info.name }}</h3>
+        <p class="text-center text-sm">{{ pharmacy_info.address }}</p>
+        <p class="text-center text-sm">{{ pharmacy_info.location }}</p>
+        <p class="text-center text-sm">Contact: {{ pharmacy_info.contact }}</p>
+        <hr class="my-4 border-gray-300">
+        <h4 class="text-lg font-semibold text-center mb-4">Sale Receipt</h4>
+        <p><strong>Reference No.:</strong> <span id="receipt-reference-number"></span></p> {# New field on receipt #}
+        <p><strong>Date:</strong> <span id="receipt-date"></span></p>
+        <p><strong>Product:</strong> <span id="receipt-product-name"></span></p>
+        <p><strong>Quantity:</strong> <span id="receipt-quantity"></span> <span id="receipt-unit-type-text"></span></p> {# Dynamic unit type text #}
+        <p><strong>Price per Unit:</strong> GH₵<span id="receipt-price-per-unit"></span></p> {# Dynamic unit price #}
+        <p class="text-lg font-bold"><strong>Total Amount:</strong> GH₵<span id="receipt-total-amount"></span></p>
+        <p><strong>Sales Person:</strong> <span id="receipt-sales-person"></span></p>
+        <p class="mt-4 text-center text-sm">Thank you for your purchase!</p>
+    </div>
+
+    <script>
+        const productSelect = document.getElementById('product_id');
+        const quantityInput = document.getElementById('quantity_sold');
+        const quantityLabel = document.getElementById('quantity_sold_label');
+        const availableStockSpan = document.getElementById('available_stock');
+        const availableTabsSpan = document.getElementById('available_tabs');
+        const unitPricePackSpan = document.getElementById('unit_price_pack');
+        const unitPriceTabSpan = document.getElementById('unit_price_tab');
+        const numberOfTabsDisplay = document.getElementById('number_of_tabs_display');
+        const totalAmountDisplay = document.getElementById('total_amount_display');
+        const productInfoDiv = document.getElementById('product-info');
+        const printReceiptBtn = document.getElementById('print-receipt-btn');
+        const salesPersonNameInput = document.getElementById('sales_person_name');
+        const saleUnitTypeRadios = document.querySelectorAll('input[name="sale_unit_type"]');
+
+        function updateProductDetails() {
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            if (selectedOption && selectedOption.value) {
+                const stock = parseFloat(selectedOption.getAttribute('data-stock'));
+                const pricePerPack = parseFloat(selectedOption.getAttribute('data-sale-price')).toFixed(2);
+                const numberOfTabs = parseInt(selectedOption.getAttribute('data-number-of-tabs'));
+                const unitPricePerTab = parseFloat(selectedOption.getAttribute('data-unit-price-per-tab')).toFixed(2);
+                
+                availableStockSpan.textContent = stock.toFixed(2);
+                availableTabsSpan.textContent = (stock * numberOfTabs).toFixed(0); // Display as whole number
+                unitPricePackSpan.textContent = pricePerPack;
+                unitPriceTabSpan.textContent = unitPricePerTab;
+                numberOfTabsDisplay.textContent = numberOfTabs;
+                productInfoDiv.classList.remove('hidden');
+
+                // Set max for quantity input based on selected unit type
+                updateQuantityInput(); 
+
+            } else {
+                availableStockSpan.textContent = '0.00';
+                availableTabsSpan.textContent = '0';
+                unitPricePackSpan.textContent = '0.00';
+                unitPriceTabSpan.textContent = '0.00';
+                numberOfTabsDisplay.textContent = 'N/A';
+                productInfoDiv.classList.add('hidden');
+                quantityInput.removeAttribute('max');
+                quantityInput.value = ''; // Clear quantity if no product selected
+            }
+            calculateTotal(); // Recalculate and update button state
+        }
+
+        function updateQuantityInput() {
+            const selectedUnitType = document.querySelector('input[name="sale_unit_type"]:checked').value;
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            const numberOfTabs = selectedOption ? parseInt(selectedOption.getAttribute('data-number-of-tabs')) : 1;
+            const currentStockPacks = selectedOption ? parseFloat(selectedOption.getAttribute('data-stock')) : 0;
+            
+            if (selectedUnitType === 'pack') {
+                quantityLabel.textContent = 'Quantity Sold (Packs)';
+                quantityInput.setAttribute('step', '0.01'); // Allow decimal for packs if needed (though usually whole)
+                quantityInput.setAttribute('max', currentStockPacks);
+            } else { // 'tab'
+                quantityLabel.textContent = 'Quantity Sold (Tabs)';
+                quantityInput.setAttribute('step', '1'); // Tabs are usually whole numbers
+                quantityInput.setAttribute('max', (currentStockPacks * numberOfTabs));
+            }
+            calculateTotal(); // Recalculate based on new unit type
+        }
+
+        function calculateTotal() {
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            const selectedUnitType = document.querySelector('input[name="sale_unit_type"]:checked').value;
+            let unitPrice = 0;
+
+            if (selectedOption && selectedOption.value) {
+                if (selectedUnitType === 'pack') {
+                    unitPrice = parseFloat(selectedOption.getAttribute('data-sale-price')) || 0;
+                } else { // 'tab'
+                    unitPrice = parseFloat(selectedOption.getAttribute('data-unit-price-per-tab')) || 0;
+                }
+            }
+
+            const total = (quantity * unitPrice).toFixed(2);
+            totalAmountDisplay.value = total;
+
+            // Enable print button only if a product is selected, quantity is positive, and sales person name is not empty
+            if (selectedOption && selectedOption.value && quantity > 0 && salesPersonNameInput.value.trim() !== '') {
+                printReceiptBtn.disabled = false;
+                printReceiptBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                printReceiptBtn.disabled = true;
+                printReceiptBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        function printReceipt() {
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const totalAmount = parseFloat(totalAmountDisplay.value) || 0;
+            const selectedUnitType = document.querySelector('input[name="sale_unit_type"]:checked').value;
+            let pricePerUnit = 0;
+            let unitTypeText = '';
+
+            if (selectedUnitType === 'pack') {
+                pricePerUnit = parseFloat(selectedOption.getAttribute('data-sale-price')) || 0;
+                unitTypeText = 'pack(s)';
+            } else { // 'tab'
+                pricePerUnit = parseFloat(selectedOption.getAttribute('data-unit-price-per-tab')) || 0;
+                unitTypeText = 'tab(s)';
+            }
+
+            // Retrieve reference number (from input field if editing, or empty if adding)
+            const referenceNumberDisplay = document.getElementById('reference_number_display');
+            const receiptReferenceNumber = referenceNumberDisplay ? referenceNumberDisplay.value : '';
+
+
+            if (!selectedOption || !selectedOption.value || quantity <= 0 || totalAmount <= 0 || salesPersonNameInput.value.trim() === '') {
+                showCustomAlert('Please complete the sale details and provide a sales person name before printing a receipt.');
+                return;
+            }
+
+            // Populate receipt data (for add and edit scenarios)
+            document.getElementById('receipt-reference-number').textContent = receiptReferenceNumber; // Populate ref number
+            document.getElementById('receipt-date').textContent = new Date().toLocaleString();
+            document.getElementById('receipt-product-name').textContent = selectedOption.textContent.split(' (Stock:')[0].trim();
+            document.getElementById('receipt-quantity').textContent = quantity.toFixed(2);
+            document.getElementById('receipt-unit-type-text').textContent = unitTypeText;
+            document.getElementById('receipt-price-per-unit').textContent = pricePerUnit.toFixed(2);
+            document.getElementById('receipt-total-amount').textContent = totalAmount.toFixed(2);
+            document.getElementById('receipt-sales-person').textContent = salesPersonNameInput.value; 
+
+            window.print();
+        }
+
+        function showCustomAlert(message) {
+            let alertDiv = document.getElementById('custom-alert');
+            if (!alertDiv) {
+                alertDiv = document.createElement('div');
+                alertDiv.id = 'custom-alert';
+                alertDiv.className = 'fixed top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform scale-0 opacity-0';
+                document.body.appendChild(alertDiv);
+            }
+            alertDiv.textContent = message;
+            alertDiv.classList.remove('scale-0', 'opacity-0');
+            alertDiv.classList.add('scale-100', 'opacity-100');
+            setTimeout(() => {
+                alertDiv.classList.remove('scale-100', 'opacity-100');
+                alertDiv.classList.add('scale-0', 'opacity-0');
+            }, 3000);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set initial state for quantity input based on default radio button
+            updateProductDetails(); 
+
+            // Add event listener to salesPersonNameInput and quantityInput to react to changes
+            salesPersonNameInput.addEventListener('input', calculateTotal);
+            quantityInput.addEventListener('input', calculateTotal);
+
+            // If in edit mode (sale object exists), ensure print button is enabled on load
+            {% if sale %}
+                // For edit mode, update the radio button selection based on loaded sale data
+                const initialSaleUnitType = "{{ sale.sale_unit_type }}";
+                const radioToSelect = document.querySelector(`input[name="sale_unit_type"][value="${initialSaleUnitType}"]`);
+                if (radioToSelect) {
+                    radioToSelect.checked = true;
+                }
+                updateQuantityInput(); // Call this to set the correct label and max for existing sale
+            {% endif %}
+            calculateTotal(); // Ensure total is calculated and button state is correct on load
+        });
+    </script>
+</body>
+</html>
