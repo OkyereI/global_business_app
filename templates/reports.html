@@ -1,191 +1,215 @@
-<!-- templates/reports.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reports & Statistics - Pharmaceutical Store</title>
+    <title>Reports & Statistics</title>
     <script src="https://cdn.tailwindcss.com"></script>
-           <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-   
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #edf2f7;
+            padding-bottom: 0.5rem;
+        }
+        .card {
+            background-color: #f7fafc;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            background-color: #edf2f7;
+            font-weight: 600;
+            color: #4a5568;
+            text-transform: uppercase;
+            font-size: 0.875rem;
+        }
+        tr:hover {
+            background-color: #f0f4f7;
+        }
+        .low-stock {
+            color: #ef4444; /* Red color for low stock */
+            font-weight: 600;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+        }
+        .btn-primary:hover {
+            background-color: #4f46e5;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
     </style>
 </head>
-<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-5xl">
-        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Reports & Statistics</h2>
+<body class="bg-gray-100 p-6">
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Reports & Statistics</h1>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="mb-4">
-                    {% for category, message in messages %}
-                        <div class="p-3 mb-2 rounded-md
-                            {% if category == 'success' %} bg-green-100 text-green-700
-                            {% elif category == 'danger' %} bg-red-100 text-red-700
-                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
-                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-        {% endwith %}
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <!-- Stocks Available -->
-            <div>
-                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Current Stock Levels</h3>
-                {% if stock_summary %}
-                <div class="overflow-x-auto rounded-lg shadow-md">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stock (Packs)</th> {# Clarified header #}
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            {% for item in stock_summary %}
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.product_name }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.current_stock }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-center text-gray-500">No inventory data to display stock levels.</p>
-                {% endif %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="card">
+                <h2 class="section-title">Overall Financial Summary</h2>
+                <p class="text-lg mb-2">Total Cost of Current Stock: <span class="font-bold text-gray-800">GH₵{{ "%.2f" % total_cost_of_stock }}</span></p>
+                <p class="text-lg">Total Potential Profit (on current stock): <span class="font-bold text-green-600">GH₵{{ "%.2f" % total_potential_profit }}</span></p>
             </div>
-
-            <!-- Sales per Day -->
-            <div>
-                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Day</h3>
-                {% if daily_sales %}
-                <div class="overflow-x-auto rounded-lg shadow-md">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            {% for date, total in daily_sales %}
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ date }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+            <div class="card flex flex-col justify-between">
+                <div>
+                    <h2 class="section-title">Send Daily Sales Report</h2>
+                    <p class="text-sm text-gray-600 mb-4">Send today's sales summary to the admin phone number via SMS.</p>
                 </div>
-                {% else %}
-                <p class="text-center text-gray-500">No daily sales data available.</p>
-                {% endif %}
+                <form action="{{ url_for('send_daily_sms_report') }}" method="POST">
+                    <button type="submit" class="btn btn-primary w-full">Send Daily SMS Report</button>
+                </form>
             </div>
-
-            <!-- Sales per Week -->
-            <div>
-                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Week</h3>
-                {% if weekly_sales %}
-                <div class="overflow-x-auto rounded-lg shadow-md">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year-Week</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            {% for week, total in weekly_sales %}
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ week }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-center text-gray-500">No weekly sales data available.</p>
-                {% endif %}
-            </div>
-
-            <!-- Sales per Month -->
-            <div>
-                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Month</h3>
-                {% if monthly_sales %}
-                <div class="overflow-x-auto rounded-lg shadow-md">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year-Month</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            {% for month, total in monthly_sales %}
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ month }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-center text-gray-500">No monthly sales data available.</p>
-                {% endif %}
-            </div>
-
-            {# Sales Per Personnel #}
-            <div>
-                <h3 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Sales Per Personnel</h3>
-                {% if sales_per_person %}
-                <div class="overflow-x-auto rounded-lg shadow-md">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Personnel</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sales (GH₵)</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            {% for person, total in sales_per_person %}
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ person }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f"|format(total) }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="text-center text-gray-500">No sales data by personnel available.</p>
-                {% endif %}
-            </div>
-
         </div>
 
-        <div class="mt-8 flex justify-center gap-4">
-            <a href="{{ url_for('dashboard') }}"
-               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
-            >
-                Back to Dashboard
-            </a>
-            {% if user_role == 'admin' %}
-            <form action="{{ url_for('send_daily_sms_report') }}" method="POST" class="inline-block">
-                <button type="submit"
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
-                >
-                    Send Daily Sales Report SMS
-                </button>
-            </form>
-            {% endif %}
+        <div class="mb-8">
+            <h2 class="section-title">Stock Summary</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product Name</th>
+                            <th>Current Stock (Packs)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in stock_summary %}
+                            <tr class="{% if item.current_stock < 30 %}low-stock{% endif %}">
+                                <td>{{ item.product_name }}</td>
+                                <td>{{ "%.2f" % item.current_stock }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div>
+                <h2 class="section-title">Daily Sales</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Total Sales (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for date, total in daily_sales %}
+                                <tr>
+                                    <td>{{ date }}</td>
+                                    <td>{{ "%.2f" % total }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="section-title">Weekly Sales</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Week</th>
+                                <th>Total Sales (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for week, total in weekly_sales %}
+                                <tr>
+                                    <td>{{ week }}</td>
+                                    <td>{{ "%.2f" % total }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-8">
+            <h2 class="section-title">Monthly Sales</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Total Sales (GH₵)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for month, total in monthly_sales %}
+                            <tr>
+                                <td>{{ month }}</td>
+                                <td>{{ "%.2f" % total }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div>
+            <h2 class="section-title">Sales Per Personnel</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Sales Person</th>
+                            <th>Total Sales (GH₵)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for person, total in sales_per_person %}
+                            <tr>
+                                <td>{{ person }}</td>
+                                <td>{{ "%.2f" % total }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </body>

@@ -24,13 +24,13 @@ SUPER_ADMIN_PASSWORD = os.getenv('SUPER_ADMIN_PASSWORD', 'superpassword')
 ARKESEL_API_KEY = os.getenv('ARKESEL_API_KEY', 'b0FrYkNNVlZGSmdrendVT3hwUHk') # Get API key from .env
 ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'PHARMACY') # Get Sender ID from .env
 ARKESEL_SMS_URL = "https://sms.arkesel.com/sms/api" 
-ADMIN_PHONE_NUMBER = os.getenv('ADMIN_PHONE_NUMBER', '233547096268') # Get admin phone from .env
+ADMIN_PHONE_NUMBER = os.getenv('ADMIN_PHONE_NUMBER', '233543169389') # Get admin phone from .env
 # Global pharmacy info (will be overridden by business-specific info if available)
 # These are fallbacks if business_info is not set in session
-ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME', 'Zion Business Center') 
-PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Kenyasi, Ghana')
-PHARMACY_ADDRESS = os.getenv('PHARMACY_ADDRESS', '123 Main St, Kenyasi')
-PHARMACY_CONTACT = os.getenv('PHARMACY_CONTACT', '+233547096268')
+ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME', 'My Pharmacy') 
+PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Accra, Ghana')
+PHARMACY_ADDRESS = os.getenv('PHARMACY_ADDRESS', '123 Main St, City')
+PHARMACY_CONTACT = os.getenv('PHARMACY_CONTACT', '+233543169389')
 
 
 # --- CSV Database Configuration ---
@@ -98,14 +98,15 @@ def init_business_data_files(business_id):
     business_dir = os.path.join(CSV_DIR, business_id)
     os.makedirs(business_dir, exist_ok=True)
 
-    # Added 'expiry_date' to inventory headers
+    # Added 'expiry_date', 'is_fixed_price', 'fixed_sale_price' to inventory headers
     _init_csv_file(os.path.join(business_dir, INVENTORY_FILE_NAME), 
                    ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
-                    'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 'expiry_date'])
+                    'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
+                    'expiry_date', 'is_fixed_price', 'fixed_sale_price'])
     _init_csv_file(os.path.join(business_dir, SALES_FILE_NAME), 
                    ['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
                     'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
-                    'sales_person_name', 'reference_number'])
+                    'sales_person_name', 'reference_number', 'transaction_id']) # Added transaction_id
     _init_csv_file(os.path.join(business_dir, USERS_FILE_NAME), 
                    ['username', 'password', 'role'])
 
@@ -123,6 +124,9 @@ def load_inventory_for_business(business_id):
         row['unit_price_per_tab'] = float(row.get('unit_price_per_tab', 0.0))
         row['item_type'] = row.get('item_type', 'Pharmacy') # Default for old entries
         row['expiry_date'] = row.get('expiry_date', '') # Load new expiry_date field
+        # Load new fixed price fields
+        row['is_fixed_price'] = row.get('is_fixed_price', 'False') == 'True' # Store as boolean
+        row['fixed_sale_price'] = float(row.get('fixed_sale_price', 0.0))
     return data
 
 def save_inventory_for_business(business_id, items):
@@ -136,11 +140,15 @@ def save_inventory_for_business(business_id, items):
         formatted_item['current_stock'] = f"{item['current_stock']:.2f}"
         formatted_item['number_of_tabs'] = str(item['number_of_tabs'])
         formatted_item['unit_price_per_tab'] = f"{item['unit_price_per_tab']:.2f}"
+        # Save new fixed price fields as strings
+        formatted_item['is_fixed_price'] = str(item['is_fixed_price'])
+        formatted_item['fixed_sale_price'] = f"{item['fixed_sale_price']:.2f}"
         formatted_items.append(formatted_item)
-    # Updated headers for saving, including 'expiry_date'
+    # Updated headers for saving, including 'expiry_date', 'is_fixed_price', 'fixed_sale_price'
     _save_csv_file(filepath, formatted_items, 
                    ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
-                    'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 'expiry_date'])
+                    'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
+                    'expiry_date', 'is_fixed_price', 'fixed_sale_price'])
 
 def load_sales_for_business(business_id):
     filepath = os.path.join(CSV_DIR, business_id, SALES_FILE_NAME)
@@ -152,6 +160,7 @@ def load_sales_for_business(business_id):
         row['total_amount'] = float(row.get('total_amount', 0.0))
         row['reference_number'] = row.get('reference_number', '') # Default for old entries
         row['sale_unit_type'] = row.get('sale_unit_type', 'pack') # Default for old entries
+        row['transaction_id'] = row.get('transaction_id', '') # Load new transaction_id
     return data
 
 def save_sales_for_business(business_id, sales_records):
@@ -167,7 +176,7 @@ def save_sales_for_business(business_id, sales_records):
     _save_csv_file(filepath, formatted_sales, 
                    ['id', 'product_id', 'product_name', 'quantity_sold', 'sale_unit_type', 
                     'price_at_time_per_unit_sold', 'total_amount', 'sale_date', 'customer_phone', 
-                    'sales_person_name', 'reference_number'])
+                    'sales_person_name', 'reference_number', 'transaction_id']) # Added transaction_id
 
 def load_users_for_business(business_id):
     filepath = os.path.join(CSV_DIR, business_id, USERS_FILE_NAME)
@@ -398,6 +407,9 @@ def edit_business(business_id):
     business_users = load_users_for_business(business_id)
     initial_admin = next((u for u in business_users if u['role'] == 'admin'), None)
 
+    # SECURITY WARNING: Displaying plain text passwords is a security risk.
+    # In a real application, passwords should be hashed and never displayed.
+    # This is implemented as per user request for demonstration purposes.
     if request.method == 'POST':
         new_business_name = request.form['business_name'].strip()
         new_business_address = request.form['business_address'].strip()
@@ -411,7 +423,6 @@ def edit_business(business_id):
             flash('Business with this name already exists.', 'danger')
             # Pass current form data back to template
             return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit["name"]}', business={
-                'id': business_id,
                 'name': new_business_name,
                 'address': new_business_address,
                 'location': new_business_location,
@@ -636,24 +647,32 @@ def add_inventory():
         number_of_tabs = int(request.form['number_of_tabs']) # Get number of tabs
         item_type = request.form['item_type'] # Get new item type
         expiry_date = request.form['expiry_date'].strip() # Get new expiry_date
+        is_fixed_price = 'is_fixed_price' in request.form # Checkbox value
+        fixed_sale_price = float(request.form['fixed_sale_price']) if is_fixed_price else 0.0
 
         if number_of_tabs <= 0:
             flash('Number of tabs must be greater than zero.', 'danger')
-            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=request.form, user_role=session.get('role'))
+            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=request.form, user_role=session.get('role'), item_types=['Pharmacy', 'Provision Store'])
 
-        # Calculate unit price per tab with conditional markup
-        cost_per_tab = purchase_price / number_of_tabs
+        sale_price = 0.0
         unit_price_per_tab_with_markup = 0.0
 
-        if item_type == 'Provision Store':
-            if purchase_price >= 1000:
-                unit_price_per_tab_with_markup = cost_per_tab * 1.10 # 10% markup
-            else:
-                unit_price_per_tab_with_markup = cost_per_tab * 1.08 # 8% markup
-        else: # Default to Pharmacy or any other type
-            unit_price_per_tab_with_markup = cost_per_tab * 1.30 # 30% markup (original logic)
-        
-        sale_price = unit_price_per_tab_with_markup * number_of_tabs 
+        if is_fixed_price:
+            sale_price = fixed_sale_price
+            # Calculate unit_price_per_tab based on fixed_sale_price for consistency in sales
+            unit_price_per_tab_with_markup = fixed_sale_price / number_of_tabs
+        else:
+            # Calculate unit price per tab with conditional markup (original logic)
+            cost_per_tab = purchase_price / number_of_tabs
+            if item_type == 'Provision Store':
+                if purchase_price >= 1000:
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.10 # 10% markup
+                else:
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.08 # 8% markup
+            else: # Default to Pharmacy or any other type
+                unit_price_per_tab_with_markup = cost_per_tab * 1.30 # 30% markup (original logic)
+            
+            sale_price = unit_price_per_tab_with_markup * number_of_tabs 
 
         # Check if the product already exists by name (case-insensitive)
         existing_item = next((item for item in items if item['product_name'].strip().lower() == product_name.lower()), None)
@@ -669,6 +688,8 @@ def add_inventory():
             existing_item['unit_price_per_tab'] = unit_price_per_tab_with_markup # Store new field
             existing_item['item_type'] = item_type # Update item type
             existing_item['expiry_date'] = expiry_date # Update expiry_date
+            existing_item['is_fixed_price'] = is_fixed_price # Update fixed price flag
+            existing_item['fixed_sale_price'] = fixed_sale_price # Update fixed sale price
             flash(f'Stock for {product_name} updated successfully! New stock: {existing_item["current_stock"]:.2f}', 'success')
         else:
             new_item = {
@@ -683,14 +704,33 @@ def add_inventory():
                 'number_of_tabs': number_of_tabs, # Add number of tabs
                 'unit_price_per_tab': unit_price_per_tab_with_markup, # Add new field
                 'item_type': item_type, # Add new item type
-                'expiry_date': expiry_date # Add new expiry_date
+                'expiry_date': expiry_date, # Add new expiry_date
+                'is_fixed_price': is_fixed_price, # Add fixed price flag
+                'fixed_sale_price': fixed_sale_price # Add fixed sale price
             }
             items.append(new_item)
             flash('Inventory item added successfully!', 'success')
         
         save_inventory_for_business(session['business_id'], items)
         return redirect(url_for('inventory'))
-    return render_template('add_edit_inventory.html', title='Add Inventory Item', item={}, user_role=session.get('role'))
+    
+    # For GET request (initial load of add inventory page)
+    # Provide default empty values to prevent UndefinedError in template
+    default_item = {
+        'product_name': '',
+        'category': '',
+        'purchase_price': 0.0,
+        'current_stock': 0.0,
+        'batch_number': '',
+        'number_of_tabs': 1,
+        'item_type': 'Pharmacy',
+        'expiry_date': '',
+        'is_fixed_price': False,
+        'fixed_sale_price': 0.0,
+        'sale_price': 0.0, # For calculated display
+        'unit_price_per_tab': 0.0 # For calculated display
+    }
+    return render_template('add_edit_inventory.html', title='Add Inventory Item', item=default_item, user_role=session.get('role'), item_types=['Pharmacy', 'Provision Store'])
 
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 def edit_inventory(item_id):
@@ -713,26 +753,33 @@ def edit_inventory(item_id):
         number_of_tabs = int(request.form['number_of_tabs']) # Get updated number of tabs
         item_type = request.form['item_type'] # Get new item type
         expiry_date = request.form['expiry_date'].strip() # Get new expiry_date
+        is_fixed_price = 'is_fixed_price' in request.form # Checkbox value
+        fixed_sale_price = float(request.form['fixed_sale_price']) if is_fixed_price else 0.0
+
 
         if number_of_tabs <= 0:
             flash('Number of tabs must be greater than zero.', 'danger')
             # Retain current item data to repopulate the form
-            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_to_edit, user_role=session.get('role'))
+            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_to_edit, user_role=session.get('role'), item_types=['Pharmacy', 'Provision Store'])
 
-
-        # Calculate unit price per tab with conditional markup
-        cost_per_tab = purchase_price / number_of_tabs
+        sale_price = 0.0
         unit_price_per_tab_with_markup = 0.0
 
-        if item_type == 'Provision Store':
-            if purchase_price >= 1000:
-                unit_price_per_tab_with_markup = cost_per_tab * 1.10 # 10% markup
-            else:
-                unit_price_per_tab_with_markup = cost_per_tab * 1.08 # 8% markup
-        else: # Default to Pharmacy or any other type
-            unit_price_per_tab_with_markup = cost_per_tab * 1.30 # 30% markup (original logic)
-        
-        sale_price = unit_price_per_tab_with_markup * number_of_tabs 
+        if is_fixed_price:
+            sale_price = fixed_sale_price
+            unit_price_per_tab_with_markup = fixed_sale_price / number_of_tabs
+        else:
+            # Calculate unit price per tab with conditional markup (original logic)
+            cost_per_tab = purchase_price / number_of_tabs
+            if item_type == 'Provision Store':
+                if purchase_price >= 1000:
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.10 # 10% markup
+                else:
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.08 # 8% markup
+            else: # Default to Pharmacy or any other type
+                unit_price_per_tab_with_markup = cost_per_tab * 1.30 # 30% markup (original logic)
+            
+            sale_price = unit_price_per_tab_with_markup * number_of_tabs 
         
         item_to_edit['purchase_price'] = purchase_price
         item_to_edit['sale_price'] = sale_price # Use calculated total sale price
@@ -743,11 +790,13 @@ def edit_inventory(item_id):
         item_to_edit['unit_price_per_tab'] = unit_price_per_tab_with_markup # Store new field
         item_to_edit['item_type'] = item_type # Update item type
         item_to_edit['expiry_date'] = expiry_date # Update expiry_date
+        item_to_edit['is_fixed_price'] = is_fixed_price # Update fixed price flag
+        item_to_edit['fixed_sale_price'] = fixed_sale_price # Update fixed sale price
         save_inventory_for_business(session['business_id'], items)
         flash('Inventory item updated successfully!', 'success')
         return redirect(url_for('inventory'))
 
-    return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_to_edit, user_role=session.get('role'))
+    return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_to_edit, user_role=session.get('role'), item_types=['Pharmacy', 'Provision Store'])
 
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory(item_id):
@@ -770,19 +819,41 @@ def delete_inventory(item_id):
 
 @app.route('/sales')
 def sales():
-    """Displays the list of sales records."""
+    """Displays the list of sales records. Groups by transaction_id for display."""
     if 'username' not in session or 'business_id' not in session:
         flash('Please log in and select a business to access this page.', 'warning')
         return redirect(url_for('login'))
     
     sales_records = load_sales_for_business(session['business_id'])
-    # Sort sales records by date in descending order
-    sales_records.sort(key=lambda x: datetime.strptime(x['sale_date'], '%Y-%m-%d %H:%M:%S'), reverse=True)
-    return render_template('sales_list.html', sales=sales_records, user_role=session.get('role'))
+    
+    # Group sales by transaction_id
+    transactions = {}
+    for sale in sales_records:
+        transaction_id = sale.get('transaction_id', 'N/A') # Use 'N/A' for old records without transaction_id
+        if transaction_id not in transactions:
+            transactions[transaction_id] = {
+                'id': transaction_id, # Use transaction_id as the primary ID for the group
+                'sale_date': sale['sale_date'],
+                'customer_phone': sale['customer_phone'],
+                'sales_person_name': sale['sales_person_name'],
+                'total_amount': 0.0,
+                'items': [],
+                'reference_number': sale['reference_number'] # Keep one reference number for the transaction
+            }
+        transactions[transaction_id]['items'].append(sale)
+        transactions[transaction_id]['total_amount'] += sale['total_amount']
+
+    # Convert dictionary to list and sort by date
+    sorted_transactions = sorted(list(transactions.values()), 
+                                 key=lambda x: datetime.strptime(x['sale_date'], '%Y-%m-%d %H:%M:%S'), 
+                                 reverse=True)
+
+    return render_template('sales_list.html', transactions=sorted_transactions, user_role=session.get('role'))
+
 
 @app.route('/sales/add', methods=['GET', 'POST'])
 def add_sale():
-    """Adds a new sales record. Accessible by Admin and Sales."""
+    """Adds a new sales record for multiple items. Accessible by Admin and Sales."""
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or 'business_id' not in session:
         flash('You do not have permission to add sales records.', 'danger')
         return redirect(url_for('sales'))
@@ -801,115 +872,163 @@ def add_sale():
 
     if request.method == 'POST':
         sales_records = load_sales_for_business(session['business_id'])
-        product_id = request.form['product_id']
-        quantity_sold_raw = float(request.form['quantity_sold']) # Read quantity as float
-        sale_unit_type = request.form['sale_unit_type'] # 'pack' or 'tab'
         customer_phone = request.form.get('customer_phone', '').strip()
         sales_person_name = request.form.get('sales_person_name', session.get('username', 'N/A')).strip()
+        transaction_id = str(uuid.uuid4()) # Unique ID for this entire transaction
+        overall_total_amount = 0.0
+        sold_items_details = [] # To store details for SMS receipt
 
+        product_ids = request.form.getlist('product_id[]')
+        quantities_sold_raw = request.form.getlist('quantity_sold[]')
+        sale_unit_types = request.form.getlist('sale_unit_type[]')
+        price_types = request.form.getlist('price_type[]') # New: 'internal_percentage' or 'custom_price'
+        custom_prices = request.form.getlist('custom_price[]') # New: Custom price input
 
-        # Find the product in inventory to get current stock and prices
-        product = next((item for item in inventory_items if item['id'] == product_id), None)
+        if not product_ids:
+            flash('Please add at least one product to the sale.', 'danger')
+            return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale={}, user_role=session.get('role'), pharmacy_info=pharmacy_info)
 
-        if not product:
-            flash('Selected product not found in inventory.', 'danger')
-            # For POST request, return request.form to pre-fill fields
-            form_data = request.form.to_dict()
-            form_data['quantity_sold'] = quantity_sold_raw # Ensure float value is passed back
-            return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale=form_data, user_role=session.get('role'), pharmacy_info=pharmacy_info)
+        for i in range(len(product_ids)):
+            product_id = product_ids[i]
+            quantity_sold_raw = float(quantities_sold_raw[i])
+            sale_unit_type = sale_unit_types[i]
+            price_type = price_types[i]
+            custom_price_str = custom_prices[i] if i < len(custom_prices) else '' # Ensure index is valid
 
-        current_stock_packs = product['current_stock']
-        number_of_tabs_per_pack = float(product['number_of_tabs']) # Cast to float for calculation
-        sale_price_per_pack = product['sale_price']
-        unit_price_per_tab = product['unit_price_per_tab']
+            product = next((item for item in inventory_items if item['id'] == product_id), None)
 
-        # Determine actual quantity for deduction and total amount calculation
-        quantity_to_deduct_packs = 0.0
-        total_amount_sold = 0.0
-        price_at_time_per_unit_sold = 0.0
-        display_unit_text = ""
-        quantity_for_record = 0.0
+            if not product:
+                flash(f'Product with ID {product_id} not found in inventory. Sale aborted for this item.', 'danger')
+                continue # Skip this item and continue with others
 
-        if sale_unit_type == 'tab':
-            # Selling by tabs
-            quantity_sold_tabs = quantity_sold_raw # quantity_sold_raw is number of tabs
-            available_tabs = current_stock_packs * number_of_tabs_per_pack
-
-            if quantity_sold_tabs <= 0:
-                flash('Quantity of tabs sold must be at least 1.', 'danger')
-                form_data = request.form.to_dict()
-                form_data['quantity_sold'] = quantity_sold_raw
-                return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale=form_data, user_role=session.get('role'), pharmacy_info=pharmacy_info)
-
-            if quantity_sold_tabs > available_tabs:
-                flash(f'Insufficient stock for {product["product_name"]}. Available: {available_tabs:.0f} tabs.', 'danger')
-                form_data = request.form.to_dict()
-                form_data['quantity_sold'] = quantity_sold_raw
-                return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale=form_data, user_role=session.get('role'), pharmacy_info=pharmacy_info)
+            current_stock_packs = product['current_stock']
+            number_of_tabs_per_pack = float(product['number_of_tabs'])
             
-            quantity_to_deduct_packs = quantity_sold_tabs / number_of_tabs_per_pack
-            total_amount_sold = quantity_sold_tabs * unit_price_per_tab
-            price_at_time_per_unit_sold = unit_price_per_tab
-            display_unit_text = "tab(s)"
-            quantity_for_record = quantity_sold_tabs # Store tabs for record if type is tab
-        else: # sale_unit_type == 'pack'
-            # Selling by packs
-            quantity_sold_packs = quantity_sold_raw # quantity_sold_raw is number of packs
+            price_at_time_per_unit_sold = 0.0
+            total_amount_item = 0.0
+            quantity_for_record = 0.0
+            quantity_to_deduct_packs = 0.0
+            display_unit_text = ""
 
-            if quantity_sold_packs <= 0:
-                flash('Quantity of packs sold must be at least 1.', 'danger')
-                form_data = request.form.to_dict()
-                form_data['quantity_sold'] = quantity_sold_raw
-                return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale=form_data, user_role=session.get('role'), pharmacy_info=pharmacy_info)
+            # Determine base price: Fixed price (if set) > Internal Percentage
+            base_sale_price_per_pack = product['sale_price'] # Default to calculated sale_price
+            base_unit_price_per_tab = product['unit_price_per_tab'] # Default to calculated unit_price_per_tab
 
-            if quantity_sold_packs > current_stock_packs:
-                flash(f'Insufficient stock for {product["product_name"]}. Available: {current_stock_packs:.2f} packs.', 'danger')
-                form_data = request.form.to_dict()
-                form_data['quantity_sold'] = quantity_sold_raw
-                return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale=form_data, user_role=session.get('role'), pharmacy_info=pharmacy_info)
+            if product.get('is_fixed_price'): # Check if fixed price is enabled for this product
+                base_sale_price_per_pack = product['fixed_sale_price']
+                base_unit_price_per_tab = product['fixed_sale_price'] / number_of_tabs_per_pack
+
+
+            # Now apply price_type and admin override
+            if session.get('role') == 'admin' and price_type == 'custom_price':
+                try:
+                    custom_price_value = float(custom_price_str)
+                    if custom_price_value <= 0:
+                        flash(f'Custom price for {product["product_name"]} must be positive. Using internal percentage.', 'warning')
+                        # Fallback to base price determined above
+                        if sale_unit_type == 'tab':
+                            price_at_time_per_unit_sold = base_unit_price_per_tab
+                        else: # pack
+                            price_at_time_per_unit_sold = base_sale_price_per_pack
+                    else:
+                        if sale_unit_type == 'tab':
+                            price_at_time_per_unit_sold = custom_price_value
+                        else: # pack
+                            price_at_time_per_unit_sold = custom_price_value # Admin sets pack price directly
+                except ValueError:
+                    flash(f'Invalid custom price for {product["product_name"]}. Using internal percentage.', 'warning')
+                    # Fallback to base price determined above
+                    if sale_unit_type == 'tab':
+                        price_at_time_per_unit_sold = base_unit_price_per_tab
+                    else: # pack
+                        price_at_time_per_unit_sold = base_sale_price_per_pack
+            else: # Use internal percentage (which now incorporates fixed price if applicable)
+                if sale_unit_type == 'tab':
+                    price_at_time_per_unit_sold = base_unit_price_per_tab
+                else: # pack
+                    price_at_time_per_unit_sold = base_sale_price_per_pack
+
+
+            if sale_unit_type == 'tab':
+                quantity_sold_tabs = quantity_sold_raw
+                available_tabs = current_stock_packs * number_of_tabs_per_pack
+
+                if quantity_sold_tabs <= 0:
+                    flash(f'Quantity of tabs sold for {product["product_name"]} must be at least 1. Skipping item.', 'danger')
+                    continue
+                if quantity_sold_tabs > available_tabs:
+                    flash(f'Insufficient stock for {product["product_name"]}. Available: {available_tabs:.0f} tabs. Skipping item.', 'danger')
+                    continue
+                
+                quantity_to_deduct_packs = quantity_sold_tabs / number_of_tabs_per_pack
+                total_amount_item = quantity_sold_tabs * price_at_time_per_unit_sold
+                display_unit_text = "tab(s)"
+                quantity_for_record = quantity_sold_tabs
+            else: # sale_unit_type == 'pack'
+                quantity_sold_packs = quantity_sold_raw
+
+                if quantity_sold_packs <= 0:
+                    flash(f'Quantity of packs sold for {product["product_name"]} must be at least 1. Skipping item.', 'danger')
+                    continue
+                if quantity_sold_packs > current_stock_packs:
+                    flash(f'Insufficient stock for {product["product_name"]}. Available: {current_stock_packs:.2f} packs. Skipping item.', 'danger')
+                    continue
+                
+                quantity_to_deduct_packs = quantity_sold_packs
+                total_amount_item = quantity_sold_packs * price_at_time_per_unit_sold
+                display_unit_text = "pack(s)"
+                quantity_for_record = quantity_sold_packs
+
+            # Update stock
+            product['current_stock'] = current_stock_packs - quantity_to_deduct_packs
             
-            quantity_to_deduct_packs = quantity_sold_packs
-            total_amount_sold = quantity_sold_packs * sale_price_per_pack
-            price_at_time_per_unit_sold = sale_price_per_pack
-            display_unit_text = "pack(s)"
-            quantity_for_record = quantity_sold_packs # Store packs for record if type is pack
+            new_sale_item = {
+                'id': str(uuid.uuid4()),
+                'reference_number': str(uuid.uuid4())[:8].upper(), # Individual reference for each item
+                'transaction_id': transaction_id, # Link all items in this transaction
+                'product_id': product_id,
+                'product_name': product['product_name'],
+                'quantity_sold': quantity_for_record,
+                'sale_unit_type': sale_unit_type,
+                'price_at_time_per_unit_sold': price_at_time_per_unit_sold,
+                'total_amount': total_amount_item,
+                'sale_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'customer_phone': customer_phone,
+                'sales_person_name': sales_person_name
+            }
+            sales_records.append(new_sale_item)
+            overall_total_amount += total_amount_item
+            sold_items_details.append(new_sale_item) # Add to list for SMS/receipt
 
+        if not sold_items_details:
+            flash('No items were successfully added to the sale.', 'danger')
+            return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale={}, user_role=session.get('role'), pharmacy_info=pharmacy_info)
 
-        # Update stock
-        product['current_stock'] = current_stock_packs - quantity_to_deduct_packs
         save_inventory_for_business(session['business_id'], inventory_items) # Save updated inventory
+        save_sales_for_business(session['business_id'], sales_records) # Save updated sales records
 
-        new_sale = {
-            'id': str(uuid.uuid4()),
-            'reference_number': str(uuid.uuid4())[:8].upper(), # Generate a short unique reference number
-            'product_id': product_id,
-            'product_name': product['product_name'],
-            'quantity_sold': quantity_for_record, # Store actual quantity sold in selected unit
-            'sale_unit_type': sale_unit_type, # Store 'pack' or 'tab'
-            'price_at_time_per_unit_sold': price_at_time_per_unit_sold, # Store price of that unit (tab or pack)
-            'total_amount': total_amount_sold,
-            'sale_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'customer_phone': customer_phone,
-            'sales_person_name': sales_person_name
-        }
-        sales_records.append(new_sale)
-        save_sales_for_business(session['business_id'], sales_records)
-        flash('Sale record added successfully and stock updated!', 'success')
+        flash('Sale record(s) added successfully and stock updated!', 'success')
 
-        # Send SMS receipt if phone number is provided and valid
+        # Send SMS receipt for the entire transaction
         if customer_phone:
-            # Get dynamic business name from session
             business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
             message = (
-                f"{business_name_for_sms} Receipt (Ref: {new_sale['reference_number']}):\n" 
-                f"Item: {product['product_name']}\n"
-                f"Qty: {quantity_for_record:.2f} {display_unit_text}\n"
-                f"Unit Price: GH₵{price_at_time_per_unit_sold:.2f} per {sale_unit_type}\n"
-                f"Total: GH₵{total_amount_sold:.2f}\n"
-                f"Date: {new_sale['sale_date']}\n\n"
-                f"Thank you for trading with us\n"
-                f"From: {business_name_for_sms}" # Use dynamic business name
+                f"{business_name_for_sms} Receipt (Trans ID: {transaction_id[:8].upper()}):\n"
+                f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Items:\n"
             )
+            for item in sold_items_details:
+                # Re-calculate display unit text for SMS based on actual sale unit type
+                item_display_unit_text = "tab(s)" if item['sale_unit_type'] == 'tab' else "pack(s)"
+                message += (
+                    f"- {item['product_name']} (Qty: {item['quantity_sold']:.2f} {item_display_unit_text}, "
+                    f"Unit Price: GH₵{item['price_at_time_per_unit_sold']:.2f}, "
+                    f"Total: GH₵{item['total_amount']:.2f})\n"
+                )
+            message += f"Grand Total: GH₵{overall_total_amount:.2f}\n\n"
+            message += f"Thank you for trading with us\n"
+            message += f"From: {business_name_for_sms}"
+
             sms_payload = {
                 'action': 'send-sms',
                 'api_key': ARKESEL_API_KEY,
@@ -926,32 +1045,57 @@ def add_sale():
                     except json.JSONDecodeError:
                         print(f"Arkesel SMS JSON Decode Error: {sms_response.text}")
                         flash(f'Failed to send SMS receipt to {customer_phone}. API returned non-JSON response.', 'warning')
-                        # It's important to still redirect even if SMS fails, so the sale is recorded
-                        return redirect(url_for('sales')) 
                 else:
                     print(f"Arkesel SMS API Error (Status {sms_response.status_code}): {sms_response.text}")
                     flash(f'Failed to send SMS receipt to {customer_phone}. API error.', 'warning')
-                    return redirect(url_for('sales'))
-
-                if sms_result and sms_result.get('status') == 'success':
-                    flash(f'SMS receipt sent to {customer_phone} successfully!', 'info')
-                else:
-                    print(f'Arkesel SMS Error: {sms_result.get("message", "Unknown error")}')
-                    flash(f'Failed to send SMS receipt to {customer_phone}. Error: {sms_result.get("message", "Unknown error")}', 'warning')
             except requests.exceptions.RequestException as e:
                 print(f'Network error sending SMS: {e}')
                 flash(f'Network error when trying to send SMS receipt.', 'warning')
 
-        return redirect(url_for('sales'))
-    
-    # Default values for initial GET request
+        # Pass the transaction details to the template for printing
+        # This will be a list of dictionaries, each representing a sold item
+        session['last_transaction_details'] = sold_items_details 
+        session['last_transaction_grand_total'] = overall_total_amount
+        session['last_transaction_id'] = transaction_id
+        session['last_transaction_customer_phone'] = customer_phone
+        session['last_transaction_sales_person'] = sales_person_name
+        session['last_transaction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        return redirect(url_for('add_sale', print_ready=True)) # Redirect to show print button
+
+    # For GET request (initial load or after print_ready redirect)
     default_sale = {
         'sales_person_name': session.get('username', 'N/A'),
-        'sale_unit_type': 'pack', # Default to 'pack'
-        'quantity_sold': '', # Ensure quantity field is empty initially
-        'reference_number': '' # Initialize for display (though it will be generated on POST)
+        'customer_phone': '',
     }
-    return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=available_inventory_items, sale=default_sale, user_role=session.get('role'), pharmacy_info=pharmacy_info)
+    
+    # If redirected from a successful sale for printing
+    print_ready_param = request.args.get('print_ready')
+    # Convert 'True' string to boolean True, otherwise False
+    print_ready = print_ready_param is not None and print_ready_param.lower() == 'true'
+
+    # Ensure these variables are always a list or appropriate default value
+    last_transaction_details = session.pop('last_transaction_details', [])
+    last_transaction_grand_total = session.pop('last_transaction_grand_total', 0.0)
+    last_transaction_id = session.pop('last_transaction_id', '')
+    last_transaction_customer_phone = session.pop('last_transaction_customer_phone', '')
+    last_transaction_sales_person = session.pop('last_transaction_sales_person', '')
+    last_transaction_date = session.pop('last_transaction_date', '')
+
+    return render_template('add_edit_sale.html', 
+                           title='Add Sale Record', 
+                           inventory_items=available_inventory_items, 
+                           sale=default_sale, 
+                           user_role=session.get('role'), 
+                           pharmacy_info=pharmacy_info,
+                           print_ready=print_ready,
+                           last_transaction_details=last_transaction_details,
+                           last_transaction_grand_total=last_transaction_grand_total,
+                           last_transaction_id=last_transaction_id,
+                           last_transaction_customer_phone=last_transaction_customer_phone,
+                           last_transaction_sales_person=last_transaction_sales_person,
+                           last_transaction_date=last_transaction_date
+                           )
 
 @app.route('/sales/edit/<sale_id>', methods=['GET', 'POST'])
 def edit_sale(sale_id):
@@ -984,12 +1128,17 @@ def edit_sale(sale_id):
         old_quantity_sold_record = sale_to_edit['quantity_sold']
         old_sale_unit_type = sale_to_edit['sale_unit_type']
 
-        new_quantity_sold_raw = float(request.form['quantity_sold'])
-        new_sale_unit_type = request.form['sale_unit_type']
+        # Correctly retrieve values as lists and take the first element
+        new_quantity_sold_raw = float(request.form.getlist('quantity_sold[]')[0])
+        new_sale_unit_type = request.form.getlist('sale_unit_type[]')[0]
         
-        product_id = request.form['product_id']
+        product_id = request.form.getlist('product_id[]')[0] # Get product_id from the list
         customer_phone = request.form.get('customer_phone', '').strip()
         sales_person_name = request.form.get('sales_person_name', sale_to_edit.get('sales_person_name', 'N/A')).strip()
+        
+        # Safely get price_type and custom_price, assuming they are also lists with one element
+        price_type = request.form.getlist('price_type[]')[0] if request.form.getlist('price_type[]') else 'internal_percentage'
+        custom_price_str = request.form.getlist('custom_price[]')[0] if request.form.getlist('custom_price[]') else ''
 
 
         product = next((item for item in inventory_items if item['id'] == product_id), None)
@@ -1003,8 +1152,49 @@ def edit_sale(sale_id):
 
         current_stock_packs = product['current_stock']
         number_of_tabs_per_pack = float(product['number_of_tabs']) # Cast to float for calculation
-        sale_price_per_pack = product['sale_price']
-        unit_price_per_tab = product['unit_price_per_tab']
+        
+        price_at_time_per_unit_sold = 0.0
+        display_unit_text = ""
+        new_quantity_for_record = 0.0
+
+        # Determine base price: Fixed price (if set) > Internal Percentage
+        base_sale_price_per_pack = product['sale_price'] # Default to calculated sale_price
+        base_unit_price_per_tab = product['unit_price_per_tab'] # Default to calculated unit_price_per_tab
+
+        if product.get('is_fixed_price'): # Check if fixed price is enabled for this product
+            base_sale_price_per_pack = product['fixed_sale_price']
+            base_unit_price_per_tab = product['fixed_sale_price'] / number_of_tabs_per_pack
+
+
+        # Now apply price_type and admin override
+        if session.get('role') == 'admin' and price_type == 'custom_price':
+            try:
+                custom_price_value = float(custom_price_str)
+                if custom_price_value <= 0:
+                    flash(f'Custom price for {product["product_name"]} must be positive. Using internal percentage.', 'warning')
+                    # Fallback to base price determined above
+                    if new_sale_unit_type == 'tab':
+                        price_at_time_per_unit_sold = base_unit_price_per_tab
+                    else: # pack
+                        price_at_time_per_unit_sold = base_sale_price_per_pack
+                else:
+                    if new_sale_unit_type == 'tab':
+                        price_at_time_per_unit_sold = custom_price_value
+                    else: # pack
+                        price_at_time_per_unit_sold = custom_price_value # Admin sets pack price directly
+            except ValueError:
+                flash(f'Invalid custom price for {product["product_name"]}. Using internal percentage.', 'warning')
+                # Fallback to base price determined above
+                if new_sale_unit_type == 'tab':
+                    price_at_time_per_unit_sold = base_unit_price_per_tab
+                else: # pack
+                    price_at_time_per_unit_sold = base_sale_price_per_pack
+        else: # Use internal percentage (which now incorporates fixed price if applicable)
+            if new_sale_unit_type == 'tab':
+                price_at_time_per_unit_sold = base_unit_price_per_tab
+            else: # pack
+                price_at_time_per_unit_sold = base_sale_price_per_pack
+
 
         # Convert old sale quantity to packs for stock reversal
         old_quantity_in_packs = 0.0
@@ -1014,12 +1204,8 @@ def edit_sale(sale_id):
             old_quantity_in_packs = old_quantity_sold_record
         
         # Calculate new quantities and total
-        quantity_to_deduct_packs = 0.0
         new_total_amount_sold = 0.0
-        new_price_at_time_per_unit_sold = 0.0
-        display_unit_text = ""
-        new_quantity_for_record = 0.0
-
+        
         if new_sale_unit_type == 'tab':
             new_quantity_sold_tabs = new_quantity_sold_raw
             if new_quantity_sold_tabs <= 0:
@@ -1030,8 +1216,7 @@ def edit_sale(sale_id):
                 return render_template('add_edit_sale.html', title='Edit Sale Record', sale=form_data, inventory_items=available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info)
 
             new_quantity_in_packs = new_quantity_sold_tabs / number_of_tabs_per_pack
-            new_total_amount_sold = new_quantity_sold_tabs * unit_price_per_tab
-            new_price_at_time_per_unit_sold = unit_price_per_tab
+            new_total_amount_sold = new_quantity_sold_tabs * price_at_time_per_unit_sold
             display_unit_text = "tab(s)"
             new_quantity_for_record = new_quantity_sold_tabs
         else: # new_sale_unit_type == 'pack'
@@ -1044,8 +1229,7 @@ def edit_sale(sale_id):
                 return render_template('add_edit_sale.html', title='Edit Sale Record', sale=form_data, inventory_items=available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info)
 
             new_quantity_in_packs = new_quantity_sold_packs
-            new_total_amount_sold = new_quantity_sold_packs * sale_price_per_pack
-            new_price_at_time_per_unit_sold = sale_price_per_pack
+            new_total_amount_sold = new_quantity_sold_packs * price_at_time_per_unit_sold
             display_unit_text = "pack(s)"
             new_quantity_for_record = new_quantity_sold_packs
 
@@ -1072,13 +1256,15 @@ def edit_sale(sale_id):
         sale_to_edit['product_name'] = product['product_name']
         sale_to_edit['quantity_sold'] = new_quantity_for_record
         sale_to_edit['sale_unit_type'] = new_sale_unit_type
-        sale_to_edit['price_at_time_per_unit_sold'] = new_price_at_time_per_unit_sold
+        sale_to_edit['price_at_time_per_unit_sold'] = price_at_time_per_unit_sold
         sale_to_edit['total_amount'] = new_total_amount_sold
         sale_to_edit['sale_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         sale_to_edit['customer_phone'] = customer_phone
         sale_to_edit['sales_person_name'] = sales_person_name 
-        # Preserve reference number on edit
+        # Preserve reference number and transaction_id on edit
         sale_to_edit['reference_number'] = sale_to_edit.get('reference_number', '')
+        sale_to_edit['transaction_id'] = sale_to_edit.get('transaction_id', '')
+
 
         save_sales_for_business(session['business_id'], sales_records)
         flash('Sale record updated successfully!', 'success')
@@ -1091,7 +1277,7 @@ def edit_sale(sale_id):
                 f"{business_name_for_sms} Receipt (Edited - Ref: {sale_to_edit['reference_number']}):\n" 
                 f"Item: {product['product_name']}\n"
                 f"Qty: {new_quantity_for_record:.2f} {display_unit_text}\n"
-                f"Unit Price: GH₵{new_price_at_time_per_unit_sold:.2f} per {new_sale_unit_type}\n"
+                f"Unit Price: GH₵{price_at_time_per_unit_sold:.2f} per {new_sale_unit_type}\n"
                 f"Total: GH₵{new_total_amount_sold:.2f}\n"
                 f"Date: {sale_to_edit['sale_date']}\n\n"
                 f"Thank you for trading with us\n"
@@ -1142,8 +1328,52 @@ def edit_sale(sale_id):
         sale_to_edit['quantity_sold'] = float(sale_to_edit.get('quantity_sold', 0.0))
     if 'reference_number' not in sale_to_edit: # Fallback for old records without explicit reference_number
         sale_to_edit['reference_number'] = ''
-    
-    return render_template('add_edit_sale.html', title='Edit Sale Record', sale=sale_to_edit, inventory_items=available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info)
+    if 'transaction_id' not in sale_to_edit: # Fallback for old records
+        sale_to_edit['transaction_id'] = ''
+
+    # For editing, we need to determine the price_type and custom_price based on the stored sale
+    # This is a simplification: if the stored price matches the calculated internal price, assume internal.
+    # Otherwise, assume it was a custom price. This might not be perfectly accurate if internal price changes.
+    product_for_edit = next((item for item in inventory_items if item['id'] == sale_to_edit['product_id']), None)
+    if product_for_edit:
+        calculated_internal_price = 0.0
+        # Determine base price considering fixed price
+        if product_for_edit.get('is_fixed_price'):
+            base_sale_price_per_pack = product_for_edit['fixed_sale_price']
+            base_unit_price_per_tab = product_for_edit['fixed_sale_price'] / product_for_edit['number_of_tabs']
+        else:
+            base_sale_price_per_pack = product_for_edit['sale_price']
+            base_unit_price_per_tab = product_for_edit['unit_price_per_tab']
+
+        if sale_to_edit['sale_unit_type'] == 'tab':
+            calculated_internal_price = base_unit_price_per_tab
+        else:
+            calculated_internal_price = base_sale_price_per_pack
+        
+        if abs(sale_to_edit['price_at_time_per_unit_sold'] - calculated_internal_price) < 0.001: # Use a small epsilon for float comparison
+            sale_to_edit['price_type'] = 'internal_percentage'
+            sale_to_edit['custom_price'] = ''
+        else:
+            sale_to_edit['price_type'] = 'custom_price'
+            sale_to_edit['custom_price'] = f"{sale_to_edit['price_at_time_per_unit_sold']:.2f}"
+    else:
+        sale_to_edit['price_type'] = 'internal_percentage'
+        sale_to_edit['custom_price'] = '' # Default if product not found
+
+    return render_template('add_edit_sale.html', 
+                           title='Edit Sale Record', 
+                           sale=sale_to_edit, 
+                           inventory_items=available_inventory_items, 
+                           user_role=session.get('role'), 
+                           pharmacy_info=pharmacy_info,
+                           print_ready=False, # Explicitly set to False for edit page
+                           last_transaction_details=[], # Explicitly set to empty list
+                           last_transaction_grand_total=0.0, # Explicitly set to 0.0
+                           last_transaction_id='', # Explicitly set to empty string
+                           last_transaction_customer_phone='', # Explicitly set to empty string
+                           last_transaction_sales_person='', # Explicitly set to empty string
+                           last_transaction_date='' # Explicitly set to empty string
+                           )
 
 
 @app.route('/sales/delete/<sale_id>')
@@ -1287,7 +1517,8 @@ def return_item():
             'total_amount': -returned_amount, # Store as negative amount
             'sale_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'customer_phone': original_sale.get('customer_phone', 'N/A'),
-            'sales_person_name': session.get('username', 'N/A') + " (Return)"
+            'sales_person_name': session.get('username', 'N/A') + " (Return)",
+            'transaction_id': original_sale.get('transaction_id', '') # Link to original transaction if available
         }
         sales_records.append(return_sale_record)
         save_sales_for_business(session['business_id'], sales_records)
@@ -1362,6 +1593,16 @@ def reports():
     monthly_sales = {}
     sales_per_person = {} # Dictionary to hold sales per personnel
 
+    # New calculations for total cost of stock and total potential profit
+    total_cost_of_stock = 0.0
+    total_potential_profit = 0.0
+
+    for item in inventory_items:
+        total_cost_of_stock += item['purchase_price'] * item['current_stock']
+        # Calculate potential profit based on sale_price (which incorporates fixed price or markup)
+        total_potential_profit += (item['sale_price'] - item['purchase_price']) * item['current_stock']
+
+
     for sale in sales_records:
         sale_date_obj = datetime.strptime(sale['sale_date'], '%Y-%m-%d %H:%M:%S')
         total_amount = float(sale['total_amount'])
@@ -1391,11 +1632,13 @@ def reports():
 
     return render_template(
         'reports.html',
-        stock_summary=stock_summary,
+        stock_summary=inventory_items, # Pass full item objects to allow checking current_stock for highlight
         daily_sales=sorted_daily_sales,
         weekly_sales=sorted_weekly_sales,
         monthly_sales=sorted_monthly_sales,
         sales_per_person=sorted_sales_per_person, # Pass sales per personnel to template
+        total_cost_of_stock=total_cost_of_stock, # New
+        total_potential_profit=total_potential_profit, # New
         user_role=session.get('role')
     )
 
