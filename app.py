@@ -1,6 +1,6 @@
 # app.py - Enhanced Flask Application for Pharmaceutical Store Administrator
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
 import csv
 import os
 import uuid
@@ -8,6 +8,7 @@ from datetime import datetime, date # Import date for daily reports
 import requests # Import the requests library for API calls
 from dotenv import load_dotenv # Import load_dotenv
 import json # Import json for specific error handling
+import io # Import io for in-memory CSV operations
 
 # Load environment variables from .env file
 load_dotenv()
@@ -513,6 +514,51 @@ def delete_business(business_id):
     else:
         flash('Business not found.', 'danger')
     return redirect(url_for('super_admin_dashboard'))
+
+@app.route('/super_admin/download_inventory/<business_id>')
+def download_inventory_csv(business_id):
+    """Allows super admin to download the inventory for a specific business as a CSV."""
+    if session.get('role') != 'super_admin':
+        flash('Access denied. Super Admin role required.', 'danger')
+        return redirect(url_for('login'))
+
+    businesses = load_businesses()
+    business = next((b for b in businesses if b['id'] == business_id), None)
+
+    if not business:
+        flash('Business not found.', 'danger')
+        return redirect(url_for('super_admin_dashboard'))
+
+    inventory_items = load_inventory_for_business(business_id)
+
+    # Create a CSV in memory
+    si = io.StringIO()
+    # Define headers explicitly, matching the order in save_inventory_for_business
+    headers = ['id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
+               'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
+               'expiry_date', 'is_fixed_price', 'fixed_sale_price']
+    
+    writer = csv.DictWriter(si, fieldnames=headers)
+    writer.writeheader()
+    
+    # Ensure all items have all keys, and convert booleans/floats to string for CSV
+    for item in inventory_items:
+        row_to_write = {key: str(item.get(key, '')) for key in headers}
+        # Format numeric fields to 2 decimal places for consistency in CSV
+        for num_key in ['purchase_price', 'sale_price', 'current_stock', 'unit_price_per_tab', 'fixed_sale_price']:
+            if num_key in item and item[num_key] is not None:
+                row_to_write[num_key] = f"{float(item[num_key]):.2f}"
+        # Convert boolean back to "True"/"False" string if needed (though str() handles it)
+        row_to_write['is_fixed_price'] = str(item.get('is_fixed_price', False))
+        
+        writer.writerow(row_to_write)
+
+    output = si.getvalue()
+    si.close()
+
+    response = Response(output, mimetype='text/csv')
+    response.headers["Content-Disposition"] = f"attachment; filename={business['name'].replace(' ', '_')}_inventory_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return response
 
 
 # --- Business User Management (Admin & Viewer Admin) ---
@@ -1582,10 +1628,8 @@ def reports():
     sales_records = load_sales_for_business(session['business_id'])
 
     # 1. Statistics of Stocks Available
-    stock_summary = [
-        {'product_name': item['product_name'], 'current_stock': f"{item['current_stock']:.2f}"}
-        for item in inventory_items
-    ]
+    # stock_summary is now the full list of inventory_items to allow checking current_stock for highlighting
+    stock_summary = inventory_items 
 
     # 2. Sales per Day, Week, Month
     daily_sales = {}
@@ -1632,7 +1676,7 @@ def reports():
 
     return render_template(
         'reports.html',
-        stock_summary=inventory_items, # Pass full item objects to allow checking current_stock for highlight
+        stock_summary=stock_summary, # Pass full item objects to allow checking current_stock for highlight
         daily_sales=sorted_daily_sales,
         weekly_sales=sorted_weekly_sales,
         monthly_sales=sorted_monthly_sales,

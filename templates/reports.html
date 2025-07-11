@@ -77,13 +77,50 @@
             background-color: #4f46e5;
             box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
         }
+        /* Styles for printing */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            .printable-content, .printable-content * {
+                visibility: visible;
+            }
+            .printable-content {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                padding: 1rem;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .container {
+                box-shadow: none;
+                margin: 0;
+                max-width: none;
+                padding: 0;
+            }
+            h1, h2 {
+                color: #000 !important;
+            }
+            table {
+                border: 1px solid #000;
+            }
+            th, td {
+                border: 1px solid #000;
+            }
+            .low-stock {
+                color: #ef4444 !important; /* Ensure red color persists in print */
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-6">
-    <div class="container">
+    <div class="container printable-content">
         <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Reports & Statistics</h1>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 no-print">
             <div class="card">
                 <h2 class="section-title">Overall Financial Summary</h2>
                 <p class="text-lg mb-2">Total Cost of Current Stock: <span class="font-bold text-gray-800">GH₵{{ "%.2f" % total_cost_of_stock }}</span></p>
@@ -210,6 +247,10 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <div class="flex justify-end mt-6 no-print">
+            <button onclick="window.print()" class="btn btn-primary">Print Report</button>
         </div>
     </div>
 </body>
