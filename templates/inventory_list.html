@@ -47,6 +47,28 @@
             {% endif %}
         {% endwith %}
 
+        <!-- Search Bar -->
+        <div class="mb-6">
+            <form action="{{ url_for('inventory') }}" method="GET" class="flex items-center space-x-2">
+                <input
+                    type="text"
+                    name="search"
+                    placeholder="Search by product name, category, or batch number..."
+                    value="{{ search_query }}"
+                    class="flex-grow px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                <button
+                    type="submit"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Search
+                </button>
+                {% if search_query %}
+                <a href="{{ url_for('inventory') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+
         {% if items %}
         <div class="overflow-x-auto rounded-lg shadow-md">
             <table class="min-w-full divide-y divide-gray-200">
@@ -106,7 +128,7 @@
             </table>
         </div>
         {% else %}
-        <p class="text-center text-gray-500 text-lg py-8">No inventory items found. Add some!</p>
+        <p class="text-center text-gray-500 text-lg py-8">No inventory items found. {% if search_query %}No items match your search "{{ search_query }}".{% else %}Add some!{% endif %}</p>
         {% endif %}
 
         <div class="mt-8 text-center">

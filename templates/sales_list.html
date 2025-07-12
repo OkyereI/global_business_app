@@ -47,9 +47,31 @@
             {% endif %}
         {% endwith %}
 
+        <!-- Search Bar -->
+        <div class="mb-6">
+            <form action="{{ url_for('sales') }}" method="GET" class="flex items-center space-x-2">
+                <input
+                    type="text"
+                    name="search"
+                    placeholder="Search by product, customer phone, sales person, or transaction ID..."
+                    value="{{ search_query }}"
+                    class="flex-grow px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                <button
+                    type="submit"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Search
+                </button>
+                {% if search_query %}
+                <a href="{{ url_for('sales') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+
         {% if transactions %}
             <div class="space-y-8 w-full">
-            {% for transaction in sorted_transactions %}
+            {% for transaction in transactions %} {# Use 'transactions' as it's already sorted in app.py #}
                 <div class="bg-gray-50 p-6 rounded-lg shadow-md border border-gray-200">
                     <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-200">
                         <div>
@@ -118,8 +140,11 @@
                 </div>
             {% endfor %}
             </div>
+            <div class="mt-8 p-4 bg-blue-50 rounded-lg shadow-md text-right">
+                <p class="text-xl font-bold text-blue-800">Total for Displayed Sales: GH₵{{ "%.2f" | format(total_displayed_sales) }}</p>
+            </div>
         {% else %}
-        <p class="text-center text-gray-500 text-lg py-8">No sales records found. Add some!</p>
+        <p class="text-center text-gray-500 text-lg py-8">No sales records found. {% if search_query %}No sales match your search "{{ search_query }}".{% else %}Add some!{% endif %}</p>
         {% endif %}
 
         <div class="mt-8 text-center">
