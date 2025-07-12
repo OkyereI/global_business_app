@@ -756,13 +756,29 @@ def add_inventory():
         number_of_tabs = int(request.form['number_of_tabs']) # Renamed to 'units' or 'pieces' for hardware
         item_type = request.form['item_type']
         expiry_date_str = request.form['expiry_date'].strip()
-        expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
+        
+        # Convert expiry_date_str to date object for validation and re-rendering
+        expiry_date_obj = None
+        if expiry_date_str:
+            try:
+                expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
+                # Prepare item_data_for_form with original string for re-rendering
+                item_data_for_form = {k: v for k, v in request.form.items()}
+                item_data_for_form['expiry_date'] = expiry_date_str # Keep original string for display
+                return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+
+
         is_fixed_price = 'is_fixed_price' in request.form
         fixed_sale_price = float(request.form['fixed_sale_price']) if is_fixed_price else 0.0
 
         if number_of_tabs <= 0:
             flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=request.form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+            # Prepare item_data_for_form with original string for re-rendering
+            item_data_for_form = {k: v for k, v in request.form.items()}
+            item_data_for_form['expiry_date'] = expiry_date_obj # Pass the date object
+            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
 
         sale_price = 0.0
         unit_price_per_tab_with_markup = 0.0
@@ -855,13 +871,29 @@ def edit_inventory(item_id):
         number_of_tabs = int(request.form['number_of_tabs'])
         item_type = request.form['item_type']
         expiry_date_str = request.form['expiry_date'].strip()
-        expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
+        
+        # Convert expiry_date_str to date object for validation and re-rendering
+        expiry_date_obj = None
+        if expiry_date_str:
+            try:
+                expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
+                # Prepare item_data_for_form with original string for re-rendering
+                item_data_for_form = {k: v for k, v in request.form.items()}
+                item_data_for_form['expiry_date'] = expiry_date_str # Keep original string for display
+                return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+
+
         is_fixed_price = 'is_fixed_price' in request.form
         fixed_sale_price = float(request.form['fixed_sale_price']) if is_fixed_price else 0.0
 
         if number_of_tabs <= 0:
             flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_to_edit, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+            # Prepare item_data_for_form with original string for re-rendering
+            item_data_for_form = {k: v for k, v in request.form.items()}
+            item_data_for_form['expiry_date'] = expiry_date_obj # Pass the date object
+            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
 
         sale_price = 0.0
         unit_price_per_tab_with_markup = 0.0
@@ -901,7 +933,7 @@ def edit_inventory(item_id):
         'purchase_price': item_to_edit.purchase_price, 'current_stock': item_to_edit.current_stock,
         'batch_number': item_to_edit.batch_number, 'number_of_tabs': item_to_edit.number_of_tabs,
         'item_type': item_to_edit.item_type,
-        'expiry_date': item_to_edit.expiry_date.strftime('%Y-%m-%d') if item_to_edit.expiry_date else '',
+        'expiry_date': item_to_edit.expiry_date, # Pass the date object directly
         'is_fixed_price': item_to_edit.is_fixed_price, 'fixed_sale_price': item_to_edit.fixed_sale_price,
         'sale_price': item_to_edit.sale_price, 'unit_price_per_tab': item_to_edit.unit_price_per_tab
     }
