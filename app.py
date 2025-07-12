@@ -77,6 +77,7 @@ class InventoryItem(db.Model):
     expiry_date = db.Column(db.Date)
     is_fixed_price = db.Column(db.Boolean, default=False)
     fixed_sale_price = db.Column(db.Float, default=0.0)
+    is_active = db.Column(db.Boolean, default=True, nullable=False) # New: For soft delete
 
     __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
 
@@ -457,7 +458,7 @@ def download_inventory_csv(business_id):
     headers = [
         'id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
         'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
-        'expiry_date', 'is_fixed_price', 'fixed_sale_price', 'business_id'
+        'expiry_date', 'is_fixed_price', 'fixed_sale_price', 'business_id', 'is_active'
     ]
     
     writer = csv.DictWriter(si, fieldnames=headers)
@@ -479,7 +480,8 @@ def download_inventory_csv(business_id):
             'expiry_date': item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '',
             'is_fixed_price': str(item.is_fixed_price),
             'fixed_sale_price': f"{item.fixed_sale_price:.2f}",
-            'business_id': item.business_id
+            'business_id': item.business_id,
+            'is_active': str(item.is_active)
         }
         writer.writerow(row_to_write)
 
@@ -529,6 +531,7 @@ def upload_inventory_csv(business_id):
                     expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
                     is_fixed_price = row.get('is_fixed_price', 'False').lower() == 'true'
                     fixed_sale_price = float(row.get('fixed_sale_price', 0.0))
+                    is_active = row.get('is_active', 'True').lower() == 'true' # Read is_active from CSV
 
                     if number_of_tabs <= 0:
                         errors.append(f"Skipping '{product_name}': 'Number of units/pieces per pack' must be greater than zero.")
@@ -568,6 +571,7 @@ def upload_inventory_csv(business_id):
                         existing_item.expiry_date = expiry_date_obj
                         existing_item.is_fixed_price = is_fixed_price
                         existing_item.fixed_sale_price = fixed_sale_price
+                        existing_item.is_active = is_active # Update is_active
                         updated_count += 1
                     else:
                         # Add new item
@@ -585,7 +589,8 @@ def upload_inventory_csv(business_id):
                             item_type=item_type,
                             expiry_date=expiry_date_obj,
                             is_fixed_price=is_fixed_price,
-                            fixed_sale_price=fixed_sale_price
+                            fixed_sale_price=fixed_sale_price,
+                            is_active=is_active # Set is_active for new item
                         )
                         db.session.add(new_item)
                         added_count += 1
@@ -700,7 +705,8 @@ def inventory():
     business_id = get_current_business_id()
     search_query = request.args.get('search', '').strip()
 
-    items_query = InventoryItem.query.filter_by(business_id=business_id)
+    # Only retrieve active inventory items by default
+    items_query = InventoryItem.query.filter_by(business_id=business_id, is_active=True)
 
     if search_query:
         items_query = items_query.filter(
@@ -791,6 +797,7 @@ def add_inventory():
             existing_item.expiry_date = expiry_date_obj
             existing_item.is_fixed_price = is_fixed_price
             existing_item.fixed_sale_price = fixed_sale_price
+            existing_item.is_active = True # Ensure item is active if stock is added
             db.session.commit()
             flash(f'Stock for {product_name} updated successfully! New stock: {existing_item.current_stock:.2f}', 'success')
         else:
@@ -808,7 +815,8 @@ def add_inventory():
                 item_type=item_type,
                 expiry_date=expiry_date_obj,
                 is_fixed_price=is_fixed_price,
-                fixed_sale_price=fixed_sale_price
+                fixed_sale_price=fixed_sale_price,
+                is_active=True # New items are active
             )
             db.session.add(new_item)
             db.session.commit()
@@ -908,9 +916,17 @@ def delete_inventory(item_id):
     business_id = get_current_business_id()
     item_to_delete = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
     
-    db.session.delete(item_to_delete)
-    db.session.commit()
-    flash('Inventory item deleted successfully!', 'success')
+    # Instead of deleting, mark as inactive (soft delete)
+    if SaleRecord.query.filter_by(product_id=item_id).first():
+        item_to_delete.is_active = False
+        db.session.commit()
+        flash(f'Inventory item "{item_to_delete.product_name}" marked as inactive because it has associated sales records. It will no longer appear in active inventory lists.', 'info')
+    else:
+        # If no sales records, proceed with hard delete (optional, but cleaner for truly unused items)
+        db.session.delete(item_to_delete)
+        db.session.commit()
+        flash(f'Inventory item "{item_to_delete.product_name}" deleted permanently.', 'success')
+    
     return redirect(url_for('inventory'))
 
 # --- Daily Sales Management Routes ---
@@ -1005,7 +1021,8 @@ def add_sale():
         return redirect(url_for('sales'))
     
     business_id = get_current_business_id()
-    inventory_items = InventoryItem.query.filter_by(business_id=business_id).filter(InventoryItem.current_stock > 0).all()
+    # Only show active inventory items for sale
+    inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True).filter(InventoryItem.current_stock > 0).all()
 
     pharmacy_info = session.get('business_info', {
         'name': ENTERPRISE_NAME,
@@ -1042,6 +1059,11 @@ def add_sale():
 
             if not product:
                 flash(f'Product with ID {product_id} not found in inventory. Sale aborted for this item.', 'danger')
+                continue
+            
+            # Check if the product is active before allowing sale
+            if not product.is_active:
+                flash(f'Product "{product.product_name}" is inactive and cannot be sold.', 'danger')
                 continue
 
             current_stock_packs = product.current_stock
@@ -1220,7 +1242,7 @@ def edit_sale(sale_id):
         flash('Associated product not found in inventory. Cannot edit sale.', 'danger')
         return redirect(url_for('sales'))
 
-    available_inventory_items = InventoryItem.query.filter_by(business_id=business_id).all()
+    available_inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all() # Only show active items
 
     pharmacy_info = session.get('business_info', {
         'name': ENTERPRISE_NAME,
@@ -1247,6 +1269,12 @@ def edit_sale(sale_id):
         if not product_updated:
             flash('Selected product not found in inventory.', 'danger')
             return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
+        
+        # Check if the product is active before allowing edit
+        if not product_updated.is_active:
+            flash(f'Product "{product_updated.product_name}" is inactive and cannot be edited in sales.', 'danger')
+            return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
+
 
         current_stock_packs = product_updated.current_stock
         number_of_tabs_per_pack = float(product_updated.number_of_tabs)
@@ -1586,7 +1614,9 @@ def reports():
     total_cost_of_stock = 0.0
     total_potential_profit = 0.0
 
-    for item in inventory_items:
+    # Only consider active inventory items for stock cost/profit calculations
+    active_inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
+    for item in active_inventory_items:
         total_cost_of_stock += item.purchase_price * item.current_stock
         total_potential_profit += (item.sale_price - item.purchase_price) * item.current_stock
 
@@ -1866,7 +1896,7 @@ def add_future_order():
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
-    inventory_items = InventoryItem.query.filter_by(business_id=business_id, item_type='Hardware Material').all()
+    inventory_items = InventoryItem.query.filter_by(business_id=business_id, item_type='Hardware Material', is_active=True).all() # Only active items
 
     if request.method == 'POST':
         customer_name = request.form['customer_name'].strip()
@@ -1897,6 +1927,10 @@ def add_future_order():
                 flash(f'Product with ID {product_id} not found in inventory. Skipping item.', 'warning')
                 continue
             
+            if not product.is_active: # Ensure product is active for future order
+                flash(f'Product "{product.product_name}" is inactive and cannot be included in a future order.', 'danger')
+                continue
+
             if quantity <= 0:
                 flash(f'Quantity for {product.product_name} must be positive. Skipping item.', 'warning')
                 continue
@@ -1964,6 +1998,11 @@ def collect_future_order(order_id):
         if not product:
             errors.append(f"Product {item_data['product_name']} not found in inventory. Stock not deducted for this item.")
             continue
+        
+        if not product.is_active: # Ensure product is active before collection
+            errors.append(f"Product '{product.product_name}' is inactive and cannot be collected.")
+            continue
+
 
         quantity_to_deduct_packs = item_data['quantity'] / product.number_of_tabs if item_data['unit_type'] == 'tab' else item_data['quantity']
 
@@ -2022,10 +2061,10 @@ def future_order_payment(order_id):
         flash('This order has already been collected and paid for.', 'warning')
         return redirect(url_for('future_orders'))
     
-    if order.remaining_balance > 0:
-        flash(f'Cannot collect order with outstanding balance: GH₵{order.remaining_balance:.2f}. Please settle balance first.', 'danger')
-        return render_template('future_order_payment.html', order=order, user_role=session.get('role'))
-        
+    if order.remaining_balance <= 0: # Check if balance is already zero or less
+        flash('This order has no outstanding balance.', 'warning')
+        return redirect(url_for('future_orders'))
+
     if request.method == 'POST':
         amount_paid = float(request.form['amount_paid'])
         if amount_paid <= 0:
