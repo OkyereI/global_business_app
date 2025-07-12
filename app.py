@@ -84,6 +84,7 @@ class InventoryItem(db.Model):
     def __repr__(self):
         return f'<InventoryItem {self.product_name} (Stock: {self.current_stock})>'
 
+
 class SaleRecord(db.Model):
     __tablename__ = 'sales_records'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -1619,19 +1620,60 @@ def reports():
         return redirect(url_for('login'))
 
     business_id = get_current_business_id()
-    inventory_items = InventoryItem.query.filter_by(business_id=business_id).all()
+
+    # Fetch inventory items as dictionaries directly from the query
+    # This bypasses potential issues with SQLAlchemy's instance state management
+    inventory_items_raw = db.session.query(
+        InventoryItem.id,
+        InventoryItem.product_name,
+        InventoryItem.category,
+        InventoryItem.purchase_price,
+        InventoryItem.sale_price,
+        InventoryItem.current_stock,
+        InventoryItem.last_updated,
+        InventoryItem.batch_number,
+        InventoryItem.number_of_tabs,
+        InventoryItem.unit_price_per_tab,
+        InventoryItem.item_type,
+        InventoryItem.expiry_date,
+        InventoryItem.is_fixed_price,
+        InventoryItem.fixed_sale_price,
+        InventoryItem.is_active
+    ).filter_by(business_id=business_id).all()
+
+    # Convert query results (tuples/rows) to dictionaries
+    inventory_items = []
+    for item_tuple in inventory_items_raw:
+        item_dict = {
+            'id': item_tuple[0],
+            'product_name': item_tuple[1],
+            'category': item_tuple[2],
+            'purchase_price': item_tuple[3],
+            'sale_price': item_tuple[4],
+            'current_stock': item_tuple[5],
+            'last_updated': item_tuple[6],
+            'batch_number': item_tuple[7],
+            'number_of_tabs': item_tuple[8],
+            'unit_price_per_tab': item_tuple[9],
+            'item_type': item_tuple[10],
+            'expiry_date': item_tuple[11],
+            'is_fixed_price': item_tuple[12],
+            'fixed_sale_price': item_tuple[13],
+            'is_active': item_tuple[14]
+        }
+        inventory_items.append(item_dict)
+
     sales_records = SaleRecord.query.filter_by(business_id=business_id).all()
 
     # Prepare stock summary with expiry warnings
     stock_summary_with_expiry = []
     today = date.today()
-    for item in inventory_items:
-        item_dict = item.__dict__
-        item_dict.pop('_sa_instance_state', None) # Remove SQLAlchemy internal state
-        
+    for item_dict in inventory_items: # Iterate over the dictionaries now
         item_dict['expires_soon'] = False
-        if item.expiry_date:
-            time_to_expiry = item.expiry_date - today
+        expiry_date_obj = item_dict['expiry_date'] # This is already a date object from the query result
+
+        if expiry_date_obj:
+            time_to_expiry = expiry_date_obj - today
             if time_to_expiry.days <= 180 and time_to_expiry.days >= 0: # Within 6 months and not expired
                 item_dict['expires_soon'] = True
             elif time_to_expiry.days < 0: # Already expired
@@ -1647,10 +1689,11 @@ def reports():
     total_potential_profit = 0.0
 
     # Only consider active inventory items for stock cost/profit calculations
-    active_inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
-    for item in active_inventory_items:
-        total_cost_of_stock += item.purchase_price * item.current_stock
-        total_potential_profit += (item.sale_price - item.purchase_price) * item.current_stock
+    active_inventory_items_for_calc = [item for item in inventory_items if item['is_active']]
+
+    for item in active_inventory_items_for_calc:
+        total_cost_of_stock += item['purchase_price'] * item['current_stock']
+        total_potential_profit += (item['sale_price'] - item['purchase_price']) * item['current_stock']
 
 
     for sale in sales_records:
