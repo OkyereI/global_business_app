@@ -13,7 +13,7 @@
             color: #333;
         }
         .container {
-            max-width: 800px;
+            max-width: 600px;
             margin: 2rem auto;
             padding: 1.5rem;
             background-color: #ffffff;
@@ -104,49 +104,31 @@
         {% endwith %}
 
         <form method="POST" action="" class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="form-group">
-                    <label for="business_name" class="block text-sm">Business Name</label>
-                    <input type="text" id="business_name" name="business_name" class="form-control mt-1" value="{{ business.name if business else '' }}" required>
-                </div>
-                <div class="form-group">
-                    <label for="business_type" class="block text-sm">Business Type</label>
-                    <select id="business_type" name="business_type" class="form-control mt-1" required>
-                        {% for type_option in business_types %}
-                            <option value="{{ type_option }}" {% if business.type == type_option %}selected{% endif %}>{{ type_option }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="business_address" class="block text-sm">Address</label>
-                    <input type="text" id="business_address" name="business_address" class="form-control mt-1" value="{{ business.address if business else '' }}">
-                </div>
-                <div class="form-group">
-                    <label for="business_location" class="block text-sm">Location</label>
-                    <input type="text" id="business_location" name="business_location" class="form-control mt-1" value="{{ business.location if business else '' }}">
-                </div>
-                <div class="form-group">
-                    <label for="business_contact" class="block text-sm">Contact Phone</label>
-                    <input type="text" id="business_contact" name="business_contact" class="form-control mt-1" value="{{ business.contact if business else '' }}">
-                </div>
+            <div class="form-group">
+                <label for="name" class="block text-sm">Company Name</label>
+                <input type="text" id="name" name="name" class="form-control mt-1" value="{{ company.name if company else '' }}" required>
             </div>
-
-            <h2 class="text-xl font-semibold text-gray-700 mt-6 mb-4 border-b pb-2">Initial Admin User</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="form-group">
-                    <label for="initial_admin_username" class="block text-sm">Username</label>
-                    <input type="text" id="initial_admin_username" name="initial_admin_username" class="form-control mt-1" value="{{ business.initial_admin_username if business else '' }}" required>
-                </div>
-                <div class="form-group">
-                    <label for="initial_admin_password" class="block text-sm">Password</label>
-                    <input type="password" id="initial_admin_password" name="initial_admin_password" class="form-control mt-1" value="{{ business.initial_admin_password if business else '' }}" required>
-                </div>
+            <div class="form-group">
+                <label for="contact_person" class="block text-sm">Contact Person</label>
+                <input type="text" id="contact_person" name="contact_person" class="form-control mt-1" value="{{ company.contact_person if company else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="phone" class="block text-sm">Phone</label>
+                <input type="text" id="phone" name="phone" class="form-control mt-1" value="{{ company.phone if company else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="email" class="block text-sm">Email</label>
+                <input type="email" id="email" name="email" class="form-control mt-1" value="{{ company.email if company else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="address" class="block text-sm">Address</label>
+                <textarea id="address" name="address" rows="3" class="form-control mt-1">{{ company.address if company else '' }}</textarea>
             </div>
 
             <div class="flex justify-end space-x-4 mt-6">
-                <a href="{{ url_for('super_admin_dashboard') }}" class="btn btn-secondary">Cancel</a>
+                <a href="{{ url_for('companies') }}" class="btn btn-secondary">Cancel</a>
                 <button type="submit" class="btn btn-primary">
-                    {{ 'Add Business' if title == 'Add New Business' else 'Update Business' }}
+                    {{ 'Add Company' if title == 'Add New Company' else 'Update Company' }}
                 </button>
             </div>
         </form>

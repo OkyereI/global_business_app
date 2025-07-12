@@ -4,31 +4,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales List</title>
+    <title>Sales Records - Pharmaceutical Store</title>
     <script src="https://cdn.tailwindcss.com"></script>
-              <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-   
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .expired-row {
+            background-color: #fee2e2; /* Red-100 */
+            color: #dc2626; /* Red-700 */
+        }
+        .expires-soon-row {
+            background-color: #fffbeb; /* Yellow-100 */
+            color: #d97706; /* Yellow-700 */
+        }
     </style>
 </head>
 <body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-6xl">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-7xl">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold text-gray-800">Sales List</h2>
+            <h2 class="text-3xl font-bold text-gray-800">Sales Records</h2>
             {% if user_role in ['admin', 'sales'] %}
             <a href="{{ url_for('add_sale') }}"
                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
             >
-                Record New Sale
+                Add New Sale
             </a>
             {% endif %}
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="mb-4 w-full">
+                <div class="mb-4">
                     {% for category, message in messages %}
                         <div class="p-3 mb-2 rounded-md
                             {% if category == 'success' %} bg-green-100 text-green-700
@@ -43,51 +48,78 @@
         {% endwith %}
 
         {% if transactions %}
-        <div class="overflow-x-auto rounded-lg shadow-md w-full">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction ID</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Phone</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Person</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Sold</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount (GH₵)</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for transaction in transactions %}
-                    <tr class="bg-gray-50"> <!-- Highlight transaction row -->
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{{ transaction.id[:8].upper() }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{{ transaction.sale_date }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ transaction.customer_phone if transaction.customer_phone else 'N/A' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ transaction.sales_person_name }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                            <ul class="list-disc pl-5">
-                                {% for item in transaction['items'] %} {# Changed from transaction.items to transaction['items'] #}
-                                    <li>{{ item.product_name }} ({{ '%.2f' | format(item.quantity_sold) }} {{ item.sale_unit_type }}s) @ GH₵{{ '%.2f' | format(item.price_at_time_per_unit_sold) }}</li>
+            <div class="space-y-8 w-full">
+            {% for transaction in sorted_transactions %}
+                <div class="bg-gray-50 p-6 rounded-lg shadow-md border border-gray-200">
+                    <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-200">
+                        <div>
+                            <h3 class="text-xl font-semibold text-gray-800">Transaction ID: {{ transaction.id }}</h3>
+                            <p class="text-sm text-gray-600">Date: {{ transaction.sale_date }}</p>
+                            <p class="text-sm text-gray-600">Sales Person: {{ transaction.sales_person_name }}</p>
+                            <p class="text-sm text-gray-600">Customer Phone: {{ transaction.customer_phone if transaction.customer_phone else 'N/A' }}</p>
+                            <p class="text-sm text-gray-600">Reference: {{ transaction.reference_number if transaction.reference_number else 'N/A' }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-bold text-green-700">Total: GH₵{{ "%.2f" | format(transaction.total_amount) }}</p>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-lg shadow-sm">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Type</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry Date</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% for sale_item in transaction.items %}
+                                <tr class="
+                                    {% if sale_item.expires_soon == 'Expired' %} expired-row
+                                    {% elif sale_item.expires_soon %} expires-soon-row
+                                    {% endif %}
+                                ">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ sale_item.product_name }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f" | format(sale_item.quantity_sold) }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ sale_item.sale_unit_type }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">GH₵{{ "%.2f" | format(sale_item.price_at_time_per_unit_sold) }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">GH₵{{ "%.2f" | format(sale_item.total_amount) }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {% if sale_item.expiry_date %}{{ sale_item.expiry_date.strftime('%Y-%m-%d') }}{% else %}N/A{% endif %}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold">
+                                        {% if sale_item.expires_soon == 'Expired' %}
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Expired</span>
+                                        {% elif sale_item.expires_soon %}
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Expires Soon</span>
+                                        {% else %}
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Good</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        {% if user_role in ['admin', 'sales'] %}
+                                            <a href="{{ url_for('edit_sale', sale_id=sale_item.id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
+                                            <a href="{{ url_for('delete_sale', sale_id=sale_item.id) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to delete this sale record?');">Delete</a>
+                                        {% else %}
+                                            <span class="text-gray-400">No Actions</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
                                 {% endfor %}
-                            </ul>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">GH₵{{ '%.2f' | format(transaction.total_amount) }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            {% if user_role in ['admin', 'sales'] %}
-                                {% for item in transaction['items'] %} {# Changed from transaction.items to transaction['items'] #}
-                                    <a href="{{ url_for('edit_sale', sale_id=item.id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit Item ({{ item.product_name }})</a><br>
-                                    <a href="{{ url_for('delete_sale', sale_id=item.id) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to delete this sale item ({{ item.product_name }})? This will adjust stock.');">Delete Item ({{ item.product_name }})</a><br>
-                                {% endfor %}
-                            {% else %}
-                                <span class="text-gray-400">No Actions</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            {% endfor %}
+            </div>
         {% else %}
-        <p class="text-center text-gray-500 text-lg py-8">No sales records found. Record your first sale!</p>
+        <p class="text-center text-gray-500 text-lg py-8">No sales records found. Add some!</p>
         {% endif %}
 
         <div class="mt-8 text-center">

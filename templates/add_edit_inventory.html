@@ -129,7 +129,7 @@
                     <input type="text" id="batch_number" name="batch_number" class="form-control mt-1" value="{{ item.batch_number if item else '' }}">
                 </div>
                 <div class="form-group">
-                    <label for="number_of_tabs" class="block text-sm">Number of Tabs per Pack</label>
+                    <label for="number_of_tabs" class="block text-sm">Number of {{ 'Pieces' if business_type == 'Hardware' else 'Tabs' }} per Pack</label>
                     <input type="number" id="number_of_tabs" name="number_of_tabs" class="form-control mt-1" min="1" value="{{ item.number_of_tabs if item else 1 }}" required>
                 </div>
                 <div class="form-group">
@@ -142,7 +142,7 @@
                 </div>
                 <div class="form-group">
                     <label for="expiry_date" class="block text-sm">Expiry Date</label>
-                    <input type="date" id="expiry_date" name="expiry_date" class="form-control mt-1" value="{{ item.expiry_date if item else '' }}">
+                    <input type="date" id="expiry_date" name="expiry_date" class="form-control mt-1" value="{{ item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '' }}">
                 </div>
             </div>
 
@@ -154,7 +154,7 @@
             <div id="fixed_price_group" class="form-group {% if not item.is_fixed_price %}hidden{% endif %}">
                 <label for="fixed_sale_price" class="block text-sm">Fixed Sale Price (Per Pack, GH₵)</label>
                 <input type="number" id="fixed_sale_price" name="fixed_sale_price" class="form-control mt-1" step="0.01" min="0" value="{{ '%.2f' % item.fixed_sale_price if item.fixed_sale_price is not none else '' }}">
-                <p class="text-xs text-gray-500 mt-1">If set, the price per tab will be automatically calculated based on this fixed pack price.</p>
+                <p class="text-xs text-gray-500 mt-1">If set, the price per {{ 'piece' if business_type == 'Hardware' else 'tab' }} will be automatically calculated based on this fixed pack price.</p>
             </div>
 
             <div id="calculated_prices_group" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 {% if item.is_fixed_price %}hidden{% endif %}">
@@ -163,7 +163,7 @@
                     <input type="text" id="sale_price" name="sale_price" class="form-control mt-1" value="{{ '%.2f' % item.sale_price if item.sale_price is not none else '' }}" readonly>
                 </div>
                 <div class="form-group">
-                    <label for="unit_price_per_tab" class="block text-sm">Calculated Unit Price (Per Tab)</label>
+                    <label for="unit_price_per_tab" class="block text-sm">Calculated Unit Price (Per {{ 'Piece' if business_type == 'Hardware' else 'Tab' }})</label>
                     <input type="text" id="unit_price_per_tab" name="unit_price_per_tab" class="form-control mt-1" value="{{ '%.2f' % item.unit_price_per_tab if item.unit_price_per_tab is not none else '' }}" readonly>
                 </div>
             </div>
@@ -188,6 +188,7 @@
             const fixedPriceGroup = document.getElementById('fixed_price_group');
             const fixedSalePriceInput = document.getElementById('fixed_sale_price');
             const calculatedPricesGroup = document.getElementById('calculated_prices_group');
+            const businessType = "{{ business_type }}"; // Get business type from Jinja context
 
             function calculatePrices() {
                 const purchasePrice = parseFloat(purchasePriceInput.value);
@@ -201,14 +202,12 @@
                 }
 
                 if (isFixedPriceCheckbox.checked) {
-                    // If fixed price is checked, hide calculated fields and show fixed price input
                     calculatedPricesGroup.classList.add('hidden');
                     fixedPriceGroup.classList.remove('hidden');
                     fixedSalePriceInput.setAttribute('required', 'true');
                     salePriceInput.removeAttribute('required');
                     unitPricePerTabInput.removeAttribute('required');
 
-                    // If a fixed price is entered, update the read-only calculated fields for display consistency
                     const enteredFixedPrice = parseFloat(fixedSalePriceInput.value);
                     if (!isNaN(enteredFixedPrice) && enteredFixedPrice >= 0) {
                         salePriceInput.value = enteredFixedPrice.toFixed(2);
@@ -219,32 +218,37 @@
                     }
 
                 } else {
-                    // If fixed price is NOT checked, show calculated fields and calculate
                     calculatedPricesGroup.classList.remove('hidden');
                     fixedPriceGroup.classList.add('hidden');
                     fixedSalePriceInput.removeAttribute('required');
-                    fixedSalePriceInput.value = ''; // Clear fixed price when not used
+                    fixedSalePriceInput.value = '';
                     salePriceInput.setAttribute('required', 'true');
                     unitPricePerTabInput.setAttribute('required', 'true');
 
-                    const costPerTab = purchasePrice / numberOfTabs;
-                    let unitPricePerTabWithMarkup = 0;
+                    const costPerUnit = purchasePrice / numberOfTabs;
+                    let unitPriceWithMarkup = 0;
 
                     if (itemType === 'Provision Store') {
-                        if (purchasePrice >= 1000) {
-                            unitPricePerTabWithMarkup = costPerTab * 1.10; // 10% markup
-                        } else {
-                            unitPricePerTabWithMarkup = costPerTab * 1.08; // 8% markup
-                        }
-                    } else { // Default to Pharmacy or any other type
-                        unitPricePerTabWithMarkup = costPerTab * 1.10; // 10% markup
+                        unitPriceWithMarkup = costPerUnit * (purchasePrice >= 1000 ? 1.10 : 1.08);
+                    } else if (itemType === 'Hardware Material') { // New markup for Hardware
+                        unitPriceWithMarkup = costPerUnit * 1.15; // Example: 15% markup
+                    } else { // Default to Pharmacy
+                        unitPriceWithMarkup = costPerUnit * 1.30;
                     }
 
-                    const calculatedSalePrice = unitPricePerTabWithMarkup * numberOfTabs;
+                    const calculatedSalePrice = unitPriceWithMarkup * numberOfTabs;
 
                     salePriceInput.value = calculatedSalePrice.toFixed(2);
-                    unitPricePerTabInput.value = unitPricePerTabWithMarkup.toFixed(2);
+                    unitPricePerTabInput.value = unitPriceWithMarkup.toFixed(2);
                 }
+            }
+
+            // Update labels based on business type
+            function updateLabels() {
+                const unitLabel = businessType === 'Hardware' ? 'Pieces' : 'Tabs';
+                document.querySelector('label[for="number_of_tabs"]').textContent = `Number of ${unitLabel} per Pack`;
+                document.querySelector('label[for="unit_price_per_tab"]').textContent = `Calculated Unit Price (Per ${unitLabel.slice(0, -1)})`; // Remove 's'
+                document.querySelector('#fixed_price_group p').textContent = `If set, the price per ${unitLabel.slice(0, -1)} will be automatically calculated based on this fixed pack price.`;
             }
 
             // Attach event listeners
@@ -252,10 +256,10 @@
             numberOfTabsInput.addEventListener('input', calculatePrices);
             itemTypeSelect.addEventListener('change', calculatePrices);
             isFixedPriceCheckbox.addEventListener('change', calculatePrices);
-            fixedSalePriceInput.addEventListener('input', calculatePrices); // Recalculate when fixed price changes
+            fixedSalePriceInput.addEventListener('input', calculatePrices);
 
-
-            // Initial calculation on page load
+            // Initial calls on page load
+            updateLabels();
             calculatePrices();
         });
     </script>

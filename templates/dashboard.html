@@ -1,15 +1,11 @@
-<!-- templates/dashboard.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Pharmaceutical Store</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-   
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -21,7 +17,7 @@
     <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl text-center">
         <h2 class="text-4xl font-extrabold text-gray-800 mb-6">Welcome to the Dashboard, {{ username }}!</h2>
         {% if business_name %}
-            <p class="text-gray-700 text-xl font-semibold mb-4">Business: {{ business_name }}</p>
+            <p class="text-gray-700 text-xl font-semibold mb-4">Business: {{ business_name }} ({{ business_type | title }})</p>
         {% endif %}
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -40,7 +36,7 @@
             {% endif %}
         {% endwith %}
 
-        <p class="text-gray-600 text-lg mb-10">Manage your pharmaceutical store operations with ease.</p>
+        <p class="text-gray-600 text-lg mb-10">Manage your {{ business_type | lower }} store operations with ease.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
             {# Inventory Link - Visible to admin and viewer_admin #}
@@ -90,6 +86,31 @@
                 <span class="text-xl font-semibold">Manage Users</span>
             </a>
             {% endif %}
+
+            {# NEW: Company Management Link - Visible to admin for Hardware businesses #}
+            {% if user_role == 'admin' and business_type == 'Hardware' %}
+            <a href="{{ url_for('companies') }}"
+               class="flex flex-col items-center justify-center p-6 bg-orange-600 text-white rounded-lg shadow-md hover:bg-orange-700 transition duration-300 ease-in-out transform hover:scale-105"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm12 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm12 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                </svg>
+                <span class="text-xl font-semibold">Manage Companies</span>
+            </a>
+            {% endif %}
+
+            {# NEW: Future Orders/Layaway Link - Visible to admin/sales for Hardware businesses #}
+            {% if user_role in ['admin', 'sales'] and business_type == 'Hardware' %}
+            <a href="{{ url_for('future_orders') }}"
+               class="flex flex-col items-center justify-center p-6 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700 transition duration-300 ease-in-out transform hover:scale-105"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zm3-11h.01M12 11h.01M15 11h.01M8 15h.01M12 15h.01M15 15h.01"/>
+                </svg>
+                <span class="text-xl font-semibold">Future Orders / Layaway</span>
+            </a>
+            {% endif %}
+
         </div>
 
         <div class="flex justify-center space-x-4">
@@ -105,11 +126,5 @@
             </a>
         </div>
     </div>
-     <footer class="bg-gray-800 text-white py-8 px-4 mt-auto">
-        <div class="container mx-auto text-center p">
-            <p>&copy; Zion Global Business. All rights reserved.</p>
-            <p>contact:0547096268</p>
-        </div>
-    </footer>
 </body>
 </html>

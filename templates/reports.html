@@ -1,256 +1,173 @@
+<!-- templates/reports.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reports & Statistics</title>
+    <title>Reports & Statistics - Pharmaceutical Store</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f4f7f6;
-            color: #333;
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .expired-row {
+            background-color: #fee2e2; /* Red-100 */
+            color: #dc2626; /* Red-700 */
         }
-        .container {
-            max-width: 900px;
-            margin: 2rem auto;
-            padding: 1.5rem;
-            background-color: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-        }
-        .section-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #4a5568;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid #edf2f7;
-            padding-bottom: 0.5rem;
-        }
-        .card {
-            background-color: #f7fafc;
-            border-radius: 8px;
-            padding: 1rem;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        }
-        .table-container {
-            overflow-x: auto;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-        th, td {
-            padding: 0.75rem;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        th {
-            background-color: #edf2f7;
-            font-weight: 600;
-            color: #4a5568;
-            text-transform: uppercase;
-            font-size: 0.875rem;
-        }
-        tr:hover {
-            background-color: #f0f4f7;
-        }
-        .low-stock {
-            color: #ef4444; /* Red color for low stock */
-            font-weight: 600;
-        }
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease-in-out;
-        }
-        .btn-primary {
-            background-color: #6366f1;
-            color: white;
-            border: none;
-        }
-        .btn-primary:hover {
-            background-color: #4f46e5;
-            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
-        }
-        /* Styles for printing */
-        @media print {
-            body * {
-                visibility: hidden;
-            }
-            .printable-content, .printable-content * {
-                visibility: visible;
-            }
-            .printable-content {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-                padding: 1rem;
-            }
-            .no-print {
-                display: none !important;
-            }
-            .container {
-                box-shadow: none;
-                margin: 0;
-                max-width: none;
-                padding: 0;
-            }
-            h1, h2 {
-                color: #000 !important;
-            }
-            table {
-                border: 1px solid #000;
-            }
-            th, td {
-                border: 1px solid #000;
-            }
-            .low-stock {
-                color: #ef4444 !important; /* Ensure red color persists in print */
-            }
+        .expires-soon-row {
+            background-color: #fffbeb; /* Yellow-100 */
+            color: #d97706; /* Yellow-700 */
         }
     </style>
 </head>
-<body class="bg-gray-100 p-6">
-    <div class="container printable-content">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Reports & Statistics</h1>
+<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-7xl">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Reports & Statistics</h2>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 no-print">
-            <div class="card">
-                <h2 class="section-title">Overall Financial Summary</h2>
-                <p class="text-lg mb-2">Total Cost of Current Stock: <span class="font-bold text-gray-800">GH₵{{ "%.2f" % total_cost_of_stock }}</span></p>
-                <p class="text-lg">Total Potential Profit (on current stock): <span class="font-bold text-green-600">GH₵{{ "%.2f" % total_potential_profit }}</span></p>
-            </div>
-            <div class="card flex flex-col justify-between">
-                <div>
-                    <h2 class="section-title">Send Daily Sales Report</h2>
-                    <p class="text-sm text-gray-600 mb-4">Send today's sales summary to the admin phone number via SMS.</p>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
                 </div>
-                <form action="{{ url_for('send_daily_sms_report') }}" method="POST">
-                    <button type="submit" class="btn btn-primary w-full">Send Daily SMS Report</button>
-                </form>
-            </div>
-        </div>
+            {% endif %}
+        {% endwith %}
 
-        <div class="mb-8">
-            <h2 class="section-title">Stock Summary</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
+        <!-- Stock Summary Section -->
+        <div class="mb-8 p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
+            <h3 class="text-2xl font-semibold text-gray-800 mb-4">Current Stock Summary</h3>
+            <div class="overflow-x-auto rounded-lg shadow-sm">
+                {% if stock_summary %}
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100">
                         <tr>
-                            <th>Product Name</th>
-                            <th>Current Stock (Packs)</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stock (Packs)</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units per Pack</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Type</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry Date</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="bg-white divide-y divide-gray-200">
                         {% for item in stock_summary %}
-                            <tr class="{% if item.current_stock < 30 %}low-stock{% endif %}">
-                                <td>{{ item.product_name }}</td>
-                                <td>{{ "%.2f" % item.current_stock }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div>
-                <h2 class="section-title">Daily Sales</h2>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Total Sales (GH₵)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for date, total in daily_sales %}
-                                <tr>
-                                    <td>{{ date }}</td>
-                                    <td>{{ "%.2f" % total }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div>
-                <h2 class="section-title">Weekly Sales</h2>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Week</th>
-                                <th>Total Sales (GH₵)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for week, total in weekly_sales %}
-                                <tr>
-                                    <td>{{ week }}</td>
-                                    <td>{{ "%.2f" % total }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <div class="mb-8">
-            <h2 class="section-title">Monthly Sales</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Month</th>
-                            <th>Total Sales (GH₵)</th>
+                        <tr class="
+                            {% if item.expires_soon == 'Expired' %} expired-row
+                            {% elif item.expires_soon %} expires-soon-row
+                            {% endif %}
+                        ">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.product_name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.category }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f" | format(item.current_stock) }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.number_of_tabs }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.item_type }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {% if item.expiry_date %}{{ item.expiry_date.strftime('%Y-%m-%d') }}{% else %}N/A{% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold">
+                                {% if item.expires_soon == 'Expired' %}
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Expired</span>
+                                {% elif item.expires_soon %}
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Expires Soon</span>
+                                {% else %}
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Good</span>
+                                {% endif %}
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        {% for month, total in monthly_sales %}
-                            <tr>
-                                <td>{{ month }}</td>
-                                <td>{{ "%.2f" % total }}</td>
-                            </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+                {% else %}
+                <p class="text-center text-gray-500 text-lg py-8">No inventory items to display.</p>
+                {% endif %}
+            </div>
+            <div class="mt-6 text-right text-gray-700">
+                <p class="font-semibold">Total Cost of Current Stock: GH₵{{ "%.2f" | format(total_cost_of_stock) }}</p>
+                <p class="font-semibold">Total Potential Profit from Current Stock: GH₵{{ "%.2f" | format(total_potential_profit) }}</p>
             </div>
         </div>
 
-        <div>
-            <h2 class="section-title">Sales Per Personnel</h2>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Sales Person</th>
-                            <th>Total Sales (GH₵)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for person, total in sales_per_person %}
-                            <tr>
-                                <td>{{ person }}</td>
-                                <td>{{ "%.2f" % total }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <!-- Sales Statistics Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Daily Sales</h3>
+                {% if daily_sales %}
+                <ul class="list-disc list-inside space-y-2">
+                    {% for date, total in daily_sales %}
+                        <li class="text-gray-700">{{ date }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-gray-500">No daily sales data.</p>
+                {% endif %}
+            </div>
+
+            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Weekly Sales</h3>
+                {% if weekly_sales %}
+                <ul class="list-disc list-inside space-y-2">
+                    {% for week, total in weekly_sales %}
+                        <li class="text-gray-700">{{ week }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-gray-500">No weekly sales data.</p>
+                {% endif %}
+            </div>
+
+            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Monthly Sales</h3>
+                {% if monthly_sales %}
+                <ul class="list-disc list-inside space-y-2">
+                    {% for month, total in monthly_sales %}
+                        <li class="text-gray-700">{{ month }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-gray-500">No monthly sales data.</p>
+                {% endif %}
+            </div>
+
+            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Sales Per Person</h3>
+                {% if sales_per_person %}
+                <ul class="list-disc list-inside space-y-2">
+                    {% for person, total in sales_per_person %}
+                        <li class="text-gray-700">{{ person }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-gray-500">No sales person data.</p>
+                {% endif %}
             </div>
         </div>
 
-        <div class="flex justify-end mt-6 no-print">
-            <button onclick="window.print()" class="btn btn-primary">Print Report</button>
+        <!-- Send Daily SMS Report Button (Admin only) -->
+        {% if user_role == 'admin' %}
+        <div class="mt-8 text-center">
+            <form action="{{ url_for('send_daily_sms_report') }}" method="POST">
+                <button
+                    type="submit"
+                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Send Daily Sales SMS Report to Admin
+                </button>
+            </form>
+        </div>
+        {% endif %}
+
+        <div class="mt-8 text-center">
+            <a href="{{ url_for('dashboard') }}"
+               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+            >
+                Back to Dashboard
+            </a>
         </div>
     </div>
 </body>
