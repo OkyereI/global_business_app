@@ -23,6 +23,11 @@
         <div class="flex justify-between items-center mb-6 no-print">
             <h2 class="text-3xl font-bold text-gray-800">Super Admin Dashboard</h2>
             <div class="flex space-x-4">
+                <a href="{{ url_for('dashboard') }}"
+                   class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
+                >
+                    Dashboard
+                </a>
                 <a href="{{ url_for('add_business') }}"
                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
                 >
