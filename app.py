@@ -748,6 +748,16 @@ def add_inventory():
     else: # Pharmacy or others
         item_types_options = ['Pharmacy', 'Provision Store']
 
+    # Get other businesses of the same type for import functionality
+    other_businesses = []
+    if session.get('role') == 'admin':
+        current_business = Business.query.get(business_id)
+        if current_business:
+            other_businesses = Business.query.filter(
+                Business.type == current_business.type,
+                Business.id != current_business.id
+            ).all()
+
     if request.method == 'POST':
         product_name = request.form['product_name'].strip()
         category = request.form['category'].strip()
@@ -768,7 +778,7 @@ def add_inventory():
                 # Prepare item_data_for_form with original string for re-rendering
                 item_data_for_form = {k: v for k, v in request.form.items()}
                 item_data_for_form['expiry_date'] = expiry_date_str # Keep original string for display
-                return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+                return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type, other_businesses=other_businesses)
 
 
         is_fixed_price = 'is_fixed_price' in request.form
@@ -779,7 +789,7 @@ def add_inventory():
             # Prepare item_data_for_form with original string for re-rendering
             item_data_for_form = {k: v for k, v in request.form.items()}
             item_data_for_form['expiry_date'] = expiry_date_obj # Pass the date object
-            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type, other_businesses=other_businesses)
 
         sale_price = 0.0
         unit_price_per_tab_with_markup = 0.0
@@ -846,7 +856,7 @@ def add_inventory():
         'batch_number': '', 'number_of_tabs': 1, 'item_type': item_types_options[0], 'expiry_date': '',
         'is_fixed_price': False, 'fixed_sale_price': 0.0, 'sale_price': 0.0, 'unit_price_per_tab': 0.0
     }
-    return render_template('add_edit_inventory.html', title='Add Inventory Item', item=default_item, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+    return render_template('add_edit_inventory.html', title='Add Inventory Item', item=default_item, user_role=session.get('role'), item_types=item_types_options, business_type=business_type, other_businesses=other_businesses)
 
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 def edit_inventory(item_id):
@@ -864,6 +874,16 @@ def edit_inventory(item_id):
         item_types_options = ['Provision Store']
     else:
         item_types_options = ['Pharmacy', 'Provision Store']
+
+    # Get other businesses of the same type for import functionality (even on edit page, for consistency)
+    other_businesses = []
+    if session.get('role') == 'admin':
+        current_business = Business.query.get(business_id)
+        if current_business:
+            other_businesses = Business.query.filter(
+                Business.type == current_business.type,
+                Business.id != current_business.id
+            ).all()
 
     if request.method == 'POST':
         item_to_edit.product_name = request.form['product_name'].strip()
@@ -883,7 +903,7 @@ def edit_inventory(item_id):
                 # Prepare item_data_for_form with original string for re-rendering
                 item_data_for_form = {k: v for k, v in request.form.items()}
                 item_data_for_form['expiry_date'] = expiry_date_str # Keep original string for display
-                return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+                return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type, other_businesses=other_businesses)
 
 
         is_fixed_price = 'is_fixed_price' in request.form
@@ -894,7 +914,7 @@ def edit_inventory(item_id):
             # Prepare item_data_for_form with original string for re-rendering
             item_data_for_form = {k: v for k, v in request.form.items()}
             item_data_for_form['expiry_date'] = expiry_date_obj # Pass the date object
-            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type, other_businesses=other_businesses)
 
         sale_price = 0.0
         unit_price_per_tab_with_markup = 0.0
@@ -938,7 +958,261 @@ def edit_inventory(item_id):
         'is_fixed_price': item_to_edit.is_fixed_price, 'fixed_sale_price': item_to_edit.fixed_sale_price,
         'sale_price': item_to_edit.sale_price, 'unit_price_per_tab': item_to_edit.unit_price_per_tab
     }
-    return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type)
+    return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form, user_role=session.get('role'), item_types=item_types_options, business_type=business_type, other_businesses=other_businesses)
+
+# New route for admin to download inventory CSV for their business
+@app.route('/inventory/download_csv')
+def download_inventory_for_business():
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to download inventory.', 'danger')
+        return redirect(url_for('inventory'))
+
+    business_id = get_current_business_id()
+    business = Business.query.get_or_404(business_id)
+    inventory_items = InventoryItem.query.filter_by(business_id=business.id).all()
+
+    si = io.StringIO()
+    headers = [
+        'id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
+        'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
+        'expiry_date', 'is_fixed_price', 'fixed_sale_price', 'business_id', 'is_active'
+    ]
+    
+    writer = csv.DictWriter(si, fieldnames=headers)
+    writer.writeheader()
+    
+    for item in inventory_items:
+        row_to_write = {
+            'id': item.id,
+            'product_name': item.product_name,
+            'category': item.category,
+            'purchase_price': f"{item.purchase_price:.2f}",
+            'sale_price': f"{item.sale_price:.2f}",
+            'current_stock': f"{item.current_stock:.2f}",
+            'last_updated': item.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
+            'batch_number': item.batch_number,
+            'number_of_tabs': item.number_of_tabs,
+            'unit_price_per_tab': f"{item.unit_price_per_tab:.2f}",
+            'item_type': item.item_type,
+            'expiry_date': item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '',
+            'is_fixed_price': str(item.is_fixed_price),
+            'fixed_sale_price': f"{item.fixed_sale_price:.2f}",
+            'business_id': item.business_id,
+            'is_active': str(item.is_active)
+        }
+        writer.writerow(row_to_write)
+
+    output = si.getvalue()
+    si.close()
+
+    response = Response(output, mimetype='text/csv')
+    response.headers["Content-Disposition"] = f"attachment; filename={business.name.replace(' ', '_')}_inventory_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return response
+
+# New route for admin to upload inventory CSV for their business
+@app.route('/inventory/upload_csv', methods=['GET', 'POST'])
+def upload_inventory_for_business():
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to upload inventory.', 'danger')
+        return redirect(url_for('inventory'))
+
+    business_id = get_current_business_id()
+    business = Business.query.get_or_404(business_id)
+
+    if request.method == 'POST':
+        if 'csv_file' not in request.files:
+            flash('No file part', 'danger')
+            return redirect(request.url)
+        
+        file = request.files['csv_file']
+        if file.filename == '':
+            flash('No selected file', 'danger')
+            return redirect(request.url)
+        
+        if file and file.filename.endswith('.csv'):
+            stream = io.StringIO(file.stream.read().decode("UTF8"))
+            csv_reader = csv.DictReader(stream)
+            
+            updated_count = 0
+            added_count = 0
+            errors = []
+
+            for row in csv_reader:
+                try:
+                    product_name = row['product_name'].strip()
+                    category = row['category'].strip()
+                    purchase_price = float(row['purchase_price'])
+                    current_stock = float(row['current_stock'])
+                    batch_number = row.get('batch_number', '').strip()
+                    number_of_tabs = int(row.get('number_of_tabs', 1))
+                    item_type = row.get('item_type', 'Pharmacy').strip()
+                    expiry_date_str = row.get('expiry_date', '').strip()
+                    expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
+                    is_fixed_price = row.get('is_fixed_price', 'False').lower() == 'true'
+                    fixed_sale_price = float(row.get('fixed_sale_price', 0.0))
+                    is_active = row.get('is_active', 'True').lower() == 'true'
+
+                    if number_of_tabs <= 0:
+                        errors.append(f"Skipping '{product_name}': 'Number of units/pieces per pack' must be greater than zero.")
+                        continue
+
+                    sale_price = 0.0
+                    unit_price_per_tab_with_markup = 0.0
+
+                    if is_fixed_price:
+                        sale_price = fixed_sale_price
+                        unit_price_per_tab_with_markup = fixed_sale_price / number_of_tabs
+                    else:
+                        cost_per_tab = purchase_price / number_of_tabs
+                        if item_type == 'Provision Store':
+                            unit_price_per_tab_with_markup = cost_per_tab * (1.10 if purchase_price >= 1000 else 1.08)
+                        elif item_type == 'Hardware Material':
+                            unit_price_per_tab_with_markup = cost_per_tab * 1.15
+                        elif item_type == 'Supermarket':
+                            unit_price_per_tab_with_markup = cost_per_tab * 1.20
+                        else:
+                            unit_price_per_tab_with_markup = cost_per_tab * 1.30
+                        sale_price = unit_price_per_tab_with_markup * number_of_tabs 
+
+                    existing_item = InventoryItem.query.filter_by(product_name=product_name, business_id=business.id).first()
+
+                    if existing_item:
+                        existing_item.category = category
+                        existing_item.purchase_price = purchase_price
+                        existing_item.sale_price = sale_price
+                        existing_item.current_stock = current_stock
+                        existing_item.last_updated = datetime.now()
+                        existing_item.batch_number = batch_number
+                        existing_item.number_of_tabs = number_of_tabs
+                        existing_item.unit_price_per_tab = unit_price_per_tab_with_markup
+                        existing_item.item_type = item_type
+                        existing_item.expiry_date = expiry_date_obj
+                        existing_item.is_fixed_price = is_fixed_price
+                        existing_item.fixed_sale_price = fixed_sale_price
+                        existing_item.is_active = is_active
+                        updated_count += 1
+                    else:
+                        new_item = InventoryItem(
+                            business_id=business.id,
+                            product_name=product_name,
+                            category=category,
+                            purchase_price=purchase_price,
+                            sale_price=sale_price,
+                            current_stock=current_stock,
+                            last_updated=datetime.now(),
+                            batch_number=batch_number,
+                            number_of_tabs=number_of_tabs,
+                            unit_price_per_tab=unit_price_per_tab_with_markup,
+                            item_type=item_type,
+                            expiry_date=expiry_date_obj,
+                            is_fixed_price=is_fixed_price,
+                            fixed_sale_price=fixed_sale_price,
+                            is_active=is_active
+                        )
+                        db.session.add(new_item)
+                        added_count += 1
+                except Exception as e:
+                    errors.append(f"Error processing row for product '{row.get('product_name', 'N/A')}': {e}")
+            
+            if errors:
+                db.session.rollback()
+                flash(f'CSV upload completed with {added_count} items added, {updated_count} items updated, and {len(errors)} errors. Please check the errors below.', 'warning')
+                for error in errors:
+                    flash(f'Error: {error}', 'danger')
+            else:
+                db.session.commit()
+                flash(f'CSV inventory uploaded successfully! {added_count} items added, {updated_count} items updated.', 'success')
+            
+            return redirect(url_for('inventory'))
+        else:
+            flash('Invalid file type. Please upload a CSV file.', 'danger')
+
+    return render_template('upload_inventory_csv.html', business=business) # Re-use the super_admin template for simplicity
+
+
+# New route for importing products from other businesses
+@app.route('/inventory/import_from_other_businesses', methods=['POST'])
+def import_products_from_other_businesses():
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to import products.', 'danger')
+        return redirect(url_for('inventory'))
+
+    current_business_id = get_current_business_id()
+    current_business_type = session.get('business_type')
+    source_business_id = request.form.get('source_business_id')
+
+    if not source_business_id:
+        flash('Please select a business to import from.', 'danger')
+        return redirect(url_for('add_inventory')) # Redirect back to add_inventory to show the form
+
+    source_business = Business.query.get(source_business_id)
+    if not source_business or source_business.type != current_business_type:
+        flash('Invalid source business selected or business types do not match.', 'danger')
+        return redirect(url_for('add_inventory'))
+
+    source_items = InventoryItem.query.filter_by(business_id=source_business_id, is_active=True).all()
+    
+    imported_count = 0
+    skipped_count = 0
+    skipped_products = []
+
+    for item in source_items:
+        existing_item = InventoryItem.query.filter_by(product_name=item.product_name, business_id=current_business_id).first()
+        if existing_item:
+            skipped_count += 1
+            skipped_products.append(item.product_name)
+        else:
+            # Create a new item for the current business
+            new_item = InventoryItem(
+                business_id=current_business_id,
+                product_name=item.product_name,
+                category=item.category,
+                purchase_price=item.purchase_price,
+                current_stock=0.0, # Start with 0 stock, admin can add later
+                last_updated=datetime.now(),
+                batch_number=item.batch_number,
+                number_of_tabs=item.number_of_tabs,
+                item_type=item.item_type,
+                expiry_date=item.expiry_date,
+                is_fixed_price=item.is_fixed_price,
+                is_active=True # Imported items are active
+            )
+
+            # Recalculate sale price and unit price based on current business's markup rules
+            if new_item.is_fixed_price:
+                new_item.fixed_sale_price = item.fixed_sale_price
+                new_item.sale_price = item.fixed_sale_price
+                new_item.unit_price_per_tab = item.fixed_sale_price / new_item.number_of_tabs if new_item.number_of_tabs > 0 else 0.0
+            else:
+                cost_per_tab = new_item.purchase_price / new_item.number_of_tabs if new_item.number_of_tabs > 0 else 0.0
+                unit_price_per_tab_with_markup = 0.0
+                if new_item.item_type == 'Provision Store':
+                    unit_price_per_tab_with_markup = cost_per_tab * (1.10 if new_item.purchase_price >= 1000 else 1.08)
+                elif new_item.item_type == 'Hardware Material':
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.15
+                elif new_item.item_type == 'Supermarket':
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.20
+                else: # Default to Pharmacy
+                    unit_price_per_tab_with_markup = cost_per_tab * 1.30
+                
+                new_item.unit_price_per_tab = unit_price_per_tab_with_markup
+                new_item.sale_price = unit_price_per_tab_with_markup * new_item.number_of_tabs
+                new_item.fixed_sale_price = 0.0 # Ensure fixed_sale_price is 0 if not fixed
+
+            db.session.add(new_item)
+            imported_count += 1
+    
+    db.session.commit()
+
+    if imported_count > 0:
+        flash(f'Successfully imported {imported_count} products from {source_business.name}.', 'success')
+    if skipped_count > 0:
+        flash(f'Skipped {skipped_count} products because they already exist: {", ".join(skipped_products[:5])}{"..." if len(skipped_products) > 5 else ""}.', 'warning')
+    if imported_count == 0 and skipped_count == 0:
+        flash('No products found to import from the selected business.', 'info')
+
+    return redirect(url_for('inventory'))
+
 
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory(item_id):
