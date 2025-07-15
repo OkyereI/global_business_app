@@ -1,608 +1,624 @@
+<!-- templates/add_edit_sale.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }}</title>
+    <title>{{ title }} - Pharmaceutical Store</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f4f7f6;
-            color: #333;
-        }
-        .container {
-            max-width: 900px;
-            margin: 2rem auto;
-            padding: 1.5rem;
-            background-color: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
         .form-group label {
-            font-weight: 500;
-            color: #555;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+            display: block;
         }
-        .form-control {
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group select,
+        .form-group input[type="tel"] {
             width: 100%;
-            transition: all 0.2s ease-in-out;
+            padding: 0.75rem;
+            border: 1px solid #cbd5e0;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            color: #2d3748;
+            background-color: #fff;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
         }
-        .form-control:focus {
-            border-color: #6366f1;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+        .form-group input[type="text"]:focus,
+        .form-group input[type="number"]:focus,
+        .form-group select:focus,
+        .form-group input[type="tel"]:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
             outline: none;
         }
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease-in-out;
-        }
-        .btn-primary {
-            background-color: #6366f1;
-            color: white;
-            border: none;
-        }
-        .btn-primary:hover {
-            background-color: #4f46e5;
-            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
-        }
-        .btn-secondary {
-            background-color: #e2e8f0;
-            color: #4a5568;
-            border: 1px solid #cbd5e0;
-        }
-        .btn-secondary:hover {
-            background-color: #cbd5e0;
-            box-shadow: 0 4px 10px rgba(226, 232, 240, 0.3);
-        }
-        .flash-message {
+        .product-row {
+            border: 1px solid #e2e8f0;
             padding: 1rem;
-            border-radius: 8px;
             margin-bottom: 1rem;
-            font-weight: 500;
+            border-radius: 0.5rem;
+            background-color: #f7fafc;
         }
-        .flash-success {
-            background-color: #d1fae5;
-            color: #065f46;
-            border: 1px solid #34d399;
+        .product-row:last-of-type {
+            margin-bottom: 0;
         }
-        .flash-danger {
-            background-color: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #ef4444;
+        .print-area {
+            display: none; /* Hidden by default */
         }
-        .flash-warning {
-            background-color: #fffbeb;
-            color: #92400e;
-            border: 1px solid #fbbf24;
-        }
-        .flash-info {
-            background-color: #e0f2fe;
-            color: #0369a1;
-            border: 1px solid #38bdf8;
-        }
-
-        /* Specific styles for the sales receipt print area */
         @media print {
-            body * {
-                visibility: hidden;
+            body > *:not(.print-area) {
+                display: none;
             }
-            #print-area, #print-area * {
-                visibility: visible;
-            }
-            #print-area {
-                position: absolute;
-                left: 0;
-                top: 0;
+            .print-area {
+                display: block;
                 width: 100%;
-                /* Center content within the print area */
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: flex-start;
-                padding: 20px; /* Add some padding for print */
-                box-sizing: border-box;
+                margin: 0 auto;
+                padding: 20px;
+                font-family: 'Inter', sans-serif;
+                color: #000;
+                font-size: 12px;
             }
-            .receipt-container {
-                width: 80mm; /* Standard receipt width */
-                max-width: 300px; /* Max width for screen display */
-                padding: 10px;
-                border: 1px solid #ccc; /* Border for visual separation */
-                background-color: white;
-                box-shadow: none; /* No shadow on print */
-                margin: 0 auto; /* Center the receipt itself */
-                text-align: center; /* Center text within the receipt */
-            }
-            .receipt-header, .receipt-footer {
+            .print-area h2, .print-area h3 {
                 text-align: center;
                 margin-bottom: 10px;
             }
-            .receipt-details, .receipt-items {
-                text-align: left; /* Align details and items to left within receipt */
-                width: 100%; /* Take full width of receipt container */
-            }
-            .receipt-items table {
+            .print-area table {
                 width: 100%;
                 border-collapse: collapse;
-                margin-top: 10px;
+                margin-bottom: 15px;
             }
-            .receipt-items th, .receipt-items td {
-                border-bottom: 1px dashed #eee;
-                padding: 5px 0;
-                font-size: 0.85em;
+            .print-area th, .print-area td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
             }
-            .receipt-items th:nth-child(2), .receipt-items td:nth-child(2) { text-align: center; } /* Qty */
-            .receipt-items th:nth-child(3), .receipt-items td:nth-child(3) { text-align: right; } /* Unit Price */
-            .receipt-items th:nth-child(4), .receipt-items td:nth-child(4) { text-align: right; } /* Total */
-
-            .receipt-grand-total {
+            .print-area .text-right {
                 text-align: right;
-                font-weight: bold;
-                margin-top: 10px;
-                padding-top: 5px;
-                border-top: 1px dashed #ccc;
             }
-        }
-
-        /* Styles for screen display of the print area */
-        #print-area-display {
-            display: none; /* Hidden by default */
-            margin-top: 2rem;
-            background-color: #f9fafb;
-            padding: 1.5rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-            text-align: center; /* Center the entire display block */
-        }
-        #print-area-display.active {
-            display: block; /* Show when active */
-        }
-        .receipt-container {
-            width: 80mm; /* Standard receipt width */
-            max-width: 300px; /* Max width for screen display */
-            margin: 0 auto; /* Center the receipt itself */
-            padding: 10px;
-            border: 1px solid #eee;
-            background-color: white;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
-            text-align: center; /* Center text within the receipt */
-        }
-        .receipt-header h2 {
-            font-size: 1.2em;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .receipt-header p {
-            font-size: 0.8em;
-            line-height: 1.2;
-        }
-        .receipt-details p {
-            font-size: 0.8em;
-            margin-bottom: 3px;
-        }
-        .receipt-items table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        .receipt-items th, .receipt-items td {
-            padding: 5px 2px;
-            border-bottom: 1px dashed #eee;
-            font-size: 0.8em;
-            text-align: left;
-        }
-        .receipt-items th:nth-child(2), .receipt-items td:nth-child(2) { text-align: center; } /* Qty */
-        .receipt-items th:nth-child(3), .receipt-items td:nth-child(3) { text-align: right; } /* Unit Price */
-        .receipt-items th:nth-child(4), .receipt-items td:nth-child(4) { text-align: right; } /* Total */
-
-        .receipt-grand-total {
-            font-size: 1em;
-            font-weight: bold;
-            margin-top: 10px;
-            padding-top: 5px;
-            border-top: 1px dashed #ccc;
-            text-align: right;
-        }
-        .receipt-footer {
-            font-size: 0.75em;
-            margin-top: 15px;
+            .print-area .text-center {
+                text-align: center;
+            }
         }
     </style>
 </head>
-<body class="bg-gray-100 p-6">
-    <div class="container">
-        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h1>
+<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h2>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="mb-4">
                     {% for category, message in messages %}
-                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message | safe }}
+                        </div>
                     {% endfor %}
                 </div>
             {% endif %}
         {% endwith %}
 
-        <form method="POST" action="{{ url_for('add_sale') if title == 'Add Sale Record' else url_for('edit_sale', sale_id=sale.id) }}" class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form action="{{ url_for('add_sale') if not sale.id else url_for('edit_sale', sale_id=sale.id) }}" method="POST">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div class="form-group">
-                    <label for="customer_phone" class="block text-sm">Customer Phone (Optional)</label>
-                    <input type="text" id="customer_phone" name="customer_phone" class="form-control mt-1" value="{{ sale.customer_phone if sale else '' }}">
+                    <label for="customer_phone">Customer Phone (Optional)</label>
+                    <input type="tel" id="customer_phone" name="customer_phone" value="{{ sale.customer_phone if sale.customer_phone else '' }}" class="mt-1">
                 </div>
                 <div class="form-group">
-                    <label for="sales_person_name" class="block text-sm">Sales Person</label>
-                    <input type="text" id="sales_person_name" name="sales_person_name" class="form-control mt-1" value="{{ sale.sales_person_name if sale else '' }}" readonly>
+                    <label for="sales_person_name">Sales Person</label>
+                    <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.sales_person_name if sale.sales_person_name else username }}" class="mt-1" readonly>
                 </div>
             </div>
 
-            <h2 class="text-xl font-semibold text-gray-700 mt-8 mb-4">Items to Sell</h2>
-            <div id="items-container" class="space-y-4">
-                {% if sale and sale.product_id %}
-                {# If editing a single sale item #}
-                <div class="item-row p-4 border rounded-lg shadow-sm bg-white">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <h3 class="text-xl font-semibold text-gray-700 mb-4">Products Sold</h3>
+
+            <div class="mb-4">
+                <label for="product_search" class="block text-sm font-medium text-gray-700">Search Product</label>
+                <input
+                    type="text"
+                    id="product_search"
+                    placeholder="Type to search products..."
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    oninput="filterProductOptions()"
+                >
+            </div>
+
+            <div id="products-container">
+                <!-- Product rows will be added here by JavaScript -->
+                {% if sale.id %}
+                    <!-- For editing an existing sale, populate with its single item -->
+                    <div class="product-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4 p-4 border rounded-lg bg-gray-50">
                         <div class="form-group">
-                            <label for="product_id" class="block text-sm">Product</label>
-                            <select id="product_id" name="product_id[]" class="form-control mt-1 product-select" required>
-                                <option value="">Select a Product</option>
+                            <label for="product_id_0">Product</label>
+                            <select id="product_id_0" name="product_id[]" class="mt-1 product-select w-full p-2 border rounded-md" required onchange="updateProductDetails(this, 0)">
+                                <option value="">Select Product</option>
                                 {% for item in inventory_items %}
-                                    <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}" {% if sale.product_id == item.id %}selected{% endif %}>
-                                        {{ item.product_name }} (Stock: {{ item.current_stock | float | round(2) }})
+                                    <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}" data-is-fixed-price="{{ 'true' if item.is_fixed_price else 'false' }}" data-fixed-sale-price="{{ item.fixed_sale_price }}" data-item-type="{{ item.item_type }}" {% if sale.product_id == item.id %}selected{% endif %}>
+                                        {{ item.product_name }} ({{ "%.2f" | format(item.current_stock) }} {{ 'packs' if business_type != 'Hardware' else 'units' }} in stock)
                                     </option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="sale_unit_type" class="block text-sm">Unit Type</label>
-                            <select id="sale_unit_type" name="sale_unit_type[]" class="form-control mt-1 unit-type-select" required>
-                                <option value="pack" {% if sale.sale_unit_type == 'pack' %}selected{% endif %}>Pack</option>
-                                <option value="tab" {% if sale.sale_unit_type == 'tab' %}selected{% endif %}>Tab</option>
+                            <label for="quantity_sold_0">Quantity</label>
+                            <input type="number" id="quantity_sold_0" name="quantity_sold[]" step="0.01" min="0.01" value="{{ sale.quantity_sold }}" class="mt-1 quantity-input w-full p-2 border rounded-md" required oninput="calculateItemTotal(0)">
+                        </div>
+                        <div class="form-group">
+                            <label for="sale_unit_type_0">Unit Type</label>
+                            <select id="sale_unit_type_0" name="sale_unit_type[]" class="mt-1 unit-type-select w-full p-2 border rounded-md" required onchange="calculateItemTotal(0)">
+                                <option value="pack" {% if sale.sale_unit_type == 'pack' %}selected{% endif %}>{{ 'Pack(s)' if business_type != 'Hardware' else 'Unit(s)' }}</option>
+                                <option value="tab" {% if sale.sale_unit_type == 'tab' %}selected{% endif %}>{{ 'Tab(s)' if business_type != 'Hardware' else 'Piece(s)' }}</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="quantity_sold" class="block text-sm">Quantity</label>
-                            <input type="number" id="quantity_sold" name="quantity_sold[]" class="form-control mt-1 quantity-input" step="0.01" min="0.01" value="{{ sale.quantity_sold | float | round(2) }}" required>
-                        </div>
-                        
-                        {# Price Type and Custom Price fields, visible only for Admin role #}
-                        {% if user_role == 'admin' %}
-                        <div class="form-group">
-                            <label for="price_type" class="block text-sm">Price Type</label>
-                            <select id="price_type" name="price_type[]" class="form-control mt-1 price-type-select" required>
+                            <label for="price_type_0">Price Type</label>
+                            <select id="price_type_0" name="price_type[]" class="mt-1 price-type-select w-full p-2 border rounded-md" required onchange="toggleCustomPrice(0)">
                                 <option value="internal_percentage" {% if sale.price_type == 'internal_percentage' %}selected{% endif %}>Internal Percentage</option>
+                                {% if user_role == 'admin' %}
                                 <option value="custom_price" {% if sale.price_type == 'custom_price' %}selected{% endif %}>Custom Price</option>
+                                {% endif %}
                             </select>
                         </div>
-                        <div class="form-group custom-price-group {% if sale.price_type != 'custom_price' %}hidden{% endif %}">
-                            <label for="custom_price" class="block text-sm">Custom Price (GH₵)</label>
-                            <input type="number" id="custom_price" name="custom_price[]" class="form-control mt-1 custom-price-input" step="0.01" min="0" value="{{ sale.custom_price if sale.custom_price else '' }}">
+                        <div class="form-group col-span-2">
+                            <label for="custom_price_0">Custom Price (per {{ 'pack/unit' if business_type != 'Hardware' else 'unit/piece' }})</label>
+                            <input type="number" id="custom_price_0" name="custom_price[]" step="0.01" min="0" value="{{ sale.custom_price }}" class="mt-1 custom-price-input w-full p-2 border rounded-md" style="display: {{ 'block' if sale.price_type == 'custom_price' else 'none' }};" oninput="calculateItemTotal(0)">
                         </div>
-                        {% else %}
-                        {# Hidden inputs to ensure these values are always sent, even if not editable by sales #}
-                        <input type="hidden" name="price_type[]" value="internal_percentage">
-                        <input type="hidden" name="custom_price[]" value="">
-                        {% endif %}
-
                         <div class="form-group">
-                            <label for="item_total" class="block text-sm">Item Total (GH₵)</label>
-                            <input type="text" id="item_total" class="form-control mt-1 item-total" value="{{ sale.total_amount | float | round(2) }}" readonly>
+                            <label for="item_total_0">Item Total</label>
+                            <input type="text" id="item_total_0" name="item_total[]" value="{{ '%.2f' | format(sale.total_amount) }}" class="mt-1 item-total-display w-full p-2 border rounded-md bg-gray-200" readonly>
+                        </div>
+                        <div class="form-group">
+                            <button type="button" onclick="removeItemRow(this)" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out w-full">Remove</button>
                         </div>
                     </div>
-                </div>
                 {% else %}
-                {# Default empty row for adding new sales #}
-                <div class="item-row p-4 border rounded-lg shadow-sm bg-white">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- For adding new sales, start with one empty row -->
+                    <div class="product-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4 p-4 border rounded-lg bg-gray-50">
                         <div class="form-group">
-                            <label for="product_id" class="block text-sm">Product</label>
-                            <select name="product_id[]" class="form-control mt-1 product-select" required>
-                                <option value="">Select a Product</option>
+                            <label for="product_id_0">Product</label>
+                            <select id="product_id_0" name="product_id[]" class="mt-1 product-select w-full p-2 border rounded-md" required onchange="updateProductDetails(this, 0)">
+                                <option value="">Select Product</option>
                                 {% for item in inventory_items %}
-                                    <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}">
-                                        {{ item.product_name }} (Stock: {{ item.current_stock | float | round(2) }})
+                                    <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}" data-is-fixed-price="{{ 'true' if item.is_fixed_price else 'false' }}" data-fixed-sale-price="{{ item.fixed_sale_price }}" data-item-type="{{ item.item_type }}">
+                                        {{ item.product_name }} ({{ "%.2f" | format(item.current_stock) }} {{ 'packs' if business_type != 'Hardware' else 'units' }} in stock)
                                     </option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="sale_unit_type" class="block text-sm">Unit Type</label>
-                            <select name="sale_unit_type[]" class="form-control mt-1 unit-type-select" required>
-                                <option value="pack">Pack</option>
-                                <option value="tab">Tab</option>
+                            <label for="quantity_sold_0">Quantity</label>
+                            <input type="number" id="quantity_sold_0" name="quantity_sold[]" step="0.01" min="0.01" value="" class="mt-1 quantity-input w-full p-2 border rounded-md" required oninput="calculateItemTotal(0)">
+                        </div>
+                        <div class="form-group">
+                            <label for="sale_unit_type_0">Unit Type</label>
+                            <select id="sale_unit_type_0" name="sale_unit_type[]" class="mt-1 unit-type-select w-full p-2 border rounded-md" required onchange="calculateItemTotal(0)">
+                                <option value="pack">{{ 'Pack(s)' if business_type != 'Hardware' else 'Unit(s)' }}</option>
+                                <option value="tab">{{ 'Tab(s)' if business_type != 'Hardware' else 'Piece(s)' }}</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="quantity_sold" class="block text-sm">Quantity</label>
-                            <input type="number" name="quantity_sold[]" class="form-control mt-1 quantity-input" step="0.01" min="0.01" value="" required>
-                        </div>
-
-                        {# Price Type and Custom Price fields, visible only for Admin role #}
-                        {% if user_role == 'admin' %}
-                        <div class="form-group">
-                            <label for="price_type" class="block text-sm">Price Type</label>
-                            <select name="price_type[]" class="form-control mt-1 price-type-select" required>
+                            <label for="price_type_0">Price Type</label>
+                            <select id="price_type_0" name="price_type[]" class="mt-1 price-type-select w-full p-2 border rounded-md" required onchange="toggleCustomPrice(0)">
                                 <option value="internal_percentage">Internal Percentage</option>
+                                {% if user_role == 'admin' %}
                                 <option value="custom_price">Custom Price</option>
+                                {% endif %}
                             </select>
                         </div>
-                        <div class="form-group custom-price-group hidden">
-                            <label for="custom_price" class="block text-sm">Custom Price (GH₵)</label>
-                            <input type="number" name="custom_price[]" class="form-control mt-1 custom-price-input" step="0.01" min="0" value="">
+                        <div class="form-group col-span-2">
+                            <label for="custom_price_0">Custom Price (per {{ 'pack/unit' if business_type != 'Hardware' else 'unit/piece' }})</label>
+                            <input type="number" id="custom_price_0" name="custom_price[]" step="0.01" min="0" value="" class="mt-1 custom-price-input w-full p-2 border rounded-md" style="display: none;" oninput="calculateItemTotal(0)">
                         </div>
-                        {% else %}
-                        <input type="hidden" name="price_type[]" value="internal_percentage">
-                        <input type="hidden" name="custom_price[]" value="">
-                        {% endif %}
-
                         <div class="form-group">
-                            <label for="item_total" class="block text-sm">Item Total (GH₵)</label>
-                            <input type="text" name="item_total[]" class="form-control mt-1 item-total" value="0.00" readonly>
+                            <label for="item_total_0">Item Total</label>
+                            <input type="text" id="item_total_0" name="item_total[]" value="0.00" class="mt-1 item-total-display w-full p-2 border rounded-md bg-gray-200" readonly>
+                        </div>
+                        <div class="form-group">
+                            <button type="button" onclick="removeItemRow(this)" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out w-full">Remove</button>
                         </div>
                     </div>
-                    {% if title == 'Add Sale Record' %}
-                    <button type="button" class="remove-item-btn mt-4 px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50">Remove</button>
-                    {% endif %}
-                </div>
                 {% endif %}
             </div>
 
-            {% if title == 'Add Sale Record' %}
-            <button type="button" id="add-item-btn" class="btn btn-secondary mt-4">Add Another Item</button>
-            {% endif %}
+            <button type="button" onclick="addProductRow()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out mt-4 mb-6">
+                Add Another Product
+            </button>
 
             <div class="form-group mt-6">
-                <label for="grand_total" class="block text-xl font-bold text-gray-800">Grand Total: GH₵<span id="grand_total_display">0.00</span></label>
-                <input type="hidden" id="grand_total_input" name="grand_total" value="0.00">
+                <label for="grand_total">Grand Total</label>
+                <input type="text" id="grand_total" name="grand_total" value="0.00" class="mt-1 w-full p-3 border-2 border-blue-400 rounded-md text-xl font-bold text-gray-800 bg-blue-50" readonly>
             </div>
 
-            <div class="flex justify-end space-x-4 mt-6">
-                <a href="{{ url_for('sales') }}" class="btn btn-secondary">Cancel</a>
-                <button type="submit" class="btn btn-primary">
-                    {{ 'Add Sale' if title == 'Add Sale Record' else 'Update Sale' }}
+            <div class="flex justify-end gap-4 mt-8">
+                <a href="{{ url_for('sales') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">Cancel</a>
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
+                    {{ 'Update Sale' if sale.id else 'Record Sale' }}
                 </button>
             </div>
         </form>
-
-        {# Print Area - Hidden by default, shown for printing #}
-        <div id="print-area-display" class="{% if print_ready %}active{% endif %}">
-            <button id="print-receipt-btn" class="btn btn-primary mb-4">Print Receipt</button>
-            <div id="print-area" class="receipt-container">
-                <div class="receipt-header">
-                    <h2>{{ pharmacy_info.name }}</h2>
-                    <p>{{ pharmacy_info.location }}</p>
-                    <p>{{ pharmacy_info.address }}</p>
-                    <p>Contact: {{ pharmacy_info.contact }}</p>
-                    <h3 class="font-semibold mt-2">SALES RECEIPT</h3>
-                </div>
-                <div class="receipt-details">
-                    <p><strong>Transaction ID:</strong> {{ last_transaction_id }}</p>
-                    <p><strong>Date:</strong> {{ last_transaction_date }}</p>
-                    <p><strong>Sales Person:</strong> {{ last_transaction_sales_person }}</p>
-                    <p><strong>Customer Phone:</strong> {{ last_transaction_customer_phone if last_transaction_customer_phone else 'N/A' }}</p>
-                </div>
-                <div class="receipt-items">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Item</th>
-                                <th>Qty</th>
-                                <th>Unit Price</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in last_transaction_details | default([]) %} {# Added default([]) filter here #}
-                            <tr>
-                                <td>{{ item.product_name }}</td>
-                                <td>{{ item.quantity_sold | float | round(2) }} {{ 'tab(s)' if item.sale_unit_type == 'tab' else 'pack(s)' }}</td>
-                                <td>GH₵{{ item.price_at_time_per_unit_sold | float | round(2) }}</td>
-                                <td>GH₵{{ item.total_amount | float | round(2) }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="receipt-grand-total">
-                    <p>GRAND TOTAL: GH₵{{ last_transaction_grand_total | float | round(2) }}</p>
-                </div>
-                <div class="receipt-footer">
-                    <p>Thank you for your business!</p>
-                </div>
-            </div>
-        </div>
-
     </div>
 
+    <!-- Print-ready receipt area -->
+    {% if print_ready %}
+    <div class="print-area p-8 bg-white rounded-lg shadow-xl mt-8">
+        <h2 class="text-2xl font-bold mb-2">{{ pharmacy_info.name }}</h2>
+        <h3 class="text-lg mb-4">{{ pharmacy_info.location }}, {{ pharmacy_info.address }}</h3>
+        <p class="text-center mb-4">Contact: {{ pharmacy_info.contact }}</p>
+
+        <h3 class="text-xl font-bold mb-4">SALES RECEIPT</h3>
+        <p><strong>Transaction ID:</strong> {{ last_transaction_id }}</p>
+        <p><strong>Date:</strong> {{ last_transaction_date }}</p>
+        <p><strong>Sales Person:</strong> {{ last_transaction_sales_person }}</p>
+        {% if last_transaction_customer_phone %}
+        <p><strong>Customer Phone:</strong> {{ last_transaction_customer_phone }}</p>
+        {% endif %}
+        <br>
+        <table>
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th class="text-right">Qty</th>
+                    <th class="text-right">Unit Price</th>
+                    <th class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in last_transaction_details %}
+                <tr>
+                    <td>{{ item.product_name }}</td>
+                    <td class="text-right">{{ "%.2f" | format(item.quantity_sold) }} {{ 'tab(s)' if item.sale_unit_type == 'tab' else ('pack(s)' if business_type != 'Hardware' else 'unit(s)') }}</td>
+                    <td class="text-right">GH₵{{ "%.2f" | format(item.price_at_time_per_unit_sold) }}</td>
+                    <td class="text-right">GH₵{{ "%.2f" | format(item.total_amount) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="3" class="text-right">Grand Total:</th>
+                    <th class="text-right">GH₵{{ "%.2f" | format(last_transaction_grand_total) }}</th>
+                </tr>
+            </tfoot>
+        </table>
+        <p class="text-center mt-6">Thank you for your business!</p>
+    </div>
+
+    <div class="mt-4 flex gap-4">
+        <button type="button" onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">Print Receipt</button>
+        <a href="{{ url_for('add_sale') }}" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">New Sale</a>
+    </div>
+    {% endif %}
+
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const itemsContainer = document.getElementById('items-container');
-            const addItemBtn = document.getElementById('add-item-btn');
-            const grandTotalDisplay = document.getElementById('grand_total_display');
-            const grandTotalInput = document.getElementById('grand_total_input');
-            const printReceiptBtn = document.getElementById('print-receipt-btn');
-            const printAreaDisplay = document.getElementById('print-area-display');
+        let productRowCounter = 0;
+        // Store the original full list of inventory items
+        const allInventoryItems = {{ inventory_items | tojson }};
+        let filteredInventoryItems = [...allInventoryItems]; // Start with all items
+        const userRole = "{{ user_role }}";
+        const businessType = "{{ business_type }}";
 
-            // Function to calculate and update total for an item row
-            function updateItemTotal(itemRow) {
-                const productSelect = itemRow.querySelector('.product-select');
-                const unitTypeSelect = itemRow.querySelector('.unit-type-select');
-                const quantityInput = itemRow.querySelector('.quantity-input');
-                const itemTotalInput = itemRow.querySelector('.item-total');
-                const priceTypeSelect = itemRow.querySelector('.price-type-select');
-                const customPriceInput = itemRow.querySelector('.custom-price-input');
-                const customPriceGroup = itemRow.querySelector('.custom-price-group');
+        // Function to create a new product row HTML
+        function createProductRow(index, itemData = null) {
+            const isEditMode = itemData !== null;
+            // Use filteredInventoryItems for rendering options
+            const productOptions = filteredInventoryItems.map(item => {
+                const selected = isEditMode && itemData.product_id === item.id ? 'selected' : '';
+                const unitText = businessType !== 'Hardware' ? 'packs' : 'units';
+                // Corrected: Use JavaScript's toFixed(2) for current_stock
+                return `<option value="${item.id}" 
+                                data-sale-price="${item.sale_price}" 
+                                data-unit-price-per-tab="${item.unit_price_per_tab}" 
+                                data-number-of-tabs="${item.number_of_tabs}" 
+                                data-is-fixed-price="${item.is_fixed_price}" 
+                                data-fixed-sale-price="${item.fixed_sale_price}" 
+                                data-item-type="${item.item_type}" 
+                                ${selected}>
+                            ${item.product_name} (${item.current_stock.toFixed(2)} ${unitText} in stock)
+                        </option>`;
+            }).join('');
 
-                const selectedOption = productSelect.options[productSelect.selectedIndex];
-                const salePrice = parseFloat(selectedOption.dataset.salePrice);
-                const unitPricePerTab = parseFloat(selectedOption.dataset.unitPricePerTab);
-                const numberOfTabs = parseInt(selectedOption.dataset.numberOfTabs);
-                const quantity = parseFloat(quantityInput.value);
+            const unitTypePackText = businessType !== 'Hardware' ? 'Pack(s)' : 'Unit(s)';
+            const unitTypeTabText = businessType !== 'Hardware' ? 'Tab(s)' : 'Piece(s)';
+            const priceUnitText = businessType !== 'Hardware' ? 'pack/unit' : 'unit/piece';
 
-                let itemTotal = 0;
-                let pricePerUnit = 0;
+            const priceTypeOptions = `
+                <option value="internal_percentage" ${isEditMode && itemData.price_type === 'internal_percentage' ? 'selected' : ''}>Internal Percentage</option>
+                ${userRole === 'admin' ? `<option value="custom_price" ${isEditMode && itemData.price_type === 'custom_price' ? 'selected' : ''}>Custom Price</option>` : ''}
+            `;
 
-                // Toggle custom price input visibility
-                if (priceTypeSelect && customPriceGroup) { // Check if elements exist (i.e., user is admin)
-                    if (priceTypeSelect.value === 'custom_price') {
-                        customPriceGroup.classList.remove('hidden');
-                        customPriceInput.setAttribute('required', 'true');
-                    } else {
-                        customPriceGroup.classList.add('hidden');
-                        customPriceInput.removeAttribute('required');
-                        customPriceInput.value = ''; // Clear custom price if not used
-                    }
-                }
+            const customPriceDisplay = isEditMode && itemData.price_type === 'custom_price' ? 'block' : 'none';
+            const customPriceValue = isEditMode && itemData.custom_price ? itemData.custom_price : '';
+            const quantityValue = isEditMode ? itemData.quantity_sold : '';
+            const itemTotalValue = isEditMode ? itemData.total_amount.toFixed(2) : '0.00';
 
-                if (!isNaN(quantity) && quantity > 0) {
-                    if (priceTypeSelect && priceTypeSelect.value === 'custom_price' && customPriceInput && customPriceInput.value !== '') {
-                        pricePerUnit = parseFloat(customPriceInput.value);
-                    } else {
-                        // Use internal percentage price
-                        if (unitTypeSelect.value === 'tab') {
-                            pricePerUnit = unitPricePerTab;
-                        } else { // pack
-                            pricePerUnit = salePrice;
-                        }
-                    }
+            return `
+                <div class="product-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4 p-4 border rounded-lg bg-gray-50">
+                    <div class="form-group">
+                        <label for="product_id_${index}">Product</label>
+                        <select id="product_id_${index}" name="product_id[]" class="mt-1 product-select w-full p-2 border rounded-md" required onchange="updateProductDetails(this, ${index})">
+                            <option value="">Select Product</option>
+                            ${productOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="quantity_sold_${index}">Quantity</label>
+                        <input type="number" id="quantity_sold_${index}" name="quantity_sold[]" step="0.01" min="0.01" value="${quantityValue}" class="mt-1 quantity-input w-full p-2 border rounded-md" required oninput="calculateItemTotal(${index})">
+                    </div>
+                    <div class="form-group">
+                        <label for="sale_unit_type_${index}">Unit Type</label>
+                        <select id="sale_unit_type_${index}" name="sale_unit_type[]" class="mt-1 unit-type-select w-full p-2 border rounded-md" required onchange="calculateItemTotal(${index})">
+                            <option value="pack" ${isEditMode && itemData.sale_unit_type === 'pack' ? 'selected' : ''}>${unitTypePackText}</option>
+                            <option value="tab" ${isEditMode && itemData.sale_unit_type === 'tab' ? 'selected' : ''}>${unitTypeTabText}</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="price_type_${index}">Price Type</label>
+                        <select id="price_type_${index}" name="price_type[]" class="mt-1 price-type-select w-full p-2 border rounded-md" required onchange="toggleCustomPrice(${index})">
+                            ${priceTypeOptions}
+                        </select>
+                    </div>
+                    <div class="form-group col-span-2">
+                        <label for="custom_price_${index}">Custom Price (per ${priceUnitText})</label>
+                        <input type="number" id="custom_price_${index}" name="custom_price[]" step="0.01" min="0" value="${customPriceValue}" class="mt-1 custom-price-input w-full p-2 border rounded-md" style="display: ${customPriceDisplay};" oninput="calculateItemTotal(${index})">
+                    </div>
+                    <div class="form-group">
+                        <label for="item_total_${index}">Item Total</label>
+                        <input type="text" id="item_total_${index}" name="item_total[]" value="${itemTotalValue}" class="mt-1 item-total-display w-full p-2 border rounded-md bg-gray-200" readonly>
+                    </div>
+                    <div class="form-group">
+                        <button type="button" onclick="removeItemRow(this)" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out w-full">Remove</button>
+                    </div>
+                </div>
+            `;
+        }
 
-                    if (unitTypeSelect.value === 'tab') {
-                        itemTotal = quantity * pricePerUnit;
-                    } else { // pack
-                        itemTotal = quantity * pricePerUnit;
-                    }
-                }
-                itemTotalInput.value = itemTotal.toFixed(2);
-                updateGrandTotal();
-            }
+        // Add a new product row
+        function addProductRow() {
+            productRowCounter++;
+            const container = document.getElementById('products-container');
+            container.insertAdjacentHTML('beforeend', createProductRow(productRowCounter));
+            calculateGrandTotal(); // Recalculate grand total after adding a new row
+        }
 
-            // Function to update the grand total
-            function updateGrandTotal() {
-                let grandTotal = 0;
-                document.querySelectorAll('.item-row').forEach(itemRow => {
-                    const itemTotal = parseFloat(itemRow.querySelector('.item-total').value);
-                    if (!isNaN(itemTotal)) {
-                        grandTotal += itemTotal;
-                    }
-                });
-                grandTotalDisplay.textContent = grandTotal.toFixed(2);
-                grandTotalInput.value = grandTotal.toFixed(2);
-            }
-
-            // Event listener for adding new item rows (only for Add Sale page)
-            if (addItemBtn) {
-                addItemBtn.addEventListener('click', function() {
-                    const newItemRow = document.createElement('div');
-                    newItemRow.classList.add('item-row', 'p-4', 'border', 'rounded-lg', 'shadow-sm', 'bg-white');
-                    newItemRow.innerHTML = `
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div class="form-group">
-                                <label for="product_id" class="block text-sm">Product</label>
-                                <select name="product_id[]" class="form-control mt-1 product-select" required>
-                                    <option value="">Select a Product</option>
-                                    {% for item in inventory_items %}
-                                        <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}">
-                                            {{ item.product_name }} (Stock: {{ item.current_stock | float | round(2) }})
-                                        </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="sale_unit_type" class="block text-sm">Unit Type</label>
-                                <select name="sale_unit_type[]" class="form-control mt-1 unit-type-select" required>
-                                    <option value="pack">Pack</option>
-                                    <option value="tab">Tab</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="quantity_sold" class="block text-sm">Quantity</label>
-                                <input type="number" name="quantity_sold[]" class="form-control mt-1 quantity-input" step="0.01" min="0.01" value="" required>
-                            </div>
-                            
-                            {# Price Type and Custom Price fields, visible only for Admin role #}
-                            {% if user_role == 'admin' %}
-                            <div class="form-group">
-                                <label for="price_type" class="block text-sm">Price Type</label>
-                                <select name="price_type[]" class="form-control mt-1 price-type-select" required>
-                                    <option value="internal_percentage">Internal Percentage</option>
-                                    <option value="custom_price">Custom Price</option>
-                                </select>
-                            </div>
-                            <div class="form-group custom-price-group hidden">
-                                <label for="custom_price" class="block text-sm">Custom Price (GH₵)</label>
-                                <input type="number" name="custom_price[]" class="form-control mt-1 custom-price-input" step="0.01" min="0" value="">
-                            </div>
-                            {% else %}
-                            <input type="hidden" name="price_type[]" value="internal_percentage">
-                            <input type="hidden" name="custom_price[]" value="">
-                            {% endif %}
-
-                            <div class="form-group">
-                                <label for="item_total" class="block text-sm">Item Total (GH₵)</label>
-                                <input type="text" name="item_total[]" class="form-control mt-1 item-total" value="0.00" readonly>
-                            </div>
-                        </div>
-                        <button type="button" class="remove-item-btn mt-4 px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50">Remove</button>
-                    `;
-                    itemsContainer.appendChild(newItemRow);
-                    attachEventListenersToItemRow(newItemRow);
-                    updateGrandTotal();
-                });
-            }
-
-            // Function to attach event listeners to a single item row
-            function attachEventListenersToItemRow(itemRow) {
-                const productSelect = itemRow.querySelector('.product-select');
-                const unitTypeSelect = itemRow.querySelector('.unit-type-select');
-                const quantityInput = itemRow.querySelector('.quantity-input');
-                const removeItemBtn = itemRow.querySelector('.remove-item-btn');
-                const priceTypeSelect = itemRow.querySelector('.price-type-select');
-                const customPriceInput = itemRow.querySelector('.custom-price-input');
-
-                productSelect.addEventListener('change', () => updateItemTotal(itemRow));
-                unitTypeSelect.addEventListener('change', () => updateItemTotal(itemRow));
-                quantityInput.addEventListener('input', () => updateItemTotal(itemRow));
-                if (priceTypeSelect) { // Only if admin role
-                    priceTypeSelect.addEventListener('change', () => updateItemTotal(itemRow));
-                }
-                if (customPriceInput) { // Only if admin role
-                    customPriceInput.addEventListener('input', () => updateItemTotal(itemRow));
-                }
-
-                if (removeItemBtn) {
-                    removeItemBtn.addEventListener('click', function() {
-                        itemRow.remove();
-                        updateGrandTotal();
-                    });
-                }
-            }
-
-            // Attach event listeners to all existing item rows on page load
-            document.querySelectorAll('.item-row').forEach(attachEventListenersToItemRow);
-
-            // Initial calculation on page load
-            updateGrandTotal();
-
-            // Print functionality
-            if (printReceiptBtn) {
-                printReceiptBtn.addEventListener('click', function() {
-                    window.print();
-                });
-            }
-
-            // Show/hide print area based on printReady variable
-            const printReady = {{ print_ready | tojson }}; // This is now guaranteed to be boolean
-            if (printReady) {
-                printAreaDisplay.classList.add('active');
+        // Remove a product row
+        function removeItemRow(button) {
+            const row = button.closest('.product-row');
+            if (document.querySelectorAll('.product-row').length > 1) {
+                row.remove();
+                calculateGrandTotal();
             } else {
-                printAreaDisplay.classList.remove('active');
+                alert('You must have at least one product in the sale.');
             }
+        }
+
+        // Update product details (e.g., prices, stock) when product selection changes
+        function updateProductDetails(selectElement, index) {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            // Find the actual inventory item from allInventoryItems based on selected value
+            const selectedItem = allInventoryItems.find(item => item.id === selectedOption.value);
+
+            const quantityInput = document.getElementById(`quantity_sold_${index}`);
+            const unitTypeSelect = document.getElementById(`sale_unit_type_${index}`);
+            const priceTypeSelect = document.getElementById(`price_type_${index}`);
+            const customPriceInput = document.getElementById(`custom_price_${index}`);
+
+            // Reset quantity and custom price
+            quantityInput.value = '';
+            customPriceInput.value = '';
+            customPriceInput.style.display = 'none'; // Hide custom price by default
+
+            if (!selectedItem) {
+                // If no item is selected, disable/reset related fields
+                unitTypeSelect.value = 'pack'; // Default
+                unitTypeSelect.querySelector('option[value="tab"]').disabled = false; // Enable by default
+                priceTypeSelect.value = 'internal_percentage';
+                priceTypeSelect.querySelector('option[value="custom_price"]').disabled = false; // Enable by default
+                calculateItemTotal(index);
+                return;
+            }
+
+            // Set default unit type based on item type
+            if (selectedItem.item_type === 'Hardware Material' || selectedItem.item_type === 'Provision Store' || selectedItem.item_type === 'Supermarket') {
+                unitTypeSelect.value = 'pack'; // Default to 'unit' for hardware, 'pack' for supermarket/provision
+                // Disable 'tab' option if it's a hardware/provision/supermarket item, unless it has multiple pieces
+                const tabOption = unitTypeSelect.querySelector('option[value="tab"]');
+                if (tabOption) {
+                    if (selectedItem.number_of_tabs > 1) {
+                        tabOption.disabled = false;
+                        tabOption.textContent = businessType !== 'Hardware' ? 'Tab(s)' : 'Piece(s)';
+                    } else {
+                        tabOption.disabled = true;
+                        tabOption.textContent = businessType !== 'Hardware' ? 'Tab(s) (N/A)' : 'Piece(s) (N/A)';
+                    }
+                }
+            } else { // Pharmacy
+                unitTypeSelect.value = 'pack'; // Default to pack for pharmacy
+                const tabOption = unitTypeSelect.querySelector('option[value="tab"]');
+                if (tabOption) {
+                    tabOption.disabled = false;
+                    tabOption.textContent = 'Tab(s)';
+                }
+            }
+
+            // If fixed price, force 'internal_percentage' and hide custom price for non-admins
+            if (selectedItem.is_fixed_price) {
+                priceTypeSelect.value = 'internal_percentage';
+                if (userRole !== 'admin') {
+                    // Disable custom price option for non-admins if it's a fixed price item
+                    const customPriceOption = priceTypeSelect.querySelector('option[value="custom_price"]');
+                    if (customPriceOption) {
+                        customPriceOption.disabled = true;
+                    }
+                }
+            } else {
+                // Enable custom price option if not fixed price (for admins)
+                const customPriceOption = priceTypeSelect.querySelector('option[value="custom_price"]');
+                if (customPriceOption) {
+                    customPriceOption.disabled = false;
+                }
+            }
+
+            calculateItemTotal(index);
+        }
+
+        // Toggle visibility of custom price input
+        function toggleCustomPrice(index) {
+            const priceTypeSelect = document.getElementById(`price_type_${index}`);
+            const customPriceInput = document.getElementById(`custom_price_${index}`);
+            if (priceTypeSelect.value === 'custom_price') {
+                customPriceInput.style.display = 'block';
+                customPriceInput.setAttribute('required', 'required');
+            } else {
+                customPriceInput.style.display = 'none';
+                customPriceInput.removeAttribute('required');
+                customPriceInput.value = ''; // Clear custom price if not used
+            }
+            calculateItemTotal(index);
+        }
+
+        // Calculate total for a single item row
+        function calculateItemTotal(index) {
+            const productSelect = document.getElementById(`product_id_${index}`);
+            const quantityInput = document.getElementById(`quantity_sold_${index}`);
+            const unitTypeSelect = document.getElementById(`sale_unit_type_${index}`);
+            const priceTypeSelect = document.getElementById(`price_type_${index}`);
+            const customPriceInput = document.getElementById(`custom_price_${index}`);
+            const itemTotalDisplay = document.getElementById(`item_total_${index}`);
+
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            const selectedItem = allInventoryItems.find(item => item.id === selectedOption.value);
+
+            if (!selectedItem) {
+                itemTotalDisplay.value = '0.00';
+                calculateGrandTotal();
+                return;
+            }
+
+            const salePricePerPack = parseFloat(selectedItem.sale_price);
+            const unitPricePerTab = parseFloat(selectedItem.unit_price_per_tab);
+            const numberOfTabs = parseInt(selectedItem.number_of_tabs);
+            const isFixedPrice = selectedItem.is_fixed_price;
+            const fixedSalePrice = parseFloat(selectedItem.fixed_sale_price);
+
+            let quantity = parseFloat(quantityInput.value);
+            if (isNaN(quantity) || quantity <= 0) {
+                itemTotalDisplay.value = '0.00';
+                calculateGrandTotal();
+                return;
+            }
+
+            let pricePerUnit = 0;
+            if (priceTypeSelect.value === 'custom_price' && userRole === 'admin') {
+                let customPrice = parseFloat(customPriceInput.value);
+                if (isNaN(customPrice) || customPrice <= 0) {
+                    // Fallback to internal percentage if custom price is invalid
+                    if (unitTypeSelect.value === 'tab') {
+                        pricePerUnit = isFixedPrice ? (fixedSalePrice / numberOfTabs) : unitPricePerTab;
+                    } else {
+                        pricePerUnit = isFixedPrice ? fixedSalePrice : salePricePerPack;
+                    }
+                } else {
+                    pricePerUnit = customPrice;
+                }
+            } else {
+                if (unitTypeSelect.value === 'tab') {
+                    pricePerUnit = isFixedPrice ? (fixedSalePrice / numberOfTabs) : unitPricePerTab;
+                } else {
+                    pricePerUnit = isFixedPrice ? fixedSalePrice : salePricePerPack;
+                }
+            }
+
+            let itemTotal = quantity * pricePerUnit;
+            itemTotalDisplay.value = itemTotal.toFixed(2);
+            calculateGrandTotal();
+        }
+
+        // Calculate grand total of all items
+        function calculateGrandTotal() {
+            let grandTotal = 0;
+            document.querySelectorAll('.item-total-display').forEach(input => {
+                grandTotal += parseFloat(input.value || 0);
+            });
+            document.getElementById('grand_total').value = grandTotal.toFixed(2);
+        }
+
+        // Filter product options based on search input
+        function filterProductOptions() {
+            const searchQuery = document.getElementById('product_search').value.toLowerCase();
+            filteredInventoryItems = allInventoryItems.filter(item => 
+                item.product_name.toLowerCase().includes(searchQuery) ||
+                item.category.toLowerCase().includes(searchQuery) ||
+                (item.batch_number && item.batch_number.toLowerCase().includes(searchQuery))
+            );
+
+            // Update all product select dropdowns with filtered options
+            document.querySelectorAll('.product-select').forEach((selectElement, index) => {
+                const currentSelectedValue = selectElement.value; // Preserve current selection if possible
+                const unitText = businessType !== 'Hardware' ? 'packs' : 'units';
+                selectElement.innerHTML = '<option value="">Select Product</option>' +
+                    filteredInventoryItems.map(item => {
+                        const selected = (currentSelectedValue === item.id) ? 'selected' : '';
+                        return `<option value="${item.id}" 
+                                        data-sale-price="${item.sale_price}" 
+                                        data-unit-price-per-tab="${item.unit_price_per_tab}" 
+                                        data-number-of-tabs="${item.number_of_tabs}" 
+                                        data-is-fixed-price="${item.is_fixed_price}" 
+                                        data-fixed-sale-price="${item.fixed_sale_price}" 
+                                        data-item-type="${item.item_type}" 
+                                        ${selected}>
+                                    ${item.product_name} (${item.current_stock.toFixed(2)} ${unitText} in stock)
+                                </option>`;
+                    }).join('');
+                // If the previously selected item is no longer in the filtered list, clear selection
+                if (currentSelectedValue && !filteredInventoryItems.some(item => item.id === currentSelectedValue)) {
+                    selectElement.value = "";
+                }
+                updateProductDetails(selectElement, index); // Update details for the current selection
+            });
+        }
+
+
+        // Initial setup on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // If it's an add sale page (not edit), ensure there's at least one row
+            if (!{{ 'true' if sale.id else 'false' }}) {
+                if (document.querySelectorAll('.product-row').length === 0) {
+                    addProductRow(); // Add an initial empty row if none exists
+                }
+            }
+
+            // Re-calculate totals and set up event listeners for existing rows (e.g., on edit page)
+            document.querySelectorAll('.product-row').forEach((row, index) => {
+                const productSelect = row.querySelector('.product-select');
+                const quantityInput = row.querySelector('.quantity-input');
+                const unitTypeSelect = row.querySelector('.unit-type-select');
+                const priceTypeSelect = row.querySelector('.price-type-select');
+                const customPriceInput = row.querySelector('.custom-price-input');
+
+                // Ensure initial state of custom price input is correct
+                if (priceTypeSelect.value === 'custom_price') {
+                    customPriceInput.style.display = 'block';
+                } else {
+                    customPriceInput.style.display = 'none';
+                }
+
+                // If in edit mode, ensure product details are updated and total calculated
+                if (productSelect.value) {
+                    updateProductDetails(productSelect, index);
+                }
+                calculateItemTotal(index);
+            });
+            calculateGrandTotal(); // Initial grand total calculation
+
+            // If it's a print-ready page, trigger print dialog
+            {% if print_ready %}
+                window.print();
+            {% endif %}
         });
     </script>
 </body>

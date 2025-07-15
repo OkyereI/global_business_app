@@ -87,8 +87,8 @@
             </a>
             {% endif %}
 
-            {# NEW: Company Management Link - Visible to admin for Hardware businesses #}
-            {% if user_role == 'admin' and business_type == 'Hardware' %}
+            {# NEW: Company Management Link - Visible to admin, viewer_admin, and sales for Hardware businesses #}
+            {% if business_type == 'Hardware' and user_role in ['admin', 'viewer_admin', 'sales'] %}
             <a href="{{ url_for('companies') }}"
                class="flex flex-col items-center justify-center p-6 bg-orange-600 text-white rounded-lg shadow-md hover:bg-orange-700 transition duration-300 ease-in-out transform hover:scale-105"
             >

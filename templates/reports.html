@@ -1,174 +1,399 @@
-<!-- templates/reports.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reports & Statistics - Pharmaceutical Store</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Reports - {{ session.get('business_name', 'Business') }}</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
-        .expired-row {
-            background-color: #fee2e2; /* Red-100 */
-            color: #dc2626; /* Red-700 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
         }
-        .expires-soon-row {
-            background-color: #fffbeb; /* Yellow-100 */
-            color: #d97706; /* Yellow-700 */
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            min-width: 250px;
+            max-width: 250px;
+            background: #2c3e50;
+            color: #fff;
+            transition: all 0.3s;
+            padding: 20px;
+        }
+        .sidebar.active {
+            margin-left: -250px;
+        }
+        .sidebar .sidebar-header {
+            padding-bottom: 20px;
+            border-bottom: 1px solid #47748b;
+            text-align: center;
+        }
+        .sidebar ul.components {
+            padding: 20px 0;
+            border-bottom: 1px solid #47748b;
+        }
+        .sidebar ul li a {
+            padding: 10px;
+            font-size: 1.1em;
+            display: block;
+            color: #fff;
+            text-decoration: none;
+        }
+        .sidebar ul li a:hover {
+            color: #2c3e50;
+            background: #fff;
+            border-radius: 5px;
+        }
+        .sidebar ul li.active > a, .sidebar ul li a[aria-expanded="true"] {
+            color: #fff;
+            background: #34495e;
+            border-radius: 5px;
+        }
+        .navbar {
+            padding: 15px 10px;
+            background: #fff;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .content {
+            width: 100%;
+            padding: 20px;
+            min-height: 100vh;
+            transition: all 0.3s;
+        }
+        #sidebarCollapse {
+            background: #34495e;
+            border-color: #34495e;
+            color: #fff;
+        }
+        #sidebarCollapse:hover {
+            background: #2c3e50;
+            border-color: #2c3e50;
+        }
+        .card {
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .card-header {
+            background-color: #34495e;
+            color: #fff;
+            border-radius: 8px 8px 0 0;
+            padding: 15px;
+            font-size: 1.2em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .table-responsive {
+            margin-top: 20px;
+        }
+        .table th, .table td {
+            vertical-align: middle;
+        }
+        .table thead th {
+            background-color: #f8f9fa;
+            color: #495057;
+        }
+        .btn-primary {
+            background-color: #28a745;
+            border-color: #28a745;
+            border-radius: 5px;
+        }
+        .btn-primary:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+        }
+        .btn-info {
+            background-color: #17a2b8;
+            border-color: #17a2b8;
+            border-radius: 5px;
+        }
+        .btn-info:hover {
+            background-color: #138496;
+            border-color: #117a8b;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            border-color: #dc3545;
+            border-radius: 5px;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+            border-color: #bd2130;
+        }
+        .btn-warning {
+            background-color: #ffc107;
+            border-color: #ffc107;
+            color: #212529;
+            border-radius: 5px;
+        }
+        .btn-warning:hover {
+            background-color: #e0a800;
+            border-color: #d39e00;
+        }
+        .alert {
+            border-radius: 5px;
+        }
+        .badge-warning {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .badge-danger {
+            background-color: #dc3545;
+            color: #fff;
         }
     </style>
 </head>
-<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-7xl">
-        <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Reports & Statistics</h2>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="mb-4">
-                    {% for category, message in messages %}
-                        <div class="p-3 mb-2 rounded-md
-                            {% if category == 'success' %} bg-green-100 text-green-700
-                            {% elif category == 'danger' %} bg-red-100 text-red-700
-                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
-                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-        {% endwith %}
-
-        <!-- Stock Summary Section -->
-        <div class="mb-8 p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
-            <h3 class="text-2xl font-semibold text-gray-800 mb-4">Current Stock Summary</h3>
-            <div class="overflow-x-auto rounded-lg shadow-sm">
-                {% if stock_summary %}
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stock (Packs)</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units per Pack</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Type</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry Date</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for item in stock_summary %}
-                        <tr class="
-                            {% if item.expires_soon == 'Expired' %} expired-row
-                            {% elif item.expires_soon %} expires-soon-row
-                            {% endif %}
-                        ">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.product_name }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.category }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ "%.2f" | format(item.current_stock) }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.number_of_tabs }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.item_type }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {% if item.expiry_date %}{{ item.expiry_date.strftime('%Y-%m-%d') }}{% else %}N/A{% endif %}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold">
-                                {% if item.expires_soon == 'Expired' %}
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Expired</span>
-                                {% elif item.expires_soon %}
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Expires Soon</span>
-                                {% else %}
-                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Good</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <p class="text-center text-gray-500 text-lg py-8">No inventory items to display.</p>
+<body>
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h3>{{ session.get('business_name', 'Admin Panel') }}</h3>
+                <p>({{ session.get('role', 'Guest').replace('_', ' ').title() }})</p>
+            </div>
+            <ul class="list-unstyled components">
+                <li>
+                    <a href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a>
+                </li>
+                {% if user_role in ['admin', 'viewer_admin'] %}
+                <li>
+                    <a href="{{ url_for('inventory') }}"><i class="fas fa-boxes"></i> Inventory</a>
+                </li>
                 {% endif %}
-            </div>
-            <div class="mt-6 text-right text-gray-700">
-                <p class="font-semibold">Total Cost of Current Stock: GH₵{{ "%.2f" | format(total_cost_of_stock) }}</p>
-                <p class="font-semibold">Total Potential Profit from Current Stock: GH₵{{ "%.2f" | format(total_potential_profit) }}</p>
-            </div>
-        </div>
-
-        <!-- Sales Statistics Section -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
-                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Daily Sales</h3>
-                {% if daily_sales %}
-                <ul class="list-disc list-inside space-y-2">
-                    {% for date, total in daily_sales %}
-                        <li class="text-gray-700">{{ date }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-gray-500">No daily sales data.</p>
+                {% if user_role in ['admin', 'sales', 'viewer_admin'] %}
+                <li>
+                    <a href="{{ url_for('sales') }}"><i class="fas fa-chart-line"></i> Sales</a>
+                </li>
                 {% endif %}
-            </div>
-
-            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
-                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Weekly Sales</h3>
-                {% if weekly_sales %}
-                <ul class="list-disc list-inside space-y-2">
-                    {% for week, total in weekly_sales %}
-                        <li class="text-gray-700">{{ week }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-gray-500">No weekly sales data.</p>
+                {% if user_role in ['admin', 'viewer_admin'] %}
+                <li class="active">
+                    <a href="{{ url_for('reports') }}"><i class="fas fa-file-alt"></i> Reports</a>
+                </li>
                 {% endif %}
-            </div>
-
-            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
-                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Monthly Sales</h3>
-                {% if monthly_sales %}
-                <ul class="list-disc list-inside space-y-2">
-                    {% for month, total in monthly_sales %}
-                        <li class="text-gray-700">{{ month }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-gray-500">No monthly sales data.</p>
+                {% if business_type == 'Hardware' and user_role in ['admin', 'sales', 'viewer_admin'] %}
+                <li>
+                    <a href="{{ url_for('companies') }}"><i class="fas fa-building"></i> Companies</a>
+                </li>
+                <li>
+                    <a href="{{ url_for('future_orders') }}"><i class="fas fa-calendar-alt"></i> Future Orders</a>
+                </li>
                 {% endif %}
-            </div>
-
-            <div class="p-6 bg-gray-50 rounded-lg shadow-md border border-gray-200">
-                <h3 class="text-2xl font-semibold text-gray-800 mb-4">Sales Per Person</h3>
-                {% if sales_per_person %}
-                <ul class="list-disc list-inside space-y-2">
-                    {% for person, total in sales_per_person %}
-                        <li class="text-gray-700">{{ person }}: <span class="font-medium">GH₵{{ "%.2f" | format(total) }}</span></li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-gray-500">No sales person data.</p>
+                {% if user_role in ['admin', 'viewer_admin'] %}
+                <li>
+                    <a href="{{ url_for('manage_business_users') }}"><i class="fas fa-users-cog"></i> Manage Users</a>
+                </li>
                 {% endif %}
-            </div>
-        </div>
+                <li>
+                    <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </li>
+            </ul>
+        </nav>
 
-        <!-- Send Daily SMS Report Button (Admin only) -->
-        {% if user_role == 'admin' %}
-        <div class="mt-8 text-center">
-            <form action="{{ url_for('send_daily_sms_report') }}" method="POST">
-                <button
-                    type="submit"
-                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
-                >
-                    Send Daily Sales SMS Report to Admin
+        <!-- Page Content -->
+        <div id="content" class="content">
+            <nav class="navbar navbar-expand-lg navbar-light bg-light">
+                <button type="button" id="sidebarCollapse" class="btn btn-info">
+                    <i class="fas fa-align-left"></i>
+                    <span>Toggle Sidebar</span>
                 </button>
-            </form>
-        </div>
-        {% endif %}
+                <div class="ml-auto">
+                    <span class="navbar-text">
+                        Logged in as: <strong>{{ session.get('username') }}</strong>
+                    </span>
+                </div>
+            </nav>
 
-        <div class="mt-8 text-center">
-            <a href="{{ url_for('dashboard') }}"
-               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
-            >
-                Back to Dashboard
-            </a>
+            <h2 class="mb-4">Reports for {{ session.get('business_name', 'Business') }}</h2>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            Overall Business Metrics
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Total Value of Current Stock (Purchase Price):</strong> GH₵{{ "%.2f"|format(total_cost_of_stock) }}</p>
+                            <p><strong>Total Potential Sale Value of Current Stock:</strong> GH₵{{ "%.2f"|format(total_sale_value_of_stock) }}</p>
+                            <p><strong>Total Potential Gross Profit from Current Stock:</strong> GH₵{{ "%.2f"|format(total_potential_gross_profit) }}</p>
+                            <p><strong>Overall Stock Profit Margin:</strong> {{ "%.2f"|format(overall_stock_profit_margin) }}%</p>
+                            <p><strong>Total Actual Sales Revenue:</strong> GH₵{{ "%.2f"|format(total_sales_amount) }}</p>
+                            {% if user_role == 'admin' %}
+                            <form action="{{ url_for('send_daily_sms_report') }}" method="POST" class="mt-3">
+                                <button type="submit" class="btn btn-primary"><i class="fas fa-sms"></i> Send Daily Sales SMS Report</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            Sales by Sales Person
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                {% for person, amount in sales_per_person %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        {{ person }}
+                                        <span class="badge badge-primary badge-pill">GH₵{{ "%.2f"|format(amount) }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="list-group-item">No sales recorded by any person yet.</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            Inventory Stock Summary
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Product Name</th>
+                                            <th>Category</th>
+                                            <th>Current Stock (Packs)</th>
+                                            <th>Units/Pack</th>
+                                            <th>Unit Price (GH₵)</th>
+                                            <th>Expiry Date</th>
+                                            <th>Status</th>
+                                            <th>Profit Margin (%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for item in stock_summary %}
+                                        <tr {% if item.expires_soon == 'Expired' %}class="table-danger"{% elif item.expires_soon %}class="table-warning"{% endif %}>
+                                            <td>{{ item.product_name }}</td>
+                                            <td>{{ item.category }}</td>
+                                            <td>{{ "%.2f"|format(item.current_stock) }}</td>
+                                            <td>{{ item.number_of_tabs }}</td>
+                                            <td>{{ "%.2f"|format(item.unit_price_per_tab) }}</td>
+                                            <td>
+                                                {% if item.expiry_date %}
+                                                    {{ item.expiry_date.strftime('%Y-%m-%d') }}
+                                                    {% if item.expires_soon == 'Expired' %}
+                                                        <span class="badge badge-danger">Expired</span>
+                                                    {% elif item.expires_soon %}
+                                                        <span class="badge badge-warning">Expires Soon</span>
+                                                    {% endif %}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if item.is_active %}
+                                                    <span class="badge badge-success">Active</span>
+                                                {% else %}
+                                                    <span class="badge badge-secondary">Inactive</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ "%.2f"|format(item.profit_margin_percentage) }}%</td>
+                                        </tr>
+                                        {% else %}
+                                        <tr>
+                                            <td colspan="8">No inventory items found.</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            Daily Sales
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                {% for date, amount in daily_sales %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        {{ date }}
+                                        <span class="badge badge-primary badge-pill">GH₵{{ "%.2f"|format(amount) }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="list-group-item">No daily sales recorded.</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            Weekly Sales
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                {% for week, amount in weekly_sales %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        {{ week }}
+                                        <span class="badge badge-primary badge-pill">GH₵{{ "%.2f"|format(amount) }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="list-group-item">No weekly sales recorded.</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            Monthly Sales
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                {% for month, amount in monthly_sales %}
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        {{ month }}
+                                        <span class="badge badge-primary badge-pill">GH₵{{ "%.2f"|format(amount) }}</span>
+                                    </li>
+                                {% else %}
+                                    <li class="list-group-item">No monthly sales recorded.</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            $('#sidebarCollapse').on('click', function () {
+                $('#sidebar').toggleClass('active');
+            });
+        });
+    </script>
 </body>
 </html>

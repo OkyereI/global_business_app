@@ -129,6 +129,44 @@
         tr:hover {
             background-color: #f0f4f7;
         }
+        /* Print-specific styles */
+        .print-area {
+            display: none; /* Hidden by default */
+        }
+        @media print {
+            body > *:not(.print-area) {
+                display: none;
+            }
+            .print-area {
+                display: block;
+                width: 100%;
+                margin: 0 auto;
+                padding: 20px;
+                font-family: 'Inter', sans-serif;
+                color: #000;
+                font-size: 12px;
+            }
+            .print-area h2, .print-area h3 {
+                text-align: center;
+                margin-bottom: 10px;
+            }
+            .print-area table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 15px;
+            }
+            .print-area th, .print-area td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            .print-area .text-right {
+                text-align: right;
+            }
+            .print-area .text-center {
+                text-align: center;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-6">
@@ -169,6 +207,10 @@
             <div class="form-group">
                 <label for="description" class="block text-sm">Description</label>
                 <textarea id="description" name="description" rows="2" class="form-control mt-1"></textarea>
+            </div>
+            <div class="form-group flex items-center mt-4">
+                <input type="checkbox" id="send_sms_receipt" name="send_sms_receipt" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <label for="send_sms_receipt" class="ml-2 block text-sm text-gray-900">Send SMS Receipt to Company</label>
             </div>
             <div class="flex justify-end space-x-4">
                 <button type="submit" class="btn btn-primary">Record Transaction</button>
@@ -213,5 +255,57 @@
             </a>
         </div>
     </div>
+
+    <!-- Print-ready receipt area -->
+    {% if print_ready and last_company_transaction_details %}
+    <div class="print-area p-8 bg-white rounded-lg shadow-xl mt-8">
+        <h2 class="text-2xl font-bold mb-2">{{ pharmacy_info.name }}</h2>
+        <h3 class="text-lg mb-4">{{ pharmacy_info.location }}, {{ pharmacy_info.address }}</h3>
+        <p class="text-center mb-4">Contact: {{ pharmacy_info.contact }}</p>
+
+        <h3 class="text-xl font-bold mb-4">COMPANY TRANSACTION RECEIPT</h3>
+        <p><strong>Transaction ID:</strong> {{ last_company_transaction_id[:8].upper() }}</p>
+        <p><strong>Date:</strong> {{ last_company_transaction_details.date }}</p>
+        <p><strong>Company Name:</strong> {{ last_company_transaction_details.company_name }}</p>
+        <p><strong>Recorded By:</strong> {{ last_company_transaction_details.recorded_by }}</p>
+        <br>
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th class="text-right">Amount</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{ last_company_transaction_details.transaction_type }}</td>
+                    <td class="text-right">GH₵{{ "%.2f" | format(last_company_transaction_details.amount) }}</td>
+                    <td>{{ last_company_transaction_details.description if last_company_transaction_details.description else 'N/A' }}</td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th colspan="2" class="text-right">New Balance:</th>
+                    <th class="text-right">GH₵{{ "%.2f" | format(last_company_transaction_details.new_balance) }}</th>
+                </tr>
+            </tfoot>
+        </table>
+        <p class="text-center mt-6">Thank you for your business!</p>
+    </div>
+
+    <div class="mt-4 flex gap-4">
+        <button type="button" onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">Print Receipt</button>
+        <a href="{{ url_for('company_transaction', company_id=company.id) }}" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">New Transaction</a>
+    </div>
+    {% endif %}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            {% if print_ready %}
+                window.print();
+            {% endif %}
+        });
+    </script>
 </body>
 </html>
