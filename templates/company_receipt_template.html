@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Receipt - {{ business_info.name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+        .receipt-container { max-width: 600px; margin: auto; border: 1px solid #ccc; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #0056b3; }
+        .header p { margin: 5px 0; font-size: 0.9em; }
+        .section-title { border-bottom: 1px dashed #ccc; padding-bottom: 5px; margin-top: 20px; margin-bottom: 10px; font-weight: bold; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .info-row span:first-child { font-weight: bold; }
+        .footer { text-align: center; margin-top: 30px; font-size: 0.8em; color: #555; }
+        @media print {
+            body { margin: 0; }
+            .receipt-container { border: none; box-shadow: none; max-width: 100%; padding: 0; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <div class="header">
+            <h1>{{ business_info.name }}</h1>
+            <p>{{ business_info.address }}, {{ business_info.location }}</p>
+            <p>Contact: {{ business_info.contact }}</p>
+            <h2>Transaction Receipt</h2>
+        </div>
+
+        <div class="transaction-details">
+            <div class="info-row">
+                <span>Transaction ID:</span>
+                <span>{{ transaction.id[:8].upper() }}</span>
+            </div>
+            <div class="info-row">
+                <span>Date:</span>
+                <span>{{ transaction.date.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            </div>
+            <div class="info-row">
+                <span>Recorded By:</span>
+                <span>{{ transaction.recorded_by }}</span>
+            </div>
+        </div>
+
+        <div class="section-title">Company Details</div>
+        <div class="company-details">
+            <div class="info-row">
+                <span>Company Name:</span>
+                <span>{{ company.name }}</span>
+            </div>
+            <div class="info-row">
+                <span>Contact Person:</span>
+                <span>{{ company.contact_person if company.contact_person else 'N/A' }}</span>
+            </div>
+            <div class="info-row">
+                <span>Phone:</span>
+                <span>{{ company.phone if company.phone else 'N/A' }}</span>
+            </div>
+        </div>
+
+        <div class="section-title">Transaction Summary</div>
+        <div class="summary-details">
+            <div class="info-row">
+                <span>Type:</span>
+                <span>{{ transaction.type }}</span>
+            </div>
+            <div class="info-row">
+                <span>Amount:</span>
+                <span>GH₵{{ "%.2f"|format(transaction.amount) }}</span>
+            </div>
+            <div class="info-row">
+                <span>Description:</span>
+                <span>{{ transaction.description if transaction.description else 'N/A' }}</span>
+            </div>
+            <div class="info-row">
+                <span>Company's New Balance:</span>
+                <span>GH₵{{ "%.2f"|format(company.balance) }}</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Thank you for your business!</p>
+            <p class="no-print">Powered by Your Pharmacy Management System</p>
+        </div>
+    </div>
+    <script>
+        window.onload = function() {
+            window.print();
+        };
+    </script>
+</body>
+</html>

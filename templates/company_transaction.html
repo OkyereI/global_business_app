@@ -192,7 +192,7 @@
         </div>
 
         <h2 class="section-title">Record New Transaction</h2>
-        <form method="POST" action="{{ url_for('company_transaction', company_id=company.id) }}" class="space-y-4 mb-8">
+        <form id="transactionForm" method="POST" action="{{ url_for('company_transaction', company_id=company.id) }}" class="space-y-4 mb-8">
             <div class="form-group">
                 <label for="type" class="block text-sm">Transaction Type</label>
                 <select id="type" name="type" class="form-control mt-1" required>
@@ -209,7 +209,7 @@
                 <textarea id="description" name="description" rows="2" class="form-control mt-1"></textarea>
             </div>
             <div class="form-group flex items-center mt-4">
-                <input type="checkbox" id="send_sms_receipt" name="send_sms_receipt" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                <input type="checkbox" id="send_sms_receipt" name="send_sms_receipt" value="on" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                 <label for="send_sms_receipt" class="ml-2 block text-sm text-gray-900">Send SMS Receipt to Company</label>
             </div>
             <div class="flex justify-end space-x-4">
@@ -228,6 +228,7 @@
                         <th>Amount (GH₵)</th>
                         <th>Description</th>
                         <th>Recorded By</th>
+                        <th>Actions</th> {# New column for actions #}
                     </tr>
                 </thead>
                 <tbody>
@@ -238,6 +239,9 @@
                         <td>GH₵{{ "%.2f" % transaction.amount }}</td>
                         <td>{{ transaction.description if transaction.description else 'N/A' }}</td>
                         <td>{{ transaction.recorded_by }}</td>
+                        <td>
+                            <a href="{{ url_for('print_company_receipt', transaction_id=transaction.id) }}" target="_blank" class="text-blue-600 hover:text-blue-900 text-sm">Print Receipt</a>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -301,6 +305,11 @@
     {% endif %}
 
     <script>
+        document.getElementById('transactionForm').addEventListener('submit', function() {
+            const sendSmsCheckbox = document.getElementById('send_sms_receipt');
+            console.log('Client-side: Send SMS receipt checkbox state:', sendSmsCheckbox.checked);
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
             {% if print_ready %}
                 window.print();

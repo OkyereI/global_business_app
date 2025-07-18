@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rental Records - {{ session.get('business_name', 'Business') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f3f4f6;
+        }
+        .sidebar {
+            width: 250px;
+            background-color: #1a202c;
+            color: #ffffff;
+            padding: 1.5rem;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            overflow-y: auto;
+        }
+        .main-content {
+            margin-left: 250px;
+            padding: 1.5rem;
+        }
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.75rem;
+            color: #ffffff;
+            text-decoration: none;
+            transition: background-color 0.2s;
+        }
+        .sidebar a i {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar a:hover {
+            background-color: #2d3748;
+        }
+        .sidebar a.active {
+            background-color: #4a5568;
+            font-weight: bold;
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        .flash-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .flash-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .flash-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .flash-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .flash-message i {
+            margin-right: 0.75rem;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                padding-bottom: 0;
+            }
+            .main-content {
+                margin-left: 0;
+                padding-top: 1rem;
+            }
+            .sidebar-title {
+                text-align: center;
+                margin-bottom: 1rem;
+            }
+            .sidebar-nav {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 0.5rem;
+            }
+            .sidebar a {
+                flex-grow: 1;
+                text-align: center;
+                justify-content: center;
+                margin-bottom: 0.5rem;
+                padding: 0.5rem;
+            }
+            .sidebar a i {
+                margin-right: 0;
+                margin-bottom: 0.25rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2 class="text-2xl font-bold mb-6 text-center sidebar-title">{{ session.get('business_name', 'Business') }}</h2>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
+            </a>
+            {% if session.get('role') in ['admin', 'sales', 'viewer'] %}
+            <a href="{{ url_for('inventory') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-boxes mr-3"></i> Inventory
+            </a>
+            <a href="{{ url_for('sales') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-chart-line mr-3"></i> Sales
+            </a>
+            {% endif %}
+            {% if session.get('business_type') == 'Hardware' %}
+            <a href="{{ url_for('hirable_items') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tools mr-3"></i> Hirable Items
+            </a>
+            <a href="{{ url_for('rental_records') }}" class="active flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-calendar-alt mr-3"></i> Rental Records
+            </a>
+            <a href="{{ url_for('companies') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-building mr-3"></i> Companies
+            </a>
+            <a href="{{ url_for('future_orders') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-clock mr-3"></i> Future Orders
+            </a>
+            {% endif %}
+            {% if session.get('role') == 'admin' %}
+            <a href="{{ url_for('manage_business_users') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-users mr-3"></i> Manage Users
+            </a>
+            {% endif %}
+            {% if session.get('role') in ['super_admin', 'admin'] %}
+            <a href="{{ url_for('super_admin_dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-user-shield mr-3"></i> Admin Panel
+            </a>
+            {% endif %}
+            <a href="{{ url_for('reports') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-file-alt mr-3"></i> Reports
+            </a>
+            <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-sign-out-alt mr-3"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Rental Records</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }} mb-4">
+                        <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if session.get('business_type') == 'Hardware' %}
+            {% if user_role in ['admin', 'sales'] %}
+            <div class="mb-6 text-right">
+                <a href="{{ url_for('add_rental_record') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">
+                    <i class="fas fa-plus-circle mr-2"></i> Add New Rental
+                </a>
+            </div>
+            {% endif %}
+
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                {% if rental_records %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Item</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Customer</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Phone</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Start Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">End Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Days</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Daily Price (GH₵)</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total (GH₵)</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Status</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Recorded By</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in rental_records %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                <td class="py-3 px-4 text-gray-700">{{ record.item_name_at_rent }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.customer_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.customer_phone if record.customer_phone else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.start_date.strftime('%Y-%m-%d') }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.end_date.strftime('%Y-%m-%d') if record.end_date else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.number_of_days }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.daily_hire_price_at_rent) }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.total_hire_amount) }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    {% if record.status == 'Rented' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Rented</span>
+                                    {% elif record.status == 'Returned' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Returned</span>
+                                    {% elif record.status == 'Overdue' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Overdue</span>
+                                    {% elif record.status == 'Cancelled' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Cancelled</span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.sales_person_name }}</td>
+                                <td class="py-3 px-4 text-gray-700 whitespace-nowrap">
+                                    {% if user_role in ['admin', 'sales'] %}
+                                        {% if record.status == 'Rented' %}
+                                        <a href="{{ url_for('mark_rental_returned', record_id=record.id) }}" class="text-green-600 hover:text-green-900 mr-3" title="Mark as Returned">
+                                            <i class="fas fa-check-circle"></i>
+                                        </a>
+                                        <a href="{{ url_for('cancel_rental_record', record_id=record.id) }}" class="text-red-600 hover:text-red-900 mr-3" title="Cancel Rental">
+                                            <i class="fas fa-times-circle"></i>
+                                        </a>
+                                        {% endif %}
+                                        <a href="{{ url_for('print_rental_receipt', record_id=record.id) }}" class="text-purple-600 hover:text-purple-900" title="Print Receipt">
+                                            <i class="fas fa-print"></i>
+                                        </a>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600">No rental records found for this business.</p>
+                {% endif %}
+            </div>
+        {% else %}
+            <div class="bg-white p-6 rounded-lg shadow-md text-center text-gray-700">
+                <p class="text-lg font-semibold">Feature Not Available</p>
+                <p class="text-sm mt-2">Rental records management is only available for Hardware businesses.</p>
+                <p class="text-sm mt-2">Please ensure you have a Hardware business selected.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -3,134 +3,313 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Pharmaceutical Store</title>
+    <title>Dashboard - {{ business_name }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f0f2f5;
+            font-family: "Inter", sans-serif;
+            background-color: #f3f4f6;
+        }
+        .sidebar {
+            width: 250px;
+            background-color: #1a202c;
+            color: #ffffff;
+            padding: 1.5rem;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            overflow-y: auto;
+            transition: transform 0.3s ease-in-out;
+            transform: translateX(0);
+            z-index: 1000;
+        }
+        .sidebar.hidden {
+            transform: translateX(-100%);
+        }
+        .main-content {
+            margin-left: 250px;
+            padding: 1.5rem;
+            transition: margin-left 0.3s ease-in-out;
+        }
+        .main-content.full-width {
+            margin-left: 0;
+        }
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.75rem;
+            color: #ffffff;
+            text-decoration: none;
+            transition: background-color 0.2s;
+        }
+        .sidebar a i {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar a:hover {
+            background-color: #2d3748;
+        }
+        .sidebar a.active {
+            background-color: #4a5568;
+            font-weight: bold;
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        .flash-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .flash-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .flash-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .flash-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .flash-message i {
+            margin-right: 0.75rem;
+        }
+        .menu-toggle {
+            display: none; /* Hidden by default, shown on small screens */
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            z-index: 1001;
+            background-color: #1a202c;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                position: fixed;
+                height: 100vh;
+                top: 0;
+                left: 0;
+                width: 250px;
+            }
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            .main-content {
+                margin-left: 0;
+                width: 100%;
+            }
+            .menu-toggle {
+                display: block;
+            }
         }
     </style>
 </head>
-<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl text-center">
-        <h2 class="text-4xl font-extrabold text-gray-800 mb-6">Welcome to the Dashboard, {{ username }}!</h2>
-        {% if business_name %}
-            <p class="text-gray-700 text-xl font-semibold mb-4">Business: {{ business_name }} ({{ business_type | title }})</p>
-        {% endif %}
+<body>
+    <div class="menu-toggle" id="menuToggle">
+        <i class="fas fa-bars"></i>
+    </div>
+
+    <div class="sidebar" id="sidebar">
+        <h2 class="text-2xl font-bold mb-6 text-center sidebar-title">{{ business_name }}</h2>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="active flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
+            </a>
+            {% if user_role in ['admin', 'sales', 'viewer'] %}
+            <a href="{{ url_for('inventory') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-boxes mr-3"></i> Inventory
+            </a>
+            <a href="{{ url_for('sales') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-chart-line mr-3"></i> Sales
+            </a>
+            {% endif %}
+            {% if business_type == 'Hardware' %}
+            <a href="{{ url_for('hirable_items') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tools mr-3"></i> Hirable Items
+            </a>
+            <a href="{{ url_for('rental_records') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-calendar-alt mr-3"></i> Rental Records
+            </a>
+            <a href="{{ url_for('companies') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-building mr-3"></i> Companies
+            </a>
+            <a href="{{ url_for('future_orders') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-clock mr-3"></i> Future Orders
+            </a>
+            {% endif %}
+            {% if user_role == 'admin' %}
+            <a href="{{ url_for('manage_business_users') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-users mr-3"></i> Manage Users
+            </a>
+            {% endif %}
+            {% if user_role in ['super_admin', 'admin'] %}
+            <a href="{{ url_for('super_admin_dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-user-shield mr-3"></i> Admin Panel
+            </a>
+            {% endif %}
+            <a href="{{ url_for('reports') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-file-alt mr-3"></i> Reports
+            </a>
+            <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-sign-out-alt mr-3"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <div class="main-content" id="mainContent">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Dashboard</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="mb-6">
-                    {% for category, message in messages %}
-                        <div class="p-3 mb-2 rounded-md text-base
-                            {% if category == 'success' %} bg-green-100 text-green-700
-                            {% elif category == 'danger' %} bg-red-100 text-red-700
-                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
-                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
-                            {{ message }}
-                        </div>
-                    {% endfor %}
-                </div>
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }} mb-4">
+                        <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
             {% endif %}
         {% endwith %}
 
-        <p class="text-gray-600 text-lg mb-10">Manage your {{ business_type | lower }} store operations with ease.</p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-            {# Inventory Link - Visible to admin and viewer_admin #}
-            {% if user_role in ['admin', 'viewer_admin'] %}
-            <a href="{{ url_for('inventory') }}"
-               class="flex flex-col items-center justify-center p-6 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m7 0V4m0 0a2 2 0 012-2h4a2 2 0 012 2v7m-4 0v-7m0 7h-4"/>
-                </svg>
-                <span class="text-xl font-semibold">Manage Inventory</span>
-            </a>
-            {% endif %}
-
-            {# Sales Link - Visible to admin, sales, and viewer_admin #}
-            {% if user_role in ['admin', 'sales', 'viewer_admin'] %}
-            <a href="{{ url_for('sales') }}"
-               class="flex flex-col items-center justify-center p-6 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a2 2 0 002 2h10a2 2 0 002-2V6M6 7H3a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-7 0V4m0 0a2 2 0 012-2h4a2 2 0 012 2v3M9 7h4"/>
-                </svg>
-                <span class="text-xl font-semibold">Manage Daily Sales</span>
-            </a>
-            {% endif %}
-
-            {# Reports Link - Visible to admin and viewer_admin #}
-            {% if user_role in ['admin', 'viewer_admin'] %}
-            <a href="{{ url_for('reports') }}"
-               class="flex flex-col items-center justify-center p-6 bg-purple-600 text-white rounded-lg shadow-md hover:bg-purple-700 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0h.01M10 17H7m7 0h-3m4 0h3m-7-9l2 2 2-2m-2-2V3a1 1 0 00-1-1H7a1 1 0 00-1 1v2m7 5l2 2 2-2m-2-2V3a1 1 0 00-1-1h-2a1 1 0 00-1 1v2m7 5l2 2 2-2m-2-2V3a1 1 0 00-1-1h-2a1 1 0 00-1 1v2"/>
-                </svg>
-                <span class="text-xl font-semibold">View Reports & Stats</span>
-            </a>
-            {% endif %}
-
-            {# Manage Users Link - Visible to admin and viewer_admin #}
-            {% if user_role in ['admin', 'viewer_admin'] %}
-            <a href="{{ url_for('manage_business_users') }}"
-               class="flex flex-col items-center justify-center p-6 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h2a2 2 0 002-2V4a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2m0 0l4-4m4 4l-4-4m-4 4v-4m0-4h.01M12 12V4"/>
-                </svg>
-                <span class="text-xl font-semibold">Manage Users</span>
-            </a>
-            {% endif %}
-
-            {# NEW: Company Management Link - Visible to admin, viewer_admin, and sales for Hardware businesses #}
-            {% if business_type == 'Hardware' and user_role in ['admin', 'viewer_admin', 'sales'] %}
-            <a href="{{ url_for('companies') }}"
-               class="flex flex-col items-center justify-center p-6 bg-orange-600 text-white rounded-lg shadow-md hover:bg-orange-700 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm12 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm12 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-                </svg>
-                <span class="text-xl font-semibold">Manage Companies</span>
-            </a>
-            {% endif %}
-
-            {# NEW: Future Orders/Layaway Link - Visible to admin/sales for Hardware businesses #}
-            {% if user_role in ['admin', 'sales'] and business_type == 'Hardware' %}
-            <a href="{{ url_for('future_orders') }}"
-               class="flex flex-col items-center justify-center p-6 bg-teal-600 text-white rounded-lg shadow-md hover:bg-teal-700 transition duration-300 ease-in-out transform hover:scale-105"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zm3-11h.01M12 11h.01M15 11h.01M8 15h.01M12 15h.01M15 15h.01"/>
-                </svg>
-                <span class="text-xl font-semibold">Future Orders / Layaway</span>
-            </a>
-            {% endif %}
-
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Welcome, {{ username }}!</h2>
+            <p class="text-gray-600">You are logged in as a <span class="font-bold">{{ user_role.replace('_', ' ').title() }}</span> for the business: <span class="font-bold">{{ business_name }} ({{ business_type }})</span>.</p>
         </div>
 
-        <div class="flex justify-center space-x-4">
-            <a href="{{ url_for('business_selection') }}"
-               class="inline-block bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-8 rounded-md shadow-lg transition duration-150 ease-in-out transform hover:scale-105"
-            >
-                Change Business
-            </a>
-            <a href="{{ url_for('logout') }}"
-               class="inline-block bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-8 rounded-md shadow-lg transition duration-150 ease-in-out transform hover:scale-105"
-            >
-                Logout
-            </a>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+            <!-- Quick Actions Card -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Quick Actions</h3>
+                <div class="space-y-3">
+                    {% if user_role in ['admin', 'sales'] %}
+                    <a href="{{ url_for('add_sale') }}" class="block w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+                        <i class="fas fa-cash-register mr-2"></i> Record New Sale
+                    </a>
+                    {% if business_type == 'Hardware' %}
+                    <a href="{{ url_for('add_rental_record') }}" class="block w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+                        <i class="fas fa-handshake mr-2"></i> Issue Rental Item
+                    </a>
+                    <a href="{{ url_for('add_future_order') }}" class="block w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+                        <i class="fas fa-clipboard-list mr-2"></i> Add Future Order
+                    </a>
+                    {% endif %}
+                    {% endif %}
+                    <a href="{{ url_for('inventory') }}" class="block w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+                        <i class="fas fa-boxes mr-2"></i> View Inventory
+                    </a>
+                    <a href="{{ url_for('reports') }}" class="block w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+                        <i class="fas fa-chart-pie mr-2"></i> View Reports
+                    </a>
+                </div>
+            </div>
+
+            <!-- Business Overview Card (Placeholder for actual data) -->
+            <div class="bg-white p-6 rounded-lg shadow-md col-span-1 md:col-span-2">
+                <h3 class="text-xl font-semibold mb-4 text-gray-700">Business Overview</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-indigo-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Total Sales Today:</p>
+                        <p class="text-2xl font-bold text-indigo-800">GH₵0.00</p>
+                        <p class="text-sm text-gray-500"> (Data from backend)</p>
+                    </div>
+                    <div class="bg-red-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Low Stock Items:</p>
+                        <p class="text-2xl font-bold text-red-800">0</p>
+                        <p class="text-sm text-gray-500"> (Data from backend)</p>
+                    </div>
+                    {% if business_type == 'Hardware' %}
+                    <div class="bg-yellow-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Overdue Rentals:</p>
+                        <p class="text-2xl font-bold text-yellow-800">0</p>
+                        <p class="text-sm text-gray-500"> (Data from backend)</p>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Pending Future Orders:</p>
+                        <p class="text-2xl font-bold text-blue-800">0</p>
+                        <p class="text-sm text-gray-500"> (Data from backend)</p>
+                    </div>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-gray-500 mt-4">Note: Actual data for these metrics would be fetched from your Flask backend (e.g., in the `dashboard` route).</p>
+            </div>
+        </div>
+
+        <!-- Recent Activity Card (Placeholder for actual data) -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h3 class="text-xl font-semibold mb-4 text-gray-700">Recent Activity</h3>
+            <p class="text-gray-600">This section would display a list of recent sales, rentals, or inventory updates.</p>
+            <p class="text-sm text-gray-500 mt-2"> (Data from backend)</p>
+            <div class="mt-4">
+                <!-- Example: A simple list of recent items -->
+                <ul class="list-disc list-inside text-gray-700">
+                    <li>Sale: Product X, GH₵50.00 (10 mins ago)</li>
+                    {% if business_type == 'Hardware' %}
+                    <li>Rental: Drill, Customer A (2 hours ago)</li>
+                    {% endif %}
+                    <li>Inventory Update: Item Y stock adjusted (yesterday)</li>
+                </ul>
+            </div>
         </div>
     </div>
-     <footer class="bg-gray-800 text-white py-8 px-4 mt-auto">
-        <div class="container mx-auto text-center p">
-            <p>&copy; Zion Global Business. All rights reserved.</p>
-            <p>contact:0547096268</p>
-        </div>
-    </footer>
+
+    <script>
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+        const menuToggle = document.getElementById('menuToggle');
+
+        menuToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+            // Optional: Adjust main content margin on toggle
+            // if (window.innerWidth <= 768) {
+            //     mainContent.classList.toggle('full-width');
+            // }
+        });
+
+        // Close sidebar if clicking outside on small screens
+        mainContent.addEventListener('click', (event) => {
+            if (window.innerWidth <= 768 && sidebar.classList.contains('active') && !sidebar.contains(event.target) && !menuToggle.contains(event.target)) {
+                sidebar.classList.remove('active');
+                // mainContent.classList.add('full-width');
+            }
+        });
+
+        // Ensure sidebar state is correct on resize
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 768) {
+                sidebar.classList.remove('active'); // Ensure it's not "active" (hidden) on desktop
+                sidebar.style.transform = 'translateX(0)'; // Force visible
+                mainContent.style.marginLeft = '250px'; // Ensure correct margin
+            } else {
+                sidebar.style.transform = 'translateX(-100%)'; // Ensure hidden by default on mobile
+                mainContent.style.marginLeft = '0'; // Ensure no margin on mobile
+            }
+        });
+
+        // Initial setup on load for mobile responsiveness
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.innerWidth <= 768) {
+                sidebar.classList.remove('active'); // Start hidden on mobile
+                sidebar.style.transform = 'translateX(-100%)';
+                mainContent.style.marginLeft = '0';
+            }
+        });
+    </script>
 </body>
 </html>

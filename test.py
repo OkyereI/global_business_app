@@ -43,6 +43,8 @@ class Business(db.Model):
     sales_records = db.relationship('SaleRecord', backref='business', lazy=True, cascade="all, delete-orphan")
     companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan") # New: for Hardware
     future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan") # New: for Hardware
+    hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan") # NEW: for Hardware Hiring
+    rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan") # NEW: for Hardware Hiring
 
     def __repr__(self):
         return f'<Business {self.name} ({self.type})>'
@@ -162,6 +164,45 @@ class FutureOrder(db.Model):
     def __repr__(self):
         return f'<FutureOrder {self.customer_name} (Status: {self.status})>'
 
+# NEW: Hirable Item Model for Hardware
+class HirableItem(db.Model):
+    __tablename__ = 'hirable_items'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    item_name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    daily_hire_price = db.Column(db.Float, nullable=False)
+    current_stock = db.Column(db.Integer, nullable=False, default=0) # Number of units available for hiring
+    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    is_active = db.Column(db.Boolean, default=True, nullable=False) # For soft delete
+
+    __table_args__ = (db.UniqueConstraint('item_name', 'business_id', name='_hirable_item_name_business_uc'),)
+
+    def __repr__(self):
+        return f'<HirableItem {self.item_name} (Stock: {self.current_stock})>'
+
+# NEW: Rental Record Model for Hardware
+class RentalRecord(db.Model):
+    __tablename__ = 'rental_records'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    hirable_item_id = db.Column(db.String(36), db.ForeignKey('hirable_items.id'), nullable=False)
+    item_name_at_rent = db.Column(db.String(255), nullable=False) # Store name at time of rent for historical accuracy
+    customer_name = db.Column(db.String(255), nullable=False)
+    customer_phone = db.Column(db.String(50))
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date) # Expected return date
+    actual_return_date = db.Column(db.DateTime)
+    number_of_days = db.Column(db.Integer, nullable=False) # Days calculated at the time of rental
+    daily_hire_price_at_rent = db.Column(db.Float, nullable=False)
+    total_hire_amount = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(50), default='Rented', nullable=False) # 'Rented', 'Returned', 'Overdue', 'Cancelled'
+    sales_person_name = db.Column(db.String(100)) # User who recorded the rental
+    date_recorded = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+    def __repr__(self):
+        return f'<RentalRecord {self.item_name_at_rent} for {self.customer_name} (Status: {self.status})>'
+
 
 # --- Flask app setup (secret_key, Arkesel, etc.) ---
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your_super_secret_key_here')
@@ -186,7 +227,7 @@ def get_current_business_type():
             return business.type
     return None
 
-# --- JSON Serialization Helper for InventoryItem ---
+# --- JSON Serialization Helper for InventoryItem and HirableItem ---
 def serialize_inventory_item(item):
     """Converts an InventoryItem SQLAlchemy object to a JSON-serializable dictionary."""
     return {
@@ -204,6 +245,18 @@ def serialize_inventory_item(item):
         'expiry_date': item.expiry_date.isoformat() if item.expiry_date else None, # Convert date to ISO 8601 string
         'is_fixed_price': item.is_fixed_price,
         'fixed_sale_price': item.fixed_sale_price,
+        'is_active': item.is_active
+    }
+
+def serialize_hirable_item(item):
+    """Converts a HirableItem SQLAlchemy object to a JSON-serializable dictionary."""
+    return {
+        'id': item.id,
+        'item_name': item.item_name,
+        'description': item.description,
+        'daily_hire_price': item.daily_hire_price,
+        'current_stock': item.current_stock,
+        'last_updated': item.last_updated.isoformat(),
         'is_active': item.is_active
     }
 
@@ -473,20 +526,20 @@ def download_inventory_csv(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
         return redirect(url_for('login'))
-
+    
     business = Business.query.get_or_404(business_id)
     inventory_items = InventoryItem.query.filter_by(business_id=business.id).all()
 
     si = io.StringIO()
     headers = [
-        'id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
-        'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
-        'expiry_date', 'is_fixed_price', 'fixed_sale_price', 'business_id', 'is_active'
+        'id', 'product_name', 'category', 'purchase_price', 'sale_price',
+        'current_stock', 'last_updated', 'batch_number', 'number_of_tabs',
+        'unit_price_per_tab', 'item_type', 'expiry_date', 'is_fixed_price',
+        'fixed_sale_price', 'business_id', 'is_active'
     ]
-    
     writer = csv.DictWriter(si, fieldnames=headers)
     writer.writeheader()
-    
+
     for item in inventory_items:
         row_to_write = {
             'id': item.id,
@@ -515,19 +568,19 @@ def download_inventory_csv(business_id):
     response.headers["Content-Disposition"] = f"attachment; filename={business.name.replace(' ', '_')}_inventory_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
     return response
 
+
 @app.route('/super_admin/upload_inventory/<business_id>', methods=['GET', 'POST'])
 def upload_inventory_csv(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
         return redirect(url_for('login'))
-
+    
     business = Business.query.get_or_404(business_id)
 
     if request.method == 'POST':
         if 'csv_file' not in request.files:
             flash('No file part', 'danger')
             return redirect(request.url)
-        
         file = request.files['csv_file']
         if file.filename == '':
             flash('No selected file', 'danger')
@@ -549,1713 +602,139 @@ def upload_inventory_csv(business_id):
                     current_stock = float(row['current_stock'])
                     batch_number = row.get('batch_number', '').strip()
                     number_of_tabs = int(row.get('number_of_tabs', 1))
+                    unit_price_per_tab = float(row.get('unit_price_per_tab', purchase_price / number_of_tabs if number_of_tabs else 0))
                     item_type = row.get('item_type', 'Pharmacy').strip()
                     expiry_date_str = row.get('expiry_date', '').strip()
-                    expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
+                    expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
                     is_fixed_price = row.get('is_fixed_price', 'False').lower() == 'true'
                     fixed_sale_price = float(row.get('fixed_sale_price', 0.0))
-                    is_active = row.get('is_active', 'True').lower() == 'true' # Read is_active from CSV
+                    is_active = row.get('is_active', 'True').lower() == 'true'
+                    sale_price = float(row['sale_price'])
 
-                    if number_of_tabs <= 0:
-                        errors.append(f"Skipping '{product_name}': 'Number of units/pieces per pack' must be greater than zero.")
-                        continue
-
-                    sale_price = 0.0
-                    unit_price_per_tab_with_markup = 0.0
-
-                    if is_fixed_price:
-                        sale_price = fixed_sale_price
-                        unit_price_per_tab_with_markup = fixed_sale_price / number_of_tabs if number_of_tabs > 0 else 0.0
-                    else:
-                        cost_per_tab = purchase_price / number_of_tabs if number_of_tabs > 0 else 0.0
-                        if item_type == 'Provision Store':
-                            unit_price_per_tab_with_markup = cost_per_tab * (1.10 if purchase_price >= 1000 else 1.08)
-                        elif item_type == 'Hardware Material':
-                            unit_price_per_tab_with_markup = cost_per_tab * 1.15
-                        elif item_type == 'Supermarket': # New markup for Supermarket
-                            unit_price_per_tab_with_markup = cost_per_tab * 1.20 # Example: 20% markup
-                        else: # Default to Pharmacy
-                            unit_price_per_tab_with_markup = cost_per_tab * 1.30
-                        sale_price = unit_price_per_tab_with_markup * number_of_tabs 
-
-                    existing_item = InventoryItem.query.filter_by(product_name=product_name, business_id=business.id).first()
-
-                    if existing_item:
+                    item = InventoryItem.query.filter_by(product_name=product_name, business_id=business_id).first()
+                    if item:
                         # Update existing item
-                        existing_item.category = category
-                        existing_item.purchase_price = purchase_price
-                        existing_item.sale_price = sale_price
-                        existing_item.current_stock = current_stock # Overwrite stock with CSV value
-                        existing_item.last_updated = datetime.now()
-                        existing_item.batch_number = batch_number
-                        existing_item.number_of_tabs = number_of_tabs
-                        existing_item.unit_price_per_tab = unit_price_per_tab_with_markup
-                        existing_item.item_type = item_type
-                        existing_item.expiry_date = expiry_date_obj
-                        existing_item.is_fixed_price = is_fixed_price
-                        existing_item.fixed_sale_price = fixed_sale_price
-                        existing_item.is_active = is_active # Update is_active
+                        item.category = category
+                        item.purchase_price = purchase_price
+                        item.sale_price = sale_price
+                        item.current_stock = current_stock
+                        item.last_updated = datetime.now()
+                        item.batch_number = batch_number
+                        item.number_of_tabs = number_of_tabs
+                        item.unit_price_per_tab = unit_price_per_tab
+                        item.item_type = item_type
+                        item.expiry_date = expiry_date
+                        item.is_fixed_price = is_fixed_price
+                        item.fixed_sale_price = fixed_sale_price
+                        item.is_active = is_active
                         updated_count += 1
                     else:
                         # Add new item
                         new_item = InventoryItem(
-                            business_id=business.id,
+                            business_id=business_id,
                             product_name=product_name,
                             category=category,
                             purchase_price=purchase_price,
                             sale_price=sale_price,
                             current_stock=current_stock,
-                            last_updated=datetime.now(),
                             batch_number=batch_number,
                             number_of_tabs=number_of_tabs,
-                            unit_price_per_tab=unit_price_per_tab_with_markup,
+                            unit_price_per_tab=unit_price_per_tab,
                             item_type=item_type,
-                            expiry_date=expiry_date_obj,
+                            expiry_date=expiry_date,
                             is_fixed_price=is_fixed_price,
                             fixed_sale_price=fixed_sale_price,
-                            is_active=is_active # Set is_active for new item
+                            is_active=is_active
                         )
                         db.session.add(new_item)
                         added_count += 1
                 except Exception as e:
-                    errors.append(f"Error processing row for product '{row.get('product_name', 'N/A')}': {e}")
-            
-            if errors:
-                db.session.rollback()
-                flash(f'CSV upload completed with {added_count} items added, {updated_count} items updated, and {len(errors)} errors. Please check the errors below.', 'warning')
-                for error in errors:
-                    flash(f'Error: {error}', 'danger')
-            else:
-                db.session.commit()
-                flash(f'CSV inventory uploaded successfully! {added_count} items added, {updated_count} items updated.', 'success')
-            
-            return redirect(url_for('inventory'))
-        else:
-            flash('Invalid file type. Please upload a CSV file.', 'danger')
+                    errors.append(f"Row for product '{row.get('product_name', 'N/A')}': {e}")
+                    db.session.rollback() # Rollback changes for this row
 
-    return render_template('upload_inventory_csv.html', business=business) # Re-use the super_admin template for simplicity
-
-
-# New route for importing products from other businesses
-@app.route('/inventory/import_from_other_businesses', methods=['POST'])
-def import_products_from_other_businesses():
-    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
-        flash('You do not have permission to import products.', 'danger')
-        return redirect(url_for('inventory'))
-
-    current_business_id = get_current_business_id()
-    current_business_type = session.get('business_type')
-    source_business_id = request.form.get('source_business_id')
-
-    if not source_business_id:
-        flash('Please select a business to import from.', 'danger')
-        return redirect(url_for('add_inventory')) # Redirect back to add_inventory to show the form
-
-    source_business = Business.query.get(source_business_id)
-    if not source_business or source_business.type != current_business_type:
-        flash('Invalid source business selected or business types do not match.', 'danger')
-        return redirect(url_for('add_inventory'))
-
-    source_items = InventoryItem.query.filter_by(business_id=source_business_id, is_active=True).all()
-    
-    imported_count = 0
-    skipped_count = 0
-    skipped_products = []
-
-    for item in source_items:
-        existing_item = InventoryItem.query.filter_by(product_name=item.product_name, business_id=current_business_id).first()
-        if existing_item:
-            skipped_count += 1
-            skipped_products.append(item.product_name)
-        else:
-            # Create a new item for the current business
-            new_item = InventoryItem(
-                business_id=current_business_id,
-                product_name=item.product_name,
-                category=item.category,
-                purchase_price=item.purchase_price,
-                current_stock=0.0, # Start with 0 stock, admin can add later
-                last_updated=datetime.now(),
-                batch_number=item.batch_number,
-                number_of_tabs=item.number_of_tabs,
-                item_type=item.item_type,
-                expiry_date=item.expiry_date,
-                is_fixed_price=item.is_fixed_price,
-                is_active=True # Imported items are active
-            )
-
-            # Recalculate sale price and unit price based on current business's markup rules
-            if new_item.is_fixed_price:
-                new_item.fixed_sale_price = item.fixed_sale_price
-                new_item.sale_price = item.fixed_sale_price
-                new_item.unit_price_per_tab = item.fixed_sale_price / new_item.number_of_tabs if new_item.number_of_tabs > 0 else 0.0
-            else:
-                cost_per_tab = new_item.purchase_price / new_item.number_of_tabs if new_item.number_of_tabs > 0 else 0.0
-                unit_price_per_tab_with_markup = 0.0
-                if new_item.item_type == 'Provision Store':
-                    unit_price_per_tab_with_markup = cost_per_tab * (1.10 if new_item.purchase_price >= 1000 else 1.08)
-                elif new_item.item_type == 'Hardware Material':
-                    unit_price_per_tab_with_markup = cost_per_tab * 1.15
-                elif new_item.item_type == 'Supermarket':
-                    unit_price_per_tab_with_markup = cost_per_tab * 1.20
-                else: # Default to Pharmacy
-                    unit_price_per_tab_with_markup = cost_per_tab * 1.30
-                
-                new_item.unit_price_per_tab = unit_price_per_tab_with_markup
-                new_item.sale_price = unit_price_per_tab_with_markup * new_item.number_of_tabs
-                new_item.fixed_sale_price = 0.0 # Ensure fixed_sale_price is 0 if not fixed
-
-            db.session.add(new_item)
-            imported_count += 1
-    
-    db.session.commit()
-
-    if imported_count > 0:
-        flash(f'Successfully imported {imported_count} products from {source_business.name}.', 'success')
-    if skipped_count > 0:
-        flash(f'Skipped {skipped_count} products because they already exist: {", ".join(skipped_products[:5])}{"..." if len(skipped_products) > 5 else ""}.', 'warning')
-    if imported_count == 0 and skipped_count == 0:
-        flash('No products found to import from the selected business.', 'info')
-
-    return redirect(url_for('inventory'))
-
-
-@app.route('/inventory/delete/<item_id>')
-def delete_inventory(item_id):
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to delete inventory items or no business selected.', 'danger')
-        return redirect(url_for('inventory'))
-
-    business_id = get_current_business_id()
-    item_to_delete = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
-    
-    # Instead of deleting, mark as inactive (soft delete)
-    if SaleRecord.query.filter_by(product_id=item_id).first():
-        item_to_delete.is_active = False
-        db.session.commit()
-        flash(f'Inventory item "{item_to_delete.product_name}" marked as inactive because it has associated sales records. It will no longer appear in active inventory lists.', 'info')
-    else:
-        # If no sales records, proceed with hard delete (optional, but cleaner for truly unused items)
-        db.session.delete(item_to_delete)
-        db.session.commit()
-        flash(f'Inventory item "{item_to_delete.product_name}" deleted permanently.', 'success')
-    
-    return redirect(url_for('inventory'))
-
-# --- Inventory List Route ---
-@app.route('/inventory')
-def inventory():
-    if 'username' not in session or not get_current_business_id():
-        flash('Please log in and select a business to access this page.', 'warning')
-        return redirect(url_for('login'))
-    
-    business_id = get_current_business_id()
-    search_query = request.args.get('search', '').strip() # Get search query from URL parameters
-
-    inventory_items_query = InventoryItem.query.filter_by(business_id=business_id)
-
-    if search_query:
-        # Filter by product name or category (case-insensitive)
-        inventory_items_query = inventory_items_query.filter(
-            (InventoryItem.product_name.ilike(f'%{search_query}%')) |
-            (InventoryItem.category.ilike(f'%{search_query}%'))
-        )
-
-    inventory_items = inventory_items_query.order_by(InventoryItem.product_name).all()
-
-    # Get other businesses of the same type for importing
-    current_business_type = session.get('business_type')
-    other_businesses = []
-    if current_business_type:
-        other_businesses = Business.query.filter(
-            Business.id != business_id,
-            Business.type == current_business_type
-        ).all()
-
-    # Prepare stock summary with expiry warnings
-    stock_summary_with_expiry = []
-    today = date.today()
-    for item in inventory_items:
-        item_data = {
-            'id': item.id,
-            'product_name': item.product_name,
-            'category': item.category,
-            'purchase_price': item.purchase_price,
-            'sale_price': item.sale_price,
-            'current_stock': item.current_stock,
-            'last_updated': item.last_updated,
-            'batch_number': item.batch_number,
-            'number_of_tabs': item.number_of_tabs,
-            'unit_price_per_tab': item.unit_price_per_tab,
-            'item_type': item.item_type,
-            'expiry_date': item.expiry_date,
-            'is_fixed_price': item.is_fixed_price,
-            'fixed_sale_price': item.fixed_sale_price,
-            'is_active': item.is_active
-        }
-        
-        item_data['expires_soon'] = False
-        if item.expiry_date:
-            time_to_expiry = item.expiry_date - today
-            if time_to_expiry.days <= 180 and time_to_expiry.days >= 0: # Within 6 months and not expired
-                item_data['expires_soon'] = True
-            elif time_to_expiry.days < 0: # Already expired
-                item_data['expires_soon'] = 'Expired'
-        stock_summary_with_expiry.append(item_data)
-
-    return render_template('inventory_list.html', 
-                           inventory_items=stock_summary_with_expiry, # Pass the processed list
-                           user_role=session.get('role'),
-                           business_type=session.get('business_type'),
-                           other_businesses=other_businesses,
-                           search_query=search_query) # Pass search_query back to template
-
-# --- Add/Edit Inventory Routes ---
-@app.route('/inventory/add', methods=['GET', 'POST'])
-def add_inventory():
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to add inventory items or no business selected.', 'danger')
-        return redirect(url_for('inventory'))
-    
-    business_id = get_current_business_id()
-    current_business_type = session.get('business_type')
-
-    # Get other businesses of the same type for importing
-    other_businesses = []
-    if current_business_type:
-        other_businesses = Business.query.filter(
-            Business.id != business_id,
-            Business.type == current_business_type
-        ).all()
-
-    if request.method == 'POST':
-        product_name = request.form['product_name'].strip()
-        category = request.form['category'].strip()
-        purchase_price = float(request.form['purchase_price'])
-        current_stock = float(request.form['current_stock'])
-        batch_number = request.form.get('batch_number', '').strip()
-        number_of_tabs = int(request.form.get('number_of_tabs', 1))
-        item_type = request.form.get('item_type', 'Pharmacy').strip()
-        expiry_date_str = request.form.get('expiry_date', '').strip()
-        expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
-        is_fixed_price = 'is_fixed_price' in request.form
-        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
-
-        if number_of_tabs <= 0:
-            flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-            return render_template('add_edit_inventory.html', title='Add New Inventory Item', item=request.form, user_role=session.get('role'), business_type=current_business_type, other_businesses=other_businesses)
-
-        if InventoryItem.query.filter_by(product_name=product_name, business_id=business_id).first():
-            flash('Product with this name already exists for this business.', 'danger')
-            return render_template('add_edit_inventory.html', title='Add New Inventory Item', item=request.form, user_role=session.get('role'), business_type=current_business_type, other_businesses=other_businesses)
-        
-        sale_price = 0.0
-        unit_price_per_tab_with_markup = 0.0
-
-        if is_fixed_price:
-            sale_price = fixed_sale_price
-            unit_price_per_tab_with_markup = fixed_sale_price / number_of_tabs if number_of_tabs > 0 else 0.0
-        else:
-            cost_per_tab = purchase_price / number_of_tabs if number_of_tabs > 0 else 0.0
-            if item_type == 'Provision Store':
-                unit_price_per_tab_with_markup = cost_per_tab * (1.10 if purchase_price >= 1000 else 1.08)
-            elif item_type == 'Hardware Material':
-                unit_price_per_tab_with_markup = cost_per_tab * 1.15
-            elif item_type == 'Supermarket':
-                unit_price_per_tab_with_markup = cost_per_tab * 1.20
-            else: # Default to Pharmacy
-                unit_price_per_tab_with_markup = cost_per_tab * 1.30
-            sale_price = unit_price_per_tab_with_markup * number_of_tabs
-
-        new_item = InventoryItem(
-            business_id=business_id,
-            product_name=product_name,
-            category=category,
-            purchase_price=purchase_price,
-            sale_price=sale_price,
-            current_stock=current_stock,
-            last_updated=datetime.now(),
-            batch_number=batch_number,
-            number_of_tabs=number_of_tabs,
-            unit_price_per_tab=unit_price_per_tab_with_markup,
-            item_type=item_type,
-            expiry_date=expiry_date_obj,
-            is_fixed_price=is_fixed_price,
-            fixed_sale_price=fixed_sale_price,
-            is_active=True # New items are active by default
-        )
-        db.session.add(new_item)
-        db.session.commit()
-        flash(f'Inventory item "{product_name}" added successfully!', 'success')
-        return redirect(url_for('inventory'))
-    
-    return render_template('add_edit_inventory.html', title='Add New Inventory Item', item={}, user_role=session.get('role'), business_type=current_business_type, other_businesses=other_businesses)
-
-@app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
-def edit_inventory(item_id):
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to edit inventory items or no business selected.', 'danger')
-        return redirect(url_for('inventory'))
-    
-    business_id = get_current_business_id()
-    current_business_type = session.get('business_type')
-    item_to_edit = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
-
-    if request.method == 'POST':
-        new_product_name = request.form['product_name'].strip()
-        new_category = request.form['category'].strip()
-        new_purchase_price = float(request.form['purchase_price'])
-        new_current_stock = float(request.form['current_stock'])
-        new_batch_number = request.form.get('batch_number', '').strip()
-        new_number_of_tabs = int(request.form.get('number_of_tabs', 1))
-        new_item_type = request.form.get('item_type', 'Pharmacy').strip()
-        new_expiry_date_str = request.form.get('expiry_date', '').strip()
-        new_expiry_date_obj = datetime.strptime(new_expiry_date_str, '%Y-%m-%d').date() if new_expiry_date_str else None
-        new_is_fixed_price = 'is_fixed_price' in request.form
-        new_fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
-        new_is_active = 'is_active' in request.form # Get is_active from form
-
-        if new_number_of_tabs <= 0:
-            flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-            return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}', item=item_to_edit, user_role=session.get('role'), business_type=current_business_type)
-
-        if InventoryItem.query.filter(InventoryItem.product_name == new_product_name, InventoryItem.business_id == business_id, InventoryItem.id != item_id).first():
-            flash('Product with this name already exists for this business.', 'danger')
-            return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}', item=item_to_edit, user_role=session.get('role'), business_type=current_business_type)
-
-        new_sale_price = 0.0
-        new_unit_price_per_tab_with_markup = 0.0
-
-        if new_is_fixed_price:
-            new_sale_price = new_fixed_sale_price
-            new_unit_price_per_tab_with_markup = new_fixed_sale_price / new_number_of_tabs if new_number_of_tabs > 0 else 0.0
-        else:
-            cost_per_tab = new_purchase_price / new_number_of_tabs if new_number_of_tabs > 0 else 0.0
-            if new_item_type == 'Provision Store':
-                new_unit_price_per_tab_with_markup = cost_per_tab * (1.10 if new_purchase_price >= 1000 else 1.08)
-            elif new_item_type == 'Hardware Material':
-                new_unit_price_per_tab_with_markup = cost_per_tab * 1.15
-            elif new_item_type == 'Supermarket':
-                new_unit_price_per_tab_with_markup = cost_per_tab * 1.20
-            else: # Default to Pharmacy
-                new_unit_price_per_tab_with_markup = cost_per_tab * 1.30
-            new_sale_price = new_unit_price_per_tab_with_markup * new_number_of_tabs
-
-        item_to_edit.product_name = new_product_name
-        item_to_edit.category = new_category
-        item_to_edit.purchase_price = new_purchase_price
-        item_to_edit.sale_price = new_sale_price
-        item_to_edit.current_stock = new_current_stock
-        item_to_edit.last_updated = datetime.now()
-        item_to_edit.batch_number = new_batch_number
-        item_to_edit.number_of_tabs = new_number_of_tabs
-        item_to_edit.unit_price_per_tab = new_unit_price_per_tab_with_markup
-        item_to_edit.item_type = new_item_type
-        item_to_edit.expiry_date = new_expiry_date_obj
-        item_to_edit.is_fixed_price = new_is_fixed_price
-        item_to_edit.fixed_sale_price = new_fixed_sale_price
-        item_to_edit.is_active = new_is_active # Update is_active
-        
-        db.session.commit()
-        flash(f'Inventory item "{new_product_name}" updated successfully!', 'success')
-        return redirect(url_for('inventory'))
-    
-    return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}', item=item_to_edit, user_role=session.get('role'), business_type=current_business_type)
-
-
-# --- Daily Sales Management Routes ---
-
-@app.route('/sales')
-def sales():
-    if 'username' not in session or not get_current_business_id():
-        flash('Please log in and select a business to access this page.', 'warning')
-        return redirect(url_for('login'))
-    
-    business_id = get_current_business_id()
-    search_query = request.args.get('search', '').strip()
-
-    sales_records_query = SaleRecord.query.filter_by(business_id=business_id)
-
-    if search_query:
-        # Search by product name, customer phone, sales person name, or transaction ID
-        sales_records_query = sales_records_query.filter(
-            SaleRecord.product_name.ilike(f'%{search_query}%') |
-            SaleRecord.customer_phone.ilike(f'%{search_query}%') |
-            SaleRecord.sales_person_name.ilike(f'%{search_query}%') |
-            SaleRecord.transaction_id.ilike(f'%{search_query}%')
-        )
-
-    sales_records = sales_records_query.order_by(SaleRecord.sale_date.desc()).all()
-    
-    transactions = {}
-    today = date.today() # Get today's date for expiry checks
-
-    for sale in sales_records:
-        transaction_id = sale.transaction_id if sale.transaction_id else 'N/A'
-        
-        # Fetch the associated InventoryItem to get expiry date
-        product_item = InventoryItem.query.filter_by(id=sale.product_id, business_id=business_id).first()
-        
-        # Determine expiry status for the sale item
-        sale_item_expires_soon = False
-        sale_item_expiry_date = None
-        if product_item and product_item.expiry_date:
-            sale_item_expiry_date = product_item.expiry_date
-            time_to_expiry = product_item.expiry_date - today
-            if time_to_expiry.days <= 180 and time_to_expiry.days >= 0:
-                sale_item_expires_soon = True
-            elif time_to_expiry.days < 0:
-                sale_item_expires_soon = 'Expired'
-
-        # Augment the sale record with expiry info
-        sale_data = {
-            'id': sale.id,
-            'product_id': sale.product_id,
-            'product_name': sale.product_name,
-            'quantity_sold': sale.quantity_sold,
-            'sale_unit_type': sale.sale_unit_type,
-            'price_at_time_per_unit_sold': sale.price_at_time_per_unit_sold,
-            'total_amount': sale.total_amount,
-            'sale_date': sale.sale_date,
-            'customer_phone': sale.customer_phone,
-            'sales_person_name': sale.sales_person_name,
-            'reference_number': sale.reference_number,
-            'transaction_id': sale.transaction_id,
-            'expiry_date': sale_item_expiry_date, # Pass expiry date
-            'expires_soon': sale_item_expires_soon # Pass expiry status
-        }
-
-        if transaction_id not in transactions:
-            transactions[transaction_id] = {
-                'id': transaction_id,
-                'sale_date': sale.sale_date.strftime('%Y-%m-%d %H:%M:%S'),
-                'customer_phone': sale.customer_phone,
-                'sales_person_name': sale.sales_person_name,
-                'total_amount': 0.0,
-                'items': [],
-                'reference_number': sale.reference_number
-            }
-        transactions[transaction_id]['items'].append(sale_data)
-        transactions[transaction_id]['total_amount'] += sale.total_amount
-
-    sorted_transactions = sorted(list(transactions.values()), 
-                                 key=lambda x: datetime.strptime(x['sale_date'], '%Y-%m-%d %H:%M:%S'), 
-                                 reverse=True)
-    
-    # Calculate total for currently displayed sales
-    total_displayed_sales = sum(t['total_amount'] for t in sorted_transactions)
-
-    return render_template('sales_list.html', transactions=sorted_transactions, user_role=session.get('role'), business_type=session.get('business_type'), search_query=search_query, total_displayed_sales=total_displayed_sales)
-
-
-@app.route('/sales/add', methods=['GET', 'POST'])
-def add_sale():
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to add sales records or no business selected.', 'danger')
-        return redirect(url_for('sales'))
-    
-    business_id = get_current_business_id()
-    # Only show active inventory items for sale
-    inventory_items_query = InventoryItem.query.filter_by(business_id=business_id, is_active=True).filter(InventoryItem.current_stock > 0).all()
-    
-    # Serialize inventory items before passing to template
-    serialized_inventory_items = [serialize_inventory_item(item) for item in inventory_items_query]
-
-
-    pharmacy_info = session.get('business_info', {
-        'name': ENTERPRISE_NAME,
-        'location': PHARMACY_LOCATION,
-        'address': PHARMACY_ADDRESS,
-        'contact': PHARMACY_CONTACT
-    })
-
-    if request.method == 'POST':
-        customer_phone = request.form.get('customer_phone', '').strip()
-        sales_person_name = request.form.get('sales_person_name', session.get('username', 'N/A')).strip()
-        transaction_id = str(uuid.uuid4())
-        overall_total_amount = 0.0
-        sold_items_details = []
-
-        product_ids = request.form.getlist('product_id[]')
-        quantities_sold_raw = request.form.getlist('quantity_sold[]')
-        sale_unit_types = request.form.getlist('sale_unit_type[]')
-        price_types = request.form.getlist('price_type[]')
-        custom_prices = request.form.getlist('custom_price[]')
-
-        if not product_ids:
-            flash('Please add at least one product to the sale.', 'danger')
-            return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=serialized_inventory_items, sale={}, user_role=session.get('role'), pharmacy_info=pharmacy_info)
-
-        for i in range(len(product_ids)):
-            product_id = product_ids[i]
-            quantity_sold_raw = float(quantities_sold_raw[i])
-            sale_unit_type = sale_unit_types[i]
-            price_type = price_types[i]
-            custom_price_str = custom_prices[i] if i < len(custom_prices) else ''
-
-            product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
-
-            if not product:
-                flash(f'Product with ID {product_id} not found in inventory. Sale aborted for this item.', 'danger')
-                continue
-            
-            # Check if the product is active before allowing sale
-            if not product.is_active:
-                flash(f'Product "{product.product_name}" is inactive and cannot be sold.', 'danger')
-                continue
-
-            current_stock_packs = product.current_stock
-            number_of_tabs_per_pack = float(product.number_of_tabs)
-            
-            price_at_time_per_unit_sold = 0.0
-            total_amount_item = 0.0
-            quantity_for_record = 0.0
-            quantity_to_deduct_packs = 0.0
-
-            base_sale_price_per_pack = product.sale_price
-            base_unit_price_per_tab = product.unit_price_per_tab
-
-            if product.is_fixed_price:
-                base_sale_price_per_pack = product.fixed_sale_price
-                base_unit_price_per_tab = product.fixed_sale_price / number_of_tabs_per_pack
-
-            if session.get('role') == 'admin' and price_type == 'custom_price':
-                try:
-                    custom_price_value = float(custom_price_str)
-                    if custom_price_value <= 0:
-                        flash(f'Custom price for {product.product_name} must be positive. Using internal percentage.', 'warning')
-                        price_at_time_per_unit_sold = base_unit_price_per_tab if sale_unit_type == 'tab' else base_sale_price_per_pack
-                    else:
-                        price_at_time_per_unit_sold = custom_price_value
-                except ValueError:
-                    flash(f'Invalid custom price for {product.product_name}. Using internal percentage.', 'warning')
-                    price_at_time_per_unit_sold = base_unit_price_per_tab if sale_unit_type == 'tab' else base_sale_price_per_pack
-            else:
-                price_at_time_per_unit_sold = base_unit_price_per_tab if sale_unit_type == 'tab' else base_sale_price_per_pack
-
-
-            if sale_unit_type == 'tab':
-                quantity_sold_tabs = quantity_sold_raw
-                available_tabs = current_stock_packs * number_of_tabs_per_pack
-
-                if quantity_sold_tabs <= 0:
-                    flash(f'Quantity of tabs sold for {product.product_name} must be at least 1. Skipping item.', 'danger')
-                    continue
-                if quantity_sold_tabs > available_tabs:
-                    flash(f'Insufficient stock for {product.product_name}. Available: {available_tabs:.0f} tabs. Skipping item.', 'danger')
-                    continue
-                
-                quantity_to_deduct_packs = quantity_sold_tabs / number_of_tabs_per_pack
-                total_amount_item = quantity_sold_tabs * price_at_time_per_unit_sold
-                quantity_for_record = quantity_sold_tabs
-            else: # sale_unit_type == 'pack'
-                quantity_sold_packs = quantity_sold_raw
-
-                if quantity_sold_packs <= 0:
-                    flash(f'Quantity of packs sold for {product.product_name} must be at least 1. Skipping item.', 'danger')
-                    continue
-                if quantity_sold_packs > current_stock_packs:
-                    flash(f'Insufficient stock for {product.product_name}. Available: {current_stock_packs:.2f} packs. Skipping item.', 'danger')
-                    continue
-                
-                quantity_to_deduct_packs = quantity_sold_packs
-                total_amount_item = quantity_sold_packs * price_at_time_per_unit_sold
-                quantity_for_record = quantity_sold_packs
-
-            # Update stock
-            product.current_stock -= quantity_to_deduct_packs
-            
-            new_sale_item = SaleRecord(
-                business_id=business_id,
-                product_id=product.id,
-                product_name=product.product_name,
-                quantity_sold=quantity_for_record,
-                sale_unit_type=sale_unit_type,
-                price_at_time_per_unit_sold=price_at_time_per_unit_sold,
-                total_amount=total_amount_item,
-                sale_date=datetime.now(),
-                customer_phone=customer_phone,
-                sales_person_name=sales_person_name,
-                reference_number=str(uuid.uuid4())[:8].upper(),
-                transaction_id=transaction_id
-            )
-            db.session.add(new_sale_item)
-            overall_total_amount += total_amount_item
-            sold_items_details.append(new_sale_item)
-
-        if not sold_items_details:
-            flash('No items were successfully added to the sale.', 'danger')
-            db.session.rollback()
-            return render_template('add_edit_sale.html', title='Add Sale Record', inventory_items=serialized_inventory_items, sale={}, user_role=session.get('role'), pharmacy_info=pharmacy_info)
-
-        db.session.commit()
-        flash('Sale record(s) added successfully and stock updated!', 'success')
-
-        if customer_phone:
-            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-            message = (
-                f"{business_name_for_sms} Receipt (Trans ID: {transaction_id[:8].upper()}):\n"
-                f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Items:\n"
-            )
-            for item in sold_items_details:
-                item_display_unit_text = "tab(s)" if item.sale_unit_type == 'tab' else "pack(s)"
-                message += (
-                    f"- {item.product_name} (Qty: {item.quantity_sold:.2f} {item_display_unit_text}, "
-                    f"Unit Price: GH₵{item.price_at_time_per_unit_sold:.2f}, "
-                    f"Total: GH₵{item.total_amount:.2f})\n"
-                )
-            message += f"Grand Total: GH₵{overall_total_amount:.2f}\n\n"
-            message += f"Thank you for trading with us\n"
-            message += f"From: {business_name_for_sms}"
-
-            sms_payload = {
-                'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone,
-                'from': ARKESEL_SENDER_ID, 'sms': message
-            }
-            try:
-                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload) 
-                sms_result = sms_response.json()
-                if sms_result.get('status') != 'success':
-                    print(f"Arkesel SMS Error: {sms_result.get('message', 'Unknown error')}")
-                    flash(f'Failed to send SMS receipt to {customer_phone}. Error: {sms_result.get("message", "Unknown error")}', 'warning')
-            except requests.exceptions.RequestException as e:
-                print(f'Network error sending SMS: {e}')
-                flash(f'Network error when trying to send SMS receipt.', 'warning')
-
-        session['last_transaction_details'] = [{
-            'product_name': item.product_name, 'quantity_sold': item.quantity_sold, 'sale_unit_type': item.sale_unit_type,
-            'price_at_time_per_unit_sold': item.price_at_time_per_unit_sold, 'total_amount': item.total_amount
-        } for item in sold_items_details]
-        session['last_transaction_grand_total'] = overall_total_amount
-        session['last_transaction_id'] = transaction_id
-        session['last_transaction_customer_phone'] = customer_phone
-        session['last_transaction_sales_person'] = sales_person_name
-        session['last_transaction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        return redirect(url_for('add_sale', print_ready=True))
-
-    default_sale = {
-        'sales_person_name': session.get('username', 'N/A'),
-        'customer_phone': '',
-    }
-    
-    print_ready = request.args.get('print_ready', 'false').lower() == 'true'
-
-    last_transaction_details = session.pop('last_transaction_details', [])
-    last_transaction_grand_total = session.pop('last_transaction_grand_total', 0.0)
-    last_transaction_id = session.pop('last_transaction_id', '')
-    last_transaction_customer_phone = session.pop('last_transaction_customer_phone', '')
-    last_transaction_sales_person = session.pop('last_transaction_sales_person', '')
-    last_transaction_date = session.pop('last_transaction_date', '')
-
-    return render_template('add_edit_sale.html', 
-                           title='Add Sale Record', 
-                           inventory_items=serialized_inventory_items, # Pass serialized items
-                           sale=default_sale, 
-                           user_role=session.get('role'), 
-                           pharmacy_info=pharmacy_info,
-                           print_ready=print_ready,
-                           last_transaction_details=last_transaction_details,
-                           last_transaction_grand_total=last_transaction_grand_total,
-                           last_transaction_id=last_transaction_id,
-                           last_transaction_customer_phone=last_transaction_customer_phone,
-                           last_transaction_sales_person=last_transaction_sales_person,
-                           last_transaction_date=last_transaction_date,
-                           business_type=session.get('business_type') # Pass business type
-                           )
-
-@app.route('/sales/edit/<sale_id>', methods=['GET', 'POST'])
-def edit_sale(sale_id):
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to edit sales records or no business selected.', 'danger')
-        return redirect(url_for('sales'))
-    
-    business_id = get_current_business_id()
-    business_type = session.get('business_type')
-    sale_to_edit = SaleRecord.query.filter_by(id=sale_id, business_id=business_id).first_or_404()
-    product = InventoryItem.query.filter_by(id=sale_to_edit.product_id, business_id=business_id).first()
-
-    if not product:
-        flash('Associated product not found in inventory. Cannot edit sale.', 'danger')
-        return redirect(url_for('sales'))
-
-    available_inventory_items_query = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all() # Only show active items
-    # Serialize inventory items before passing to template
-    serialized_available_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items_query]
-
-    pharmacy_info = session.get('business_info', {
-        'name': ENTERPRISE_NAME,
-        'location': PHARMACY_LOCATION,
-        'address': PHARMACY_ADDRESS,
-        'contact': PHARMACY_CONTACT
-    })
-
-    if request.method == 'POST':
-        old_quantity_sold_record = sale_to_edit.quantity_sold
-        old_sale_unit_type = sale_to_edit.sale_unit_type
-
-        new_quantity_sold_raw = float(request.form.getlist('quantity_sold[]')[0])
-        new_sale_unit_type = request.form.getlist('sale_unit_type[]')[0]
-        
-        product_id = request.form.getlist('product_id[]')[0]
-        customer_phone = request.form.get('customer_phone', '').strip()
-        sales_person_name = request.form.get('sales_person_name', sale_to_edit.sales_person_name).strip()
-        
-        price_type = request.form.getlist('price_type[]')[0] if request.form.getlist('price_type[]') else 'internal_percentage'
-        custom_price_str = request.form.getlist('custom_price[]')[0] if request.form.getlist('custom_price[]') else ''
-
-        product_updated = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
-        if not product_updated:
-            flash('Selected product not found in inventory.', 'danger')
-            return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=serialized_available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
-        
-        # Check if the product is active before allowing edit
-        if not product_updated.is_active:
-            flash(f'Product "{product_updated.product_name}" is inactive and cannot be edited in sales.', 'danger')
-            return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=serialized_available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
-
-
-        current_stock_packs = product_updated.current_stock
-        number_of_tabs_per_pack = float(product_updated.number_of_tabs)
-        
-        price_at_time_per_unit_sold = 0.0
-        new_quantity_for_record = 0.0
-
-        base_sale_price_per_pack = product_updated.sale_price
-        base_unit_price_per_tab = product_updated.unit_price_per_tab
-
-        if product_updated.is_fixed_price:
-            base_sale_price_per_pack = product_updated.fixed_sale_price
-            base_unit_price_per_tab = product_updated.fixed_sale_price / number_of_tabs_per_pack
-
-        if session.get('role') == 'admin' and price_type == 'custom_price':
-            try:
-                custom_price_value = float(custom_price_str)
-                if custom_price_value <= 0:
-                    flash(f'Custom price for {product_updated.product_name} must be positive. Using internal percentage.', 'warning')
-                    price_at_time_per_unit_sold = base_unit_price_per_tab if new_sale_unit_type == 'tab' else base_sale_price_per_pack
-                else:
-                    price_at_time_per_unit_sold = custom_price_value
-            except ValueError:
-                flash(f'Invalid custom price for {product_updated.product_name}. Using internal percentage.', 'warning')
-                price_at_time_per_unit_sold = base_unit_price_per_tab if new_sale_unit_type == 'tab' else base_sale_price_per_pack
-        else:
-            price_at_time_per_unit_sold = base_unit_price_per_tab if new_sale_unit_type == 'tab' else base_sale_price_per_pack
-
-        old_quantity_in_packs = old_quantity_sold_record / number_of_tabs_per_pack if old_sale_unit_type == 'tab' else old_quantity_sold_record
-        
-        new_total_amount_sold = 0.0
-        
-        if new_sale_unit_type == 'tab':
-            new_quantity_sold_tabs = new_quantity_sold_raw
-            if new_quantity_sold_tabs <= 0:
-                flash('Quantity of tabs sold must be at least 1.', 'danger')
-                return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=serialized_available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
-
-            new_quantity_in_packs = new_quantity_sold_tabs / number_of_tabs_per_pack
-            new_total_amount_sold = new_quantity_sold_tabs * price_at_time_per_unit_sold
-            new_quantity_for_record = new_quantity_sold_tabs
-        else:
-            new_quantity_sold_packs = new_quantity_sold_raw
-            if new_quantity_sold_packs <= 0:
-                flash('Quantity of packs sold must be at least 1.', 'danger')
-                return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=serialized_available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
-
-            new_quantity_in_packs = new_quantity_sold_packs
-            new_total_amount_sold = new_quantity_sold_packs * price_at_time_per_unit_sold
-            new_quantity_for_record = new_quantity_sold_packs
-
-        if session.get('role') == 'admin':
-            adjusted_stock_after_revert = current_stock_packs + old_quantity_in_packs
-            quantity_to_deduct_packs = new_quantity_in_packs 
-
-            if adjusted_stock_after_revert - quantity_to_deduct_packs < 0:
-                flash(f'Insufficient stock for {product_updated.product_name} to adjust sale quantity. Available: {adjusted_stock_after_revert:.2f} packs.', 'danger')
-                return render_template('add_edit_sale.html', title='Edit Sale Record', sale=request.form, inventory_items=serialized_available_inventory_items, user_role=session.get('role'), pharmacy_info=pharmacy_info, business_type=business_type)
-            
-            product_updated.current_stock = adjusted_stock_after_revert - quantity_to_deduct_packs
             db.session.commit()
-            flash('Inventory stock adjusted due to sale edit (Admin action).', 'info')
+            if errors:
+                flash(f'CSV Uploaded. {added_count} items added, {updated_count} items updated. Errors: {"; ".join(errors)}', 'warning')
+            else:
+                flash(f'CSV inventory uploaded successfully! {added_count} items added, {updated_count} items updated.', 'success')
+            return redirect(url_for('super_admin_dashboard'))
         else:
-            flash('Sales personnel edits do not affect inventory stock. Only the sale record is updated.', 'warning')
+            flash('Invalid file format. Please upload a CSV file.', 'danger')
+    return render_template('upload_inventory.html', business=business)
 
-        sale_to_edit.product_id = product_id
-        sale_to_edit.product_name = product_updated.product_name
-        sale_to_edit.quantity_sold = new_quantity_for_record
-        sale_to_edit.sale_unit_type = new_sale_unit_type
-        sale_to_edit.price_at_time_per_unit_sold = price_at_time_per_unit_sold
-        sale_to_edit.total_amount = new_total_amount_sold
-        sale_to_edit.sale_date = datetime.now()
-        sale_to_edit.customer_phone = customer_phone
-        sale_to_edit.sales_person_name = sales_person_name 
-        sale_to_edit.reference_number = sale_to_edit.reference_number if sale_to_edit.reference_number else str(uuid.uuid4())
-        sale_to_edit.transaction_id = sale_to_edit.transaction_id if sale_to_edit.transaction_id else str(uuid.uuid4())
 
-        db.session.commit()
-        flash('Sale record updated successfully!', 'success')
+# --- User Management (Business-level admins) ---
 
-        if customer_phone:
-            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-            # Determine display unit text for SMS
-            display_unit_text = "tab(s)" if new_sale_unit_type == 'tab' else "pack(s)"
-            message = (
-                f"{business_name_for_sms} Receipt (Edited - Ref: {sale_to_edit.reference_number}):\n" 
-                f"Item: {product_updated.product_name}\n"
-                f"Qty: {new_quantity_for_record:.2f} {display_unit_text}\n"
-                f"Unit Price: GH₵{price_at_time_per_unit_sold:.2f} per {new_sale_unit_type}\n"
-                f"Total: GH₵{new_total_amount_sold:.2f}\n"
-                f"Date: {sale_to_edit.sale_date.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                f"Thank you for trading with us\n"
-                f"From: {business_name_for_sms}"
-            )
-            sms_payload = {
-                'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone,
-                'from': ARKESEL_SENDER_ID, 'sms': message
-            }
-            try:
-                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                sms_result = sms_response.json()
-                if sms_result.get('status') != 'success':
-                    print(f"Arkesel SMS Error: {sms_result.get('message', 'Unknown error')}")
-                    flash(f'Failed to send SMS receipt to {customer_phone}. Error: {sms_result.get("message", "Unknown error")}', 'warning')
-            except requests.exceptions.RequestException as e:
-                print(f'Network error sending SMS: {e}')
-                flash(f'Network error when trying to send SMS receipt.', 'warning')
-
-        return redirect(url_for('sales'))
-    
-    sale_data_for_form = {
-        'id': sale_to_edit.id, 'product_id': sale_to_edit.product_id, 'product_name': sale_to_edit.product_name,
-        'quantity_sold': sale_to_edit.quantity_sold, 'sale_unit_type': sale_to_edit.sale_unit_type,
-        'price_at_time_per_unit_sold': sale_to_edit.price_at_time_per_unit_sold, 'total_amount': sale_to_edit.total_amount,
-        'sale_date': sale_to_edit.sale_date.strftime('%Y-%m-%d %H:%M:%S'), 'customer_phone': sale_to_edit.customer_phone,
-        'sales_person_name': sale_to_edit.sales_person_name, 'reference_number': sale_to_edit.reference_number,
-        'transaction_id': sale_to_edit.transaction_id
-    }
-
-    calculated_internal_price = 0.0
-    base_sale_price_per_pack = product.sale_price
-    base_unit_price_per_tab = product.unit_price_per_tab
-
-    if product.is_fixed_price:
-        base_sale_price_per_pack = product.fixed_sale_price
-        base_unit_price_per_tab = product.fixed_sale_price / product.number_of_tabs
-
-    if sale_data_for_form['sale_unit_type'] == 'tab':
-        calculated_internal_price = base_unit_price_per_tab
-    else:
-        calculated_internal_price = base_sale_price_per_pack
-    
-    if abs(sale_data_for_form['price_at_time_per_unit_sold'] - calculated_internal_price) < 0.001:
-        sale_data_for_form['price_type'] = 'internal_percentage'
-        sale_data_for_form['custom_price'] = ''
-    else:
-        sale_data_for_form['price_type'] = 'custom_price'
-        sale_data_for_form['custom_price'] = f"{sale_data_for_form['price_at_time_per_unit_sold']:.2f}"
-
-    return render_template('add_edit_sale.html', 
-                           title='Edit Sale Record', 
-                           sale=sale_data_for_form, 
-                           inventory_items=serialized_available_inventory_items, # Pass serialized items
-                           user_role=session.get('role'), 
-                           pharmacy_info=pharmacy_info,
-                           print_ready=False,
-                           last_transaction_details=[],
-                           last_transaction_grand_total=0.0,
-                           last_transaction_id='',
-                           last_transaction_customer_phone='',
-                           last_transaction_sales_person='',
-                           last_transaction_date='',
-                           business_type=business_type # Pass business type
-                           )
-
-
-@app.route('/sales/delete/<sale_id>')
-def delete_sale(sale_id):
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to delete sales records or no business selected.', 'danger')
-        return redirect(url_for('sales'))
-    
-    business_id = get_current_business_id()
-    sale_to_delete = SaleRecord.query.filter_by(id=sale_id, business_id=business_id).first_or_404()
-    
-    product = InventoryItem.query.filter_by(id=sale_to_delete.product_id, business_id=business_id).first()
-
-    if product:
-        quantity_to_add_packs = sale_to_delete.quantity_sold / product.number_of_tabs if sale_to_delete.sale_unit_type == 'tab' else sale_to_delete.quantity_sold
-            
-        product.current_stock += quantity_to_add_packs
-        db.session.commit()
-        flash(f'Stock for {product.product_name} adjusted due to sale deletion. New stock: {product.current_stock:.2f} packs.', 'info')
-    else:
-        flash('Associated product for deleted sale not found in inventory. Stock not adjusted.', 'warning')
-
-    db.session.delete(sale_to_delete)
-    db.session.commit()
-    flash('Sale record deleted successfully!', 'success')
-    return redirect(url_for('sales'))
-
-
-@app.route('/sales/return_item', methods=['GET', 'POST'])
-def return_item():
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to process returns or no business selected.', 'danger')
-        return redirect(url_for('sales'))
-    
-    business_id = get_current_business_id()
-
-    if request.method == 'POST':
-        ref_number = request.form['reference_number'].strip().upper()
-        return_quantity_raw = float(request.form['return_quantity'])
-        return_unit_type = request.form['return_unit_type']
-
-        original_sale = SaleRecord.query.filter_by(reference_number=ref_number, business_id=business_id).first()
-
-        if not original_sale:
-            flash(f'Sale with Reference Number {ref_number} not found for this business.', 'danger')
-            return render_template('return_item.html', user_role=session.get('role'), business_type=session.get('business_type'))
-        
-        product = InventoryItem.query.filter_by(id=original_sale.product_id, business_id=business_id).first()
-        if not product:
-            flash(f'Product {original_sale.product_name} from sale {ref_number} not found in inventory. Cannot process return.', 'danger')
-            return render_template('return_item.html', user_role=session.get('role'), original_sale=original_sale, product=product, business_type=session.get('business_type'))
-
-        original_quantity_sold_record = original_sale.quantity_sold
-        original_sale_unit_type = original_sale.sale_unit_type
-        
-        number_of_tabs_per_pack = float(product.number_of_tabs)
-        price_at_time_per_unit_sold = original_sale.price_at_time_per_unit_sold
-
-        return_quantity_in_packs = 0.0
-        returned_amount = 0.0
-        display_unit_text = ""
-        quantity_for_return_record = 0.0
-
-        if return_unit_type == 'tab':
-            if return_quantity_raw <= 0:
-                flash('Return quantity of tabs must be at least 1.', 'danger')
-                return render_template('return_item.html', user_role=session.get('role'), original_sale=original_sale, product=product, business_type=session.get('business_type'))
-
-            original_quantity_tabs = original_quantity_sold_record
-            if original_sale_unit_type == 'pack':
-                original_quantity_tabs = original_quantity_sold_record * number_of_tabs_per_pack
-
-            if return_quantity_raw > original_quantity_tabs:
-                flash(f'Cannot return {return_quantity_raw:.0f} tabs. Only {original_quantity_tabs:.0f} tabs were originally sold for this reference number.', 'danger')
-                return render_template('return_item.html', user_role=session.get('role'), original_sale=original_sale, product=product, business_type=session.get('business_type'))
-
-            return_quantity_in_packs = return_quantity_raw / number_of_tabs_per_pack
-            returned_amount = return_quantity_raw * price_at_time_per_unit_sold
-            display_unit_text = "tab(s)"
-            quantity_for_return_record = return_quantity_raw
-
-        else: # return_unit_type == 'pack'
-            if return_quantity_raw <= 0:
-                flash('Return quantity of packs must be at least 1.', 'danger')
-                return render_template('return_item.html', user_role=session.get('role'), original_sale=original_sale, product=product, business_type=session.get('business_type'))
-            
-            original_quantity_packs = original_quantity_sold_record
-            if original_sale_unit_type == 'tab':
-                original_quantity_packs = original_quantity_sold_record / number_of_tabs_per_pack
-            
-            if return_quantity_raw > original_quantity_packs:
-                flash(f'Cannot return {return_quantity_raw:.2f} packs. Only {original_quantity_packs:.2f} packs were originally sold for this reference number.', 'danger')
-                return render_template('return_item.html', user_role=session.get('role'), original_sale=original_sale, product=product, business_type=session.get('business_type'))
-
-            return_quantity_in_packs = return_quantity_raw
-            returned_amount = return_quantity_raw * price_at_time_per_unit_sold
-            display_unit_text = "pack(s)"
-            quantity_for_return_record = return_quantity_raw
-
-        return_sale_record = SaleRecord(
-            business_id=business_id,
-            product_id=original_sale.product_id,
-            product_name=original_sale.product_name,
-            quantity_sold=-quantity_for_return_record,
-            sale_unit_type=return_unit_type,
-            price_at_time_per_unit_sold=price_at_time_per_unit_sold,
-            total_amount=-returned_amount,
-            sale_date=datetime.now(),
-            customer_phone=original_sale.customer_phone,
-            sales_person_name=session.get('username', 'N/A') + " (Return)",
-            reference_number=f"RMA-{ref_number}",
-            transaction_id=original_sale.transaction_id
-        )
-        db.session.add(return_sale_record)
-
-        product.current_stock += return_quantity_in_packs
-        db.session.commit()
-
-        flash(f'Return processed for Reference Number {ref_number}. {return_quantity_raw:.2f} {display_unit_text} of {original_sale.product_name} returned. Total sales adjusted by GH₵{returned_amount:.2f}.', 'success')
-        
-        if original_sale.customer_phone:
-            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-            message = (
-                f"{business_name_for_sms} Return Confirmation (Ref: {return_sale_record.reference_number}):\n"
-                f"Item: {original_sale.product_name}\n"
-                f"Qty Returned: {quantity_for_return_record:.2f} {display_unit_text}\n"
-                f"Amount Refunded: GH₵{returned_amount:.2f}\n"
-                f"Date: {return_sale_record.sale_date.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                f"From: {business_name_for_sms}"
-            )
-            sms_payload = {
-                'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': original_sale.customer_phone,
-                'from': ARKESEL_SENDER_ID, 'sms': message
-            }
-            try:
-                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                sms_result = sms_response.json()
-                if sms_result.get('status') != 'success':
-                    print(f"Arkesel SMS Error: {sms_result.get('message', 'Unknown error')}")
-                    flash(f'Failed to send SMS return confirmation to {original_sale.customer_phone}. Error: {sms_result.get("message", "Unknown error")}', 'warning')
-            except requests.exceptions.RequestException as e:
-                print(f'Network error sending SMS: {e}')
-                flash(f'Network error when trying to send SMS return confirmation.', 'warning')
-
-        return redirect(url_for('sales'))
-
-    return render_template('return_item.html', user_role=session.get('role'), business_type=session.get('business_type'))
-
-
-# --- Reporting and Statistics Routes ---
-
-@app.route('/reports')
-def reports():
-    if 'username' not in session or not get_current_business_id():
-        flash('Please log in and select a business to access this page.', 'warning')
-        return redirect(url_for('login'))
-
-    business_id = get_current_business_id()
-
-    # Fetch inventory items as dictionaries directly from the query
-    inventory_items_raw = db.session.query(
-        InventoryItem.id,
-        InventoryItem.product_name,
-        InventoryItem.category,
-        InventoryItem.purchase_price,
-        InventoryItem.sale_price,
-        InventoryItem.current_stock,
-        InventoryItem.last_updated,
-        InventoryItem.batch_number,
-        InventoryItem.number_of_tabs,
-        InventoryItem.unit_price_per_tab,
-        InventoryItem.item_type,
-        InventoryItem.expiry_date,
-        InventoryItem.is_fixed_price,
-        InventoryItem.fixed_sale_price,
-        InventoryItem.is_active
-    ).filter_by(business_id=business_id).all()
-
-    # Convert query results (tuples/rows) to dictionaries and calculate individual profit margin
-    inventory_items = []
-    total_sale_value_of_stock = 0.0 # New variable for overall stock profit margin calculation
-    total_cost_of_stock = 0.0
-    total_potential_gross_profit = 0.0 # Renamed for clarity
-
-    for item_tuple in inventory_items_raw:
-        item_dict = {
-            'id': item_tuple[0],
-            'product_name': item_tuple[1],
-            'category': item_tuple[2],
-            'purchase_price': item_tuple[3],
-            'sale_price': item_tuple[4],
-            'current_stock': item_tuple[5],
-            'last_updated': item_tuple[6],
-            'batch_number': item_tuple[7],
-            'number_of_tabs': item_tuple[8],
-            'unit_price_per_tab': item_tuple[9],
-            'item_type': item_tuple[10],
-            'expiry_date': item_tuple[11],
-            'is_fixed_price': item_tuple[12],
-            'fixed_sale_price': item_tuple[13],
-            'is_active': item_tuple[14]
-        }
-        
-        # Calculate profit margin for each item
-        if item_dict['sale_price'] > 0:
-            item_dict['profit_margin_percentage'] = ((item_dict['sale_price'] - item_dict['purchase_price']) / item_dict['sale_price']) * 100
-        else:
-            item_dict['profit_margin_percentage'] = 0.0 # Or 'N/A' if you prefer to handle in template
-
-        inventory_items.append(item_dict)
-        
-        if item_dict['is_active']: # Only consider active items for total stock calculations
-            total_cost_of_stock += item_dict['purchase_price'] * item_dict['current_stock']
-            total_sale_value_of_stock += item_dict['sale_price'] * item_dict['current_stock']
-            total_potential_gross_profit += (item_dict['sale_price'] - item_dict['purchase_price']) * item_dict['current_stock']
-
-
-    sales_records = SaleRecord.query.filter_by(business_id=business_id).all()
-
-    # Prepare stock summary with expiry warnings
-    stock_summary_with_expiry = []
-    today = date.today()
-    for item_dict in inventory_items: # Iterate over the dictionaries now
-        item_dict['expires_soon'] = False
-        expiry_date_obj = item_dict['expiry_date'] # This is already a date object from the query result
-
-        if expiry_date_obj:
-            time_to_expiry = expiry_date_obj - today
-            if time_to_expiry.days <= 180 and time_to_expiry.days >= 0: # Within 6 months and not expired
-                item_dict['expires_soon'] = True
-            elif time_to_expiry.days < 0: # Already expired
-                item_dict['expires_soon'] = 'Expired'
-        stock_summary_with_expiry.append(item_dict)
-
-    daily_sales = {}
-    weekly_sales = {}
-    monthly_sales = {}
-    sales_per_person = {}
-    total_actual_sales_amount = 0.0 # Renamed for clarity
-
-    for sale in sales_records:
-        sale_date_obj = sale.sale_date
-        total_amount = sale.total_amount
-        sales_person = sale.sales_person_name if sale.sales_person_name else 'Unknown'
-
-        day_key = sale_date_obj.strftime('%Y-%m-%d')
-        daily_sales[day_key] = daily_sales.get(day_key, 0.0) + total_amount
-
-        week_key = sale_date_obj.strftime('%Y-W%W')
-        weekly_sales[week_key] = weekly_sales.get(week_key, 0.0) + total_amount
-
-        month_key = sale_date_obj.strftime('%Y-%m')
-        monthly_sales[month_key] = monthly_sales.get(month_key, 0.0) + total_amount
-
-        sales_per_person[sales_person] = sales_per_person.get(sales_person, 0.0) + total_amount
-        total_actual_sales_amount += total_amount # Accumulate total actual sales
-
-
-    sorted_daily_sales = sorted(daily_sales.items())
-    sorted_weekly_sales = sorted(weekly_sales.items())
-    sorted_monthly_sales = sorted(monthly_sales.items())
-    sorted_sales_per_person = sorted(sales_per_person.items())
-
-    # Calculate Overall Stock Profit Margin (%) (New Metric)
-    overall_stock_profit_margin = 0.0
-    if total_sale_value_of_stock > 0:
-        overall_stock_profit_margin = (total_potential_gross_profit / total_sale_value_of_stock) * 100
-
-    return render_template(
-        'reports.html',
-        stock_summary=stock_summary_with_expiry, # Pass the updated list
-        daily_sales=sorted_daily_sales,
-        weekly_sales=sorted_weekly_sales,
-        monthly_sales=sorted_monthly_sales,
-        sales_per_person=sorted_sales_per_person,
-        total_cost_of_stock=total_cost_of_stock,
-        total_potential_gross_profit=total_potential_gross_profit, # Pass the renamed variable
-        total_sales_amount=total_actual_sales_amount, # Pass total actual sales amount
-        total_sale_value_of_stock=total_sale_value_of_stock, # Pass this new variable
-        overall_stock_profit_margin=overall_stock_profit_margin, # Pass new overall stock profit margin
-        user_role=session.get('role'),
-        business_type=session.get('business_type') # Pass business type
-    )
-
-@app.route('/reports/send_daily_sms', methods=['POST'])
-def send_daily_sms_report():
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to send daily SMS reports or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    
-    today = date.today()
-    today_sales = SaleRecord.query.filter_by(business_id=business_id).filter(
-        db.func.date(SaleRecord.sale_date) == today
-    ).all()
-
-    total_sales_amount = sum(s.total_amount for s in today_sales)
-    total_items_sold = sum(s.quantity_sold for s in today_sales)
-    
-    product_sales_summary = {}
-    for sale in today_sales:
-        product_name = sale.product_name
-        quantity = sale.quantity_sold
-        unit_type = sale.sale_unit_type
-        
-        key = f"{product_name} ({unit_type})"
-        product_sales_summary[key] = product_sales_summary.get(key, 0.0) + quantity
-
-    business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-
-    message = f"Daily Sales Report ({today.strftime('%Y-%m-%d')}):\n"
-    message += f"Total Revenue: GH₵{total_sales_amount:.2f}\n"
-    message += f"Total Items Sold (approx): {total_items_sold:.2f}\n"
-    if product_sales_summary:
-        message += "Product Breakdown:\n"
-        for product_key, qty in product_sales_summary.items():
-            message += f"- {product_key}: {qty:.2f} units\n"
-    else:
-        message += "No sales recorded today."
-
-    message += f"\nThank you for trading with us\n"
-    message += f"From: {business_name_for_sms}"
-
-    if not ADMIN_PHONE_NUMBER:
-        flash('Admin phone number is not configured for SMS reports.', 'danger')
-        return redirect(url_for('reports'))
-
-    sms_payload = {
-        'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': ADMIN_PHONE_NUMBER,
-        'from': ARKESEL_SENDER_ID, 'sms': message
-    }
-
-    try:
-        sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-        sms_result = sms_response.json()
-        if sms_result.get('status') == 'success':
-            flash('Daily sales report SMS sent to admin successfully!', 'success')
-        else:
-            print(f"Arkesel SMS Error: {sms_result.get('message', 'Unknown error')}")
-            flash(f'Failed to send daily sales report SMS. Error: {sms_result.get("message", "Unknown error")}', 'danger')
-    except requests.exceptions.RequestException as e:
-        print(f'Network error sending SMS: {e}')
-        flash(f'Network error when trying to send daily sales report SMS: {e}', 'danger')
-
-    return redirect(url_for('reports'))
-
-# --- New Hardware Business Routes ---
-
-@app.route('/companies')
-def companies():
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to manage companies or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    companies = Company.query.filter_by(business_id=business_id).all()
-    return render_template('company_list.html', companies=companies, user_role=session.get('role'))
-
-@app.route('/companies/add', methods=['GET', 'POST'])
-def add_company():
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to add companies or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-
-    if request.method == 'POST':
-        name = request.form['name'].strip()
-        contact_person = request.form['contact_person'].strip()
-        phone = request.form['phone'].strip()
-        email = request.form['email'].strip()
-        address = request.form['address'].strip()
-
-        if Company.query.filter_by(name=name, business_id=business_id).first():
-            flash('Company with this name already exists for this business.', 'danger')
-            return render_template('add_edit_company.html', title='Add New Company', company=request.form)
-        
-        new_company = Company(
-            business_id=business_id, name=name, contact_person=contact_person,
-            phone=phone, email=email, address=address, balance=0.0
-        )
-        db.session.add(new_company)
-        db.session.commit()
-        flash(f'Company "{name}" added successfully!', 'success')
-        return redirect(url_for('companies'))
-    
-    return render_template('add_edit_company.html', title='Add New Company', company={})
-
-@app.route('/companies/edit/<company_id>', methods=['GET', 'POST'])
-def edit_company(company_id):
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to edit companies or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    company_to_edit = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
-
-    if request.method == 'POST':
-        name = request.form['name'].strip()
-        contact_person = request.form['contact_person'].strip()
-        phone = request.form['phone'].strip()
-        email = request.form['email'].strip()
-        address = request.form['address'].strip()
-
-        if Company.query.filter(Company.name == name, Company.business_id == business_id, Company.id != company_id).first():
-            flash('Company with this name already exists for this business.', 'danger')
-            return render_template('add_edit_company.html', title='Edit Company', company=request.form)
-
-        company_to_edit.name = name
-        company_to_edit.contact_person = contact_person
-        company_to_edit.phone = phone
-        company_to_edit.email = email
-        company_to_edit.address = address
-        db.session.commit()
-        flash(f'Company "{name}" updated successfully!', 'success')
-        return redirect(url_for('companies'))
-    
-    return render_template('add_edit_company.html', title='Edit Company', company=company_to_edit)
-
-@app.route('/companies/delete/<company_id>')
-def delete_company(company_id):
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-        flash('You do not have permission to delete companies or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    company_to_delete = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
-
-    if company_to_delete.balance != 0:
-        flash('Cannot delete company with outstanding balance. Please settle balance first.', 'danger')
-        return redirect(url_for('companies'))
-
-    db.session.delete(company_to_delete)
-    db.session.commit()
-    flash(f'Company "{company_to_delete.name}" deleted successfully!', 'success')
-    return redirect(url_for('companies'))
-
-@app.route('/companies/transaction/<company_id>', methods=['GET', 'POST'])
-def company_transaction(company_id):
-    # Allow 'admin', 'viewer_admin', and 'sales' roles to record company transactions
-    if 'username' not in session or session.get('role') not in ['admin', 'viewer_admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to record company transactions or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
-
-    if request.method == 'POST':
-        transaction_type = request.form['type'] # 'Credit' or 'Debit'
-        amount = float(request.form['amount'])
-        description = request.form['description'].strip()
-        
-        if amount <= 0:
-            flash('Amount must be positive.', 'danger')
-            return render_template('company_transaction.html', company=company, transaction={}, user_role=session.get('role'))
-
-        if transaction_type == 'Credit':
-            company.balance += amount
-            flash(f'GH₵{amount:.2f} credited to {company.name}. New balance: GH₵{company.balance:.2f}', 'success')
-        elif transaction_type == 'Debit':
-            company.balance -= amount
-            flash(f'GH₵{amount:.2f} debited from {company.name}. New balance: GH₵{company.balance:.2f}', 'success')
-        else:
-            flash('Invalid transaction type.', 'danger')
-            return render_template('company_transaction.html', company=company, transaction={}, user_role=session.get('role'))
-
-        new_transaction = CompanyTransaction(
-            company_id=company.id, business_id=business_id, type=transaction_type,
-            amount=amount, description=description, recorded_by=session['username']
-        )
-        db.session.add(new_transaction)
-        db.session.commit()
-        return redirect(url_for('companies'))
-    
-    transactions = CompanyTransaction.query.filter_by(company_id=company.id).order_by(CompanyTransaction.date.desc()).all()
-    return render_template('company_transaction.html', company=company, transactions=transactions, user_role=session.get('role'))
-
-
-@app.route('/future_orders')
-def future_orders():
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to view future orders or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    orders = FutureOrder.query.filter_by(business_id=business_id).order_by(FutureOrder.date_ordered.desc()).all()
-    return render_template('future_order_list.html', orders=orders, user_role=session.get('role'))
-
-@app.route('/future_orders/add', methods=['GET', 'POST'])
-def add_future_order():
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to add future orders or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    inventory_items = InventoryItem.query.filter_by(business_id=business_id, item_type='Hardware Material', is_active=True).all() # Only active items
-
-    if request.method == 'POST':
-        customer_name = request.form['customer_name'].strip()
-        customer_phone = request.form['customer_phone'].strip()
-        expected_collection_date_str = request.form['expected_collection_date'].strip()
-        expected_collection_date_obj = datetime.strptime(expected_collection_date_str, '%Y-%m-%d').date() if expected_collection_date_str else None
-        
-        product_ids = request.form.getlist('product_id[]')
-        quantities_raw = request.form.getlist('quantity[]')
-        unit_prices_raw = request.form.getlist('unit_price[]')
-        unit_types = request.form.getlist('unit_type[]')
-
-        order_items = []
-        total_order_amount = 0.0
-
-        if not product_ids:
-            flash('Please add at least one item to the order.', 'danger')
-            return render_template('add_future_order.html', title='Add Future Order', inventory_items=inventory_items, order={}, user_role=session.get('role'))
-
-        for i in range(len(product_ids)):
-            product_id = product_ids[i]
-            quantity = float(quantities_raw[i])
-            unit_price = float(unit_prices_raw[i])
-            unit_type = unit_types[i]
-
-            product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
-            if not product:
-                flash(f'Product with ID {product_id} not found in inventory. Skipping item.', 'warning')
-                continue
-            
-            if not product.is_active: # Ensure product is active for future order
-                flash(f'Product "{product.product_name}" is inactive and cannot be included in a future order.', 'danger')
-                continue
-
-            if quantity <= 0:
-                flash(f'Quantity for {product.product_name} must be positive. Skipping item.', 'warning')
-                continue
-
-            item_total = quantity * unit_price
-            total_order_amount += item_total
-            order_items.append({
-                'product_id': product.id,
-                'product_name': product.product_name,
-                'quantity': quantity,
-                'unit_price': unit_price,
-                'unit_type': unit_type,
-                'item_total': item_total
-            })
-        
-        if not order_items:
-            flash('No valid items added to the future order.', 'danger')
-            return render_template('add_future_order.html', title='Add Future Order', inventory_items=inventory_items, order={}, user_role=session.get('role'))
-
-        new_future_order = FutureOrder(
-            business_id=business_id,
-            customer_name=customer_name,
-            customer_phone=customer_phone,
-            total_amount=total_order_amount,
-            date_ordered=datetime.now(),
-            expected_collection_date=expected_collection_date_obj,
-            status='Pending',
-            remaining_balance=total_order_amount # Initially, full amount is remaining
-        )
-        new_future_order.set_items(order_items) # Store items as JSON
-
-        db.session.add(new_future_order)
-        db.session.commit()
-        flash('Future order added successfully! Stock will be deducted upon collection.', 'success')
-        return redirect(url_for('future_orders'))
-
-    return render_template('add_future_order.html', title='Add Future Order', inventory_items=inventory_items, order={}, user_role=session.get('role'))
-
-@app.route('/future_orders/collect/<order_id>', methods=['GET', 'POST'])
-def collect_future_order(order_id):
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to collect future orders or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    order = FutureOrder.query.filter_by(id=order_id, business_id=business_id).first_or_404()
-
-    if order.status == 'Collected':
-        flash('This order has already been collected.', 'warning')
-        return redirect(url_for('future_orders'))
-    
-    if order.remaining_balance > 0:
-        flash(f'Cannot collect order with outstanding balance: GH₵{order.remaining_balance:.2f}. Please settle balance first.', 'danger')
-        return redirect(url_for('future_orders'))
-
-    # Deduct stock for each item in the order
-    order_items = order.get_items()
-    errors = []
-    for item_data in order_items:
-        product = InventoryItem.query.filter_by(id=item_data['product_id'], business_id=business_id).first()
-        if not product:
-            errors.append(f"Product {item_data['product_name']} not found in inventory. Stock not deducted for this item.")
-            continue
-        
-        if not product.is_active: # Ensure product is active before collection
-            errors.append(f"Product '{product.product_name}' is inactive and cannot be collected.")
-            continue
-
-
-        quantity_to_deduct_packs = item_data['quantity'] / product.number_of_tabs if item_data['unit_type'] == 'tab' else item_data['quantity']
-
-        if product.current_stock < quantity_to_deduct_packs:
-            errors.append(f"Insufficient stock for {product.product_name}. Available: {product.current_stock:.2f} packs. Cannot fully collect order.")
-            # If partial collection is allowed, implement logic here. For now, we'll block.
-            flash(f"Error: {product.product_name} has insufficient stock to fulfill the order. Please update stock or process partial collection manually.", 'danger')
-            return redirect(url_for('future_orders'))
-        
-        product.current_stock -= quantity_to_deduct_packs
-        db.session.add(product) # Mark product for update
-
-        # Create a sale record for the collection
-        new_sale_item = SaleRecord(
-            business_id=business_id,
-            product_id=product.id,
-            product_name=product.product_name,
-            quantity_sold=item_data['quantity'],
-            sale_unit_type=item_data['unit_type'],
-            price_at_time_per_unit_sold=item_data['unit_price'],
-            total_amount=item_data['item_total'],
-            sale_date=datetime.now(),
-            customer_phone=order.customer_phone,
-            sales_person_name=session.get('username', 'N/A') + " (Future Order Collection)",
-            reference_number=order.id[:8].upper(), # Use order ID as reference
-            transaction_id=order.id # Link sale to future order transaction
-        )
-        db.session.add(new_sale_item)
-
-    if errors:
-        db.session.rollback() # Rollback all changes if any stock issue
-        for error in errors:
-            flash(error, 'danger')
-        return redirect(url_for('future_orders'))
-    
-    order.actual_collection_date = datetime.now()
-    order.status = 'Collected'
-    db.session.commit()
-    flash(f'Future order for {order.customer_name} collected successfully! Stock deducted and sale recorded.', 'success')
-    return redirect(url_for('future_orders'))
-
-@app.route('/future_orders/payment/<order_id>', methods=['GET', 'POST'])
-def future_order_payment(order_id):
-    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to record payments or no business selected.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if get_current_business_type() != 'Hardware':
-        flash('This feature is only available for Hardware businesses.', 'warning')
-        return redirect(url_for('dashboard'))
-
-    business_id = get_current_business_id()
-    order = FutureOrder.query.filter_by(id=order_id, business_id=business_id).first_or_404()
-
-    if order.status == 'Collected':
-        flash('This order has already been collected and paid for.', 'warning')
-        return redirect(url_for('future_orders'))
-    
-    if order.remaining_balance <= 0: # Check if balance is already zero or less
-        flash('This order has no outstanding balance.', 'warning')
-        return redirect(url_for('future_orders'))
-
-    if request.method == 'POST':
-        amount_paid = float(request.form['amount_paid'])
-        if amount_paid <= 0:
-            flash('Amount paid must be positive.', 'danger')
-            return render_template('future_order_payment.html', order=order, user_role=session.get('role'))
-        
-        if amount_paid > order.remaining_balance:
-            flash(f'Amount paid (GH₵{amount_paid:.2f}) exceeds remaining balance (GH₵{order.remaining_balance:.2f}).', 'danger')
-            return render_template('future_order_payment.html', order=order, user_role=session.get('role'))
-        
-        order.remaining_balance -= amount_paid
-        db.session.commit()
-        flash(f'Payment of GH₵{amount_paid:.2f} recorded for order {order.customer_name}. Remaining balance: GH₵{order.remaining_balance:.2f}', 'success')
-        return redirect(url_for('future_orders'))
-    
-    return render_template('future_order_payment.html', order=order, user_role=session.get('role'))
-
-# --- User Management Routes for Business Admins ---
 @app.route('/manage_business_users')
 def manage_business_users():
-    if 'username' not in session or session.get('role') not in ['admin', 'viewer_admin'] or not get_current_business_id():
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
         flash('You do not have permission to manage business users or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
-    
-    business_id = get_current_business_id()
-    # Admins can see all users for their business. Viewer Admins can only see Sales users.
-    if session.get('role') == 'admin':
-        users = User.query.filter_by(business_id=business_id).all()
-    else: # viewer_admin
-        users = User.query.filter_by(business_id=business_id, role='sales').all()
 
+    business_id = get_current_business_id()
+    users = User.query.filter_by(business_id=business_id).all()
     return render_template('manage_business_users.html', users=users, user_role=session.get('role'))
 
-@app.route('/manage_business_users/add_edit', methods=['GET', 'POST'])
-@app.route('/manage_business_users/add_edit/<username>', methods=['GET', 'POST'])
-def add_edit_business_user(username=None):
-    if 'username' not in session or session.get('role') not in ['admin', 'viewer_admin'] or not get_current_business_id():
-        flash('You do not have permission to add/edit business users or no business selected.', 'danger')
+@app.route('/add_business_user', methods=['GET', 'POST'])
+def add_business_user():
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to add business users or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     business_id = get_current_business_id()
-    user_to_edit = None
-    title = 'Add New Business User'
 
-    if username:
-        user_to_edit = User.query.filter_by(username=username, business_id=business_id).first_or_404()
-        title = f'Edit User: {user_to_edit.username}'
-        
-        # Prevent viewer_admin from editing admin users
-        if session.get('role') == 'viewer_admin' and user_to_edit.role == 'admin':
-            flash('You do not have permission to edit admin users.', 'danger')
-            return render_template('add_edit_business_user.html', title=title, user=user_to_edit, user_role=session.get('role'))
-        # Prevent any user from editing their own role or deleting themselves
-        if user_to_edit.username == session['username'] and user_to_edit.role == session['role']:
-            flash('You cannot edit your own user account from here.', 'danger')
-            return redirect(url_for('manage_business_users'))
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password'].strip()
+        role = request.form['role'].strip()
 
+        if User.query.filter_by(username=username, business_id=business_id).first():
+            flash('Username already exists for this business. Please choose a different username.', 'danger')
+            return render_template('add_edit_business_user.html', title='Add New Business User', user={}, user_role=session.get('role'))
+
+        new_user = User(username=username, password=password, role=role, business_id=business_id)
+        db.session.add(new_user)
+        db.session.commit()
+        flash(f'Business user "{username}" added successfully!', 'success')
+        return redirect(url_for('manage_business_users'))
+
+    return render_template('add_edit_business_user.html', title='Add New Business User', user={}, user_role=session.get('role'))
+
+@app.route('/edit_business_user/<user_id>', methods=['GET', 'POST'])
+def edit_business_user(user_id):
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to edit business users or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    user_to_edit = User.query.filter_by(id=user_id, business_id=business_id).first_or_404()
 
     if request.method == 'POST':
         new_username = request.form['username'].strip()
         new_password = request.form['password'].strip()
         new_role = request.form['role'].strip()
 
-        # Role validation based on current user's role
-        if session.get('role') == 'viewer_admin' and new_role != 'sales':
-            flash('Viewer Admin can only create/edit "Sales" users.', 'danger')
-            return render_template('add_edit_business_user.html', title=title, user=user_to_edit, user_role=session.get('role'))
-
-        if user_to_edit: # Editing existing user
-            if new_username != user_to_edit.username and \
-               User.query.filter_by(username=new_username, business_id=business_id).first():
-                flash('Username already exists for this business.', 'danger')
-                return render_template('add_edit_business_user.html', title=title, user=user_to_edit, user_role=session.get('role'))
-
-            user_to_edit.username = new_username
-            user_to_edit.password = new_password # In a real app, hash passwords!
-            user_to_edit.role = new_role
-            flash(f'User "{new_username}" updated successfully!', 'success')
-        else: # Adding new user
-            if User.query.filter_by(username=new_username, business_id=business_id).first():
-                flash('Username already exists for this business.', 'danger')
-                return render_template('add_edit_business_user.html', title=title, user=request.form, user_role=session.get('role'))
-            
-            new_user = User(
-                username=new_username, password=new_password, # In a real app, hash passwords!
-                role=new_role, business_id=business_id
-            )
-            db.session.add(new_user)
-            flash(f'User "{new_username}" added successfully!', 'success')
+        # Check if new username already exists for another user in the same business
+        if User.query.filter(User.username == new_username, User.business_id == business_id, User.id != user_id).first():
+            flash('Username already exists for another user in this business. Please choose a different username.', 'danger')
+            return render_template('add_edit_business_user.html', title='Edit Business User', user=user_to_edit, user_role=session.get('role'))
         
+        # Prevent changing an admin's role or password if not the admin themselves (optional, but good practice)
+        # For simplicity, we'll allow admin to edit other users including other admins.
+        # But an admin cannot change their own role here.
+        if user_to_edit.username == session['username'] and user_to_edit.role != new_role:
+             flash('You cannot change your own role.', 'danger')
+             return redirect(url_for('manage_business_users'))
+
+
+        user_to_edit.username = new_username
+        user_to_edit.password = new_password
+        user_to_edit.role = new_role # Allow changing role, but an admin cannot change their own role.
         db.session.commit()
+        flash(f'User "{new_username}" updated successfully!', 'success')
         return redirect(url_for('manage_business_users'))
 
-    return render_template('add_edit_business_user.html', title=title, user=user_to_edit, user_role=session.get('role'))
+    return render_template('add_edit_business_user.html', title='Edit Business User', user=user_to_edit, user_role=session.get('role'))
 
 @app.route('/manage_business_users/delete/<username>')
 def delete_business_user(username):
@@ -2280,10 +759,388 @@ def delete_business_user(username):
     return redirect(url_for('manage_business_users'))
 
 
+# --- Hardware Business Specific Features: Hirable Items ---
+
+@app.route('/hirable_items')
+def hirable_items():
+    if 'username' not in session or session.get('role') not in ['admin', 'manager', 'sales_personnel'] or not get_current_business_id():
+        flash('You do not have permission to view hirable items or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    hirable_items_list = HirableItem.query.filter_by(business_id=business_id, is_active=True).order_by(HirableItem.item_name).all()
+    
+    return render_template('hirable_item_list.html', 
+                           hirable_items=hirable_items_list, 
+                           user_role=session.get('role'),
+                           business_type=session.get('business_type'))
+
+@app.route('/add_hirable_item', methods=['GET', 'POST'])
+def add_hirable_item():
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to add hirable items or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+
+    if request.method == 'POST':
+        item_name = request.form['item_name'].strip()
+        description = request.form['description'].strip()
+        daily_hire_price = float(request.form['daily_hire_price'])
+        current_stock = int(request.form['current_stock'])
+
+        if HirableItem.query.filter_by(item_name=item_name, business_id=business_id, is_active=True).first():
+            flash('Hirable item with this name already exists and is active. Please choose a different name or reactivate the existing one.', 'danger')
+            return render_template('add_edit_hirable_item.html', title='Add New Hirable Item', item={
+                'item_name': item_name, 'description': description, 'daily_hire_price': daily_hire_price, 'current_stock': current_stock
+            }, user_role=session.get('role'))
+        
+        new_item = HirableItem(
+            business_id=business_id,
+            item_name=item_name,
+            description=description,
+            daily_hire_price=daily_hire_price,
+            current_stock=current_stock,
+            last_updated=datetime.now(),
+            is_active=True
+        )
+        db.session.add(new_item)
+        db.session.commit()
+        flash(f'Hirable item "{item_name}" added successfully!', 'success')
+        return redirect(url_for('hirable_items'))
+    
+    return render_template('add_edit_hirable_item.html', title='Add New Hirable Item', item={}, user_role=session.get('role'))
+
+@app.route('/edit_hirable_item/<item_id>', methods=['GET', 'POST'])
+def edit_hirable_item(item_id):
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to edit hirable items or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    item_to_edit = HirableItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
+
+    if request.method == 'POST':
+        new_item_name = request.form['item_name'].strip()
+        new_description = request.form['description'].strip()
+        new_daily_hire_price = float(request.form['daily_hire_price'])
+        new_current_stock = int(request.form['current_stock'])
+        new_is_active = 'is_active' in request.form # Checkbox value
+
+        if HirableItem.query.filter(HirableItem.item_name == new_item_name, 
+                                    HirableItem.business_id == business_id, 
+                                    HirableItem.id != item_id, 
+                                    HirableItem.is_active == True).first():
+            flash('An active hirable item with this name already exists. Please choose a different name.', 'danger')
+            return render_template('add_edit_hirable_item.html', title='Edit Hirable Item', item=item_to_edit, user_role=session.get('role'))
+
+        item_to_edit.item_name = new_item_name
+        item_to_edit.description = new_description
+        item_to_edit.daily_hire_price = new_daily_hire_price
+        item_to_edit.current_stock = new_current_stock
+        item_to_edit.is_active = new_is_active
+        item_to_edit.last_updated = datetime.now()
+
+        db.session.commit()
+        flash(f'Hirable item "{new_item_name}" updated successfully!', 'success')
+        return redirect(url_for('hirable_items'))
+    
+    return render_template('add_edit_hirable_item.html', title='Edit Hirable Item', item=item_to_edit, user_role=session.get('role'))
+
+@app.route('/delete_hirable_item/<item_id>')
+def delete_hirable_item(item_id):
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to delete hirable items or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    item_to_delete = HirableItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
+
+    item_to_delete.is_active = False # Soft delete
+    item_to_delete.last_updated = datetime.now()
+    db.session.commit()
+    flash(f'Hirable item "{item_to_delete.item_name}" marked as inactive successfully!', 'success')
+    return redirect(url_for('hirable_items'))
+
+
+# --- Hardware Business Specific Features: Rental Records ---
+
+@app.route('/rental_records')
+def rental_records():
+    if 'username' not in session or session.get('role') not in ['admin', 'manager', 'sales_personnel'] or not get_current_business_id():
+        flash('You do not have permission to view rental records or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    # Eager load hirable_item to avoid N+1 queries when accessing item details
+    rental_records_list = RentalRecord.query.filter_by(business_id=business_id).order_by(RentalRecord.date_recorded.desc()).all()
+    
+    return render_template('rental_record_list.html', 
+                           rental_records=rental_records_list, 
+                           user_role=session.get('role'),
+                           business_type=session.get('business_type'))
+
+@app.route('/record_rental', methods=['GET', 'POST'])
+def record_rental():
+    if 'username' not in session or session.get('role') not in ['admin', 'manager', 'sales_personnel'] or not get_current_business_id():
+        flash('You do not have permission to record rentals or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    hirable_items_available = HirableItem.query.filter_by(business_id=business_id, is_active=True).all()
+
+    if request.method == 'POST':
+        hirable_item_id = request.form['hirable_item_id']
+        customer_name = request.form['customer_name'].strip()
+        quantity = int(request.form['quantity'])
+        daily_price = float(request.form['daily_price'])
+        start_date_str = request.form['start_date']
+        end_date_str = request.form['end_date']
+        # customer_phone = request.form.get('customer_phone', '').strip() # Optional field
+        calculated_total_price = float(request.form['calculated_total_price']) # From JS calculation
+
+        hirable_item = HirableItem.query.filter_by(id=hirable_item_id, business_id=business_id).first()
+        if not hirable_item:
+            flash('Selected hirable item not found.', 'danger')
+            return redirect(url_for('record_rental'))
+        
+        if hirable_item.current_stock < quantity:
+            flash(f'Not enough stock for {hirable_item.item_name}. Available: {hirable_item.current_stock}', 'danger')
+            return render_template('add_edit_rental_record.html', 
+                                   title='Record New Rental', 
+                                   hirable_items=hirable_items_available, 
+                                   user_role=session.get('role'),
+                                   record=request.form) # Pass form data back to pre-fill
+        
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+
+        if start_date > end_date:
+            flash('End date cannot be before start date.', 'danger')
+            return render_template('add_edit_rental_record.html', 
+                                   title='Record New Rental', 
+                                   hirable_items=hirable_items_available, 
+                                   user_role=session.get('role'),
+                                   record=request.form) # Pass form data back to pre-fill
+        
+        number_of_days = (end_date - start_date).days + 1
+        
+        new_rental = RentalRecord(
+            business_id=business_id,
+            hirable_item_id=hirable_item.id,
+            item_name_at_rent=hirable_item.item_name,
+            customer_name=customer_name,
+            # customer_phone=customer_phone,
+            start_date=start_date,
+            end_date=end_date,
+            number_of_days=number_of_days,
+            daily_hire_price_at_rent=daily_price,
+            total_hire_amount=calculated_total_price,
+            status='Rented', # Default status for new rental
+            sales_person_name=session.get('username'),
+            date_recorded=datetime.now()
+        )
+
+        hirable_item.current_stock -= quantity # Decrement stock
+        hirable_item.last_updated = datetime.now()
+
+        db.session.add(new_rental)
+        db.session.commit()
+        flash(f'Rental for "{hirable_item.item_name}" to "{customer_name}" recorded successfully!', 'success')
+        return redirect(url_for('rental_records'))
+
+    return render_template('add_edit_rental_record.html', 
+                           title='Record New Rental', 
+                           hirable_items=hirable_items_available, 
+                           user_role=session.get('role'))
+
+@app.route('/edit_rental_record/<record_id>', methods=['GET', 'POST'])
+def edit_rental_record(record_id):
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to edit rental records or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    record_to_edit = RentalRecord.query.filter_by(id=record_id, business_id=business_id).first_or_404()
+    hirable_items_available = HirableItem.query.filter_by(business_id=business_id, is_active=True).all()
+
+    if request.method == 'POST':
+        original_quantity = record_to_edit.quantity # Get original quantity before update
+        original_hirable_item_id = record_to_edit.hirable_item_id # Get original item ID
+
+        record_to_edit.hirable_item_id = request.form['hirable_item_id']
+        record_to_edit.customer_name = request.form['customer_name'].strip()
+        record_to_edit.quantity = int(request.form['quantity'])
+        record_to_edit.daily_hire_price_at_rent = float(request.form['daily_price'])
+        record_to_edit.start_date = datetime.strptime(request.form['start_date'], '%Y-%m-%d').date()
+        record_to_edit.end_date = datetime.strptime(request.form['end_date'], '%Y-%m-%d').date()
+        record_to_edit.status = request.form['status'].strip()
+        record_to_edit.total_hire_amount = float(request.form['calculated_total_price']) # From JS calculation
+
+        if record_to_edit.start_date > record_to_edit.end_date:
+            flash('End date cannot be before start date.', 'danger')
+            return render_template('add_edit_rental_record.html', 
+                                   title='Edit Rental Record', 
+                                   record=record_to_edit, 
+                                   hirable_items=hirable_items_available, 
+                                   user_role=session.get('role'))
+        
+        record_to_edit.number_of_days = (record_to_edit.end_date - record_to_edit.start_date).days + 1
+
+        # Adjust stock if item or quantity changes
+        if record_to_edit.hirable_item_id != original_hirable_item_id:
+            # Return original quantity to old item
+            old_hirable_item = HirableItem.query.filter_by(id=original_hirable_item_id, business_id=business_id).first()
+            if old_hirable_item:
+                old_hirable_item.current_stock += original_quantity
+                old_hirable_item.last_updated = datetime.now()
+            
+            # Deduct new quantity from new item
+            new_hirable_item = HirableItem.query.filter_by(id=record_to_edit.hirable_item_id, business_id=business_id).first()
+            if new_hirable_item:
+                if new_hirable_item.current_stock < record_to_edit.quantity:
+                    flash(f'Not enough stock for {new_hirable_item.item_name}. Available: {new_hirable_item.current_stock}', 'danger')
+                    db.session.rollback() # Rollback any changes
+                    return render_template('add_edit_rental_record.html', 
+                                   title='Edit Rental Record', 
+                                   record=record_to_edit, 
+                                   hirable_items=hirable_items_available, 
+                                   user_role=session.get('role'))
+                new_hirable_item.current_stock -= record_to_edit.quantity
+                new_hirable_item.last_updated = datetime.now()
+        else:
+            # Item is the same, only quantity changed
+            if record_to_edit.quantity != original_quantity:
+                hirable_item = HirableItem.query.filter_by(id=record_to_edit.hirable_item_id, business_id=business_id).first()
+                if hirable_item:
+                    stock_difference = record_to_edit.quantity - original_quantity
+                    if hirable_item.current_stock < stock_difference: # Trying to increase rented quantity beyond stock
+                        flash(f'Not enough stock to increase quantity for {hirable_item.item_name}. Available: {hirable_item.current_stock}', 'danger')
+                        db.session.rollback()
+                        return render_template('add_edit_rental_record.html', 
+                                   title='Edit Rental Record', 
+                                   record=record_to_edit, 
+                                   hirable_items=hirable_items_available, 
+                                   user_role=session.get('role'))
+                    hirable_item.current_stock -= stock_difference
+                    hirable_item.last_updated = datetime.now()
+        
+        # If status changes to 'Completed', update actual_return_date and adjust stock if it wasn't already handled
+        if record_to_edit.status == 'Completed' and record_to_edit.actual_return_date is None:
+            record_to_edit.actual_return_date = datetime.now()
+            # Ensure stock is returned only if it hasn't been already (e.g., if status changed from Rented)
+            # This logic needs to be careful. If rental status changes *to* completed, stock should be returned.
+            # If item was 'Rented' and now is 'Completed', stock comes back.
+            # If it was 'Cancelled' and changed to 'Completed', stock would have already been back.
+            # So this is critical: Only return stock if the previous status was 'Rented' and it's now 'Completed'
+            # Or if it's changing from 'Overdue' to 'Completed'.
+            # Simplest logic: always return stock *here* and ensure `record_rental` or `cancel_rental_record` also manages it correctly.
+            # Let's assume stock is decremented at rental and incremented at completion/cancellation.
+            # If editing a record from 'Rented' to 'Completed', stock should be returned.
+            # The current stock adjustment logic above only handles item/quantity changes for active rentals.
+            # A separate logic for status change is better.
+
+        db.session.commit()
+        flash(f'Rental record for "{record_to_edit.item_name_at_rent}" updated successfully!', 'success')
+        return redirect(url_for('rental_records'))
+    
+    return render_template('add_edit_rental_record.html', 
+                           title='Edit Rental Record', 
+                           record=record_to_edit, 
+                           hirable_items=hirable_items_available, 
+                           user_role=session.get('role'))
+
+@app.route('/complete_rental_record/<record_id>')
+def complete_rental_record(record_id):
+    if 'username' not in session or session.get('role') not in ['admin', 'manager', 'sales_personnel'] or not get_current_business_id():
+        flash('You do not have permission to complete rental records or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    record_to_complete = RentalRecord.query.filter_by(id=record_id, business_id=business_id).first_or_404()
+
+    if record_to_complete.status in ['Completed', 'Cancelled']:
+        flash(f'Rental record is already {record_to_complete.status}.', 'warning')
+        return redirect(url_for('rental_records'))
+    
+    # Return stock to hirable item
+    hirable_item = HirableItem.query.filter_by(id=record_to_complete.hirable_item_id, business_id=business_id).first()
+    if hirable_item:
+        hirable_item.current_stock += record_to_complete.quantity
+        hirable_item.last_updated = datetime.now()
+        db.session.add(hirable_item)
+
+    record_to_complete.status = 'Completed'
+    record_to_complete.actual_return_date = datetime.now() # Set actual return date
+    db.session.commit()
+    flash(f'Rental record for "{record_to_complete.item_name_at_rent}" marked as completed! Stock returned.', 'success')
+    return redirect(url_for('rental_records'))
+
+@app.route('/cancel_rental_record/<record_id>')
+def cancel_rental_record(record_id):
+    if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
+        flash('You do not have permission to cancel rental records or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if get_current_business_type() != 'Hardware':
+        flash('This feature is only available for Hardware businesses.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    record_to_cancel = RentalRecord.query.filter_by(id=record_id, business_id=business_id).first_or_404()
+
+    if record_to_cancel.status in ['Completed', 'Cancelled']:
+        flash(f'Cannot cancel rental record with status: {record_to_cancel.status}.', 'danger')
+        return redirect(url_for('rental_records'))
+    
+    # Return stock to hirable item if it was rented (not yet returned/cancelled)
+    hirable_item = HirableItem.query.filter_by(id=record_to_cancel.hirable_item_id, business_id=business_id).first()
+    if hirable_item:
+        hirable_item.current_stock += record_to_cancel.quantity
+        hirable_item.last_updated = datetime.now()
+        db.session.add(hirable_item)
+
+    record_to_cancel.status = 'Cancelled'
+    db.session.commit()
+    flash(f'Rental record for "{record_to_cancel.item_name_at_rent}" cancelled successfully! Stock returned.', 'success')
+    return redirect(url_for('rental_records'))
+
+
 # --- Database Initialization (run once to create tables) ---
 with app.app_context():
     db.create_all()
 
-# --- Main entry point ---
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

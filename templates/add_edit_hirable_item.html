@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - {{ session.get('business_name', 'Business Dashboard') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #10B981; /* Emerald 500 */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #059669; /* Emerald 600 */
+        }
+        .btn-secondary {
+            background-color: #6B7280; /* Gray 500 */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4B5563; /* Gray 600 */
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
+        .flash-success {
+            background-color: #D1FAE5; /* Green 100 */
+            color: #065F46; /* Green 800 */
+            border: 1px solid #34D399; /* Green 400 */
+        }
+        .flash-danger {
+            background-color: #FEE2E2; /* Red 100 */
+            color: #991B1B; /* Red 800 */
+            border: 1px solid #F87171; /* Red 400 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container py-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">{{ title }}</h1>
+            <a href="{{ url_for('hirable_items') }}" class="btn btn-secondary flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to Hirable Items
+            </a>
+        </div>
+
+        {% if session.get('business_type') == 'Hardware' and user_role == 'admin' %}
+            <div class="card">
+                <form action="{{ url_for('add_hirable_item') if not item else url_for('edit_hirable_item', item_id=item.id) }}" method="POST">
+                    <div class="mb-4">
+                        <label for="item_name" class="block text-gray-700 text-sm font-semibold mb-2">Item Name:</label>
+                        <input type="text" id="item_name" name="item_name" value="{{ item.item_name if item else '' }}"
+                               class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="description" class="block text-gray-700 text-sm font-semibold mb-2">Description (Optional):</label>
+                        <textarea id="description" name="description" rows="3"
+                                  class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">{{ item.description if item else '' }}</textarea>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="daily_hire_price" class="block text-gray-700 text-sm font-semibold mb-2">Daily Hire Price (GH₵):</label>
+                        <input type="number" id="daily_hire_price" name="daily_hire_price" value="{{ item.daily_hire_price if item else '0.00' }}"
+                               step="0.01" min="0" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                    </div>
+
+                    <div class="mb-6">
+                        <label for="current_stock" class="block text-gray-700 text-sm font-semibold mb-2">Current Stock:</label>
+                        <input type="number" id="current_stock" name="current_stock" value="{{ item.current_stock if item else '0' }}"
+                               min="0" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                    </div>
+
+                    {% if item %} {# Only show is_active checkbox when editing #}
+                    <div class="mb-6 flex items-center">
+                        <input type="checkbox" id="is_active" name="is_active" value="true" class="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-gray-300 rounded"
+                               {% if item.is_active %} checked {% endif %}>
+                        <label for="is_active" class="ml-2 block text-sm text-gray-900">Item is Active (uncheck to mark as inactive)</label>
+                    </div>
+                    {% endif %}
+
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="btn btn-primary">
+                            {{ 'Add Hirable Item' if not item else 'Update Hirable Item' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        {% else %}
+            <div class="card p-6 text-center text-gray-700">
+                <p class="text-lg font-semibold">Access Denied</p>
+                <p class="text-sm mt-2">This page is only accessible to Admin users of Hardware businesses.</p>
+                <p class="text-sm mt-2">Please ensure you are logged in with appropriate permissions and have a Hardware business selected.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
