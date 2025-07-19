@@ -194,12 +194,11 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-            <!-- Quick Actions Card -->
             <div class="bg-white p-6 rounded-lg shadow-md">
                 <h3 class="text-xl font-semibold mb-4 text-gray-700">Quick Actions</h3>
                 <div class="space-y-3">
                     {% if user_role in ['admin', 'sales'] %}
-                    <a href="{{ url_for('add_sale') }}" class="block w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+                    <a href="{{ url_for('sales') }}" class="block w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
                         <i class="fas fa-cash-register mr-2"></i> Record New Sale
                     </a>
                     {% if business_type == 'Hardware' %}
@@ -225,7 +224,6 @@
                 </div>
             </div>
 
-            <!-- Business Overview Card (Placeholder for actual data) -->
             <div class="bg-white p-6 rounded-lg shadow-md col-span-1 md:col-span-2">
                 <h3 class="text-xl font-semibold mb-4 text-gray-700">Business Overview</h3>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -256,13 +254,11 @@
             </div>
         </div>
 
-        <!-- Recent Activity Card (Placeholder for actual data) -->
         <div class="bg-white p-6 rounded-lg shadow-md">
             <h3 class="text-xl font-semibold mb-4 text-gray-700">Recent Activity</h3>
             <p class="text-gray-600">This section would display a list of recent sales, rentals, or inventory updates.</p>
             <p class="text-sm text-gray-500 mt-2"> (Data from backend)</p>
             <div class="mt-4">
-                <!-- Example: A simple list of recent items -->
                 <ul class="list-disc list-inside text-gray-700">
                     <li>Sale: Product X, GH₵50.00 (10 mins ago)</li>
                     {% if business_type == 'Hardware' %}

@@ -1,625 +1,432 @@
-<!-- templates/add_edit_sale.html -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }} - Pharmaceutical Store</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
-        .form-group label {
-            font-weight: 600;
-            color: #4a5568;
-            margin-bottom: 0.5rem;
-            display: block;
-        }
-        .form-group input[type="text"],
-        .form-group input[type="number"],
-        .form-group select,
-        .form-group input[type="tel"] {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #cbd5e0;
-            border-radius: 0.375rem;
-            font-size: 1rem;
-            color: #2d3748;
-            background-color: #fff;
-            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
-        }
-        .form-group input[type="text"]:focus,
-        .form-group input[type="number"]:focus,
-        .form-group select:focus,
-        .form-group input[type="tel"]:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-            outline: none;
-        }
-        .product-row {
-            border: 1px solid #e2e8f0;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            border-radius: 0.5rem;
-            background-color: #f7fafc;
-        }
-        .product-row:last-of-type {
-            margin-bottom: 0;
-        }
-        .print-area {
-            display: none; /* Hidden by default */
-        }
-        @media print {
-            body > *:not(.print-area) {
-                display: none;
-            }
-            .print-area {
-                display: block;
-                width: 100%;
-                margin: 0 auto;
-                padding: 20px;
-                font-family: 'Inter', sans-serif;
-                color: #000;
-                font-size: 12px;
-            }
-            .print-area h2, .print-area h3 {
-                text-align: center;
-                margin-bottom: 10px;
-            }
-            .print-area table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 15px;
-            }
-            .print-area th, .print-area td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                text-align: left;
-            }
-            .print-area .text-right {
-                text-align: right;
-            }
-            .print-area .text-center {
-                text-align: center;
-            }
-        }
-    </style>
-</head>
-<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-4xl">
-        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h2>
+{% extends 'base.html' %}
+
+{% block content %}
+{# Main form content for adding/editing sales #}
+{% if not print_ready %}
+    <div class="container mx-auto p-4 md:p-8 bg-white rounded-lg shadow-lg">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 <div class="mb-4">
                     {% for category, message in messages %}
-                        <div class="p-3 mb-2 rounded-md
-                            {% if category == 'success' %} bg-green-100 text-green-700
-                            {% elif category == 'danger' %} bg-red-100 text-red-700
-                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
-                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
-                            {{ message | safe }}
+                        <div class="p-3 rounded-lg text-white {% if category == 'success' %}bg-green-500{% elif category == 'danger' %}bg-red-500{% elif category == 'warning' %}bg-yellow-500{% else %}bg-blue-500{% endif %}">
+                            {{ message }}
                         </div>
                     {% endfor %}
                 </div>
             {% endif %}
         {% endwith %}
 
-        <form action="{{ url_for('add_sale') if not sale.id else url_for('edit_sale', sale_id=sale.id) }}" method="POST">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div class="form-group">
-                    <label for="customer_phone">Customer Phone (Optional)</label>
-                    <input type="tel" id="customer_phone" name="customer_phone" value="{{ sale.customer_phone if sale.customer_phone else '' }}" class="mt-1">
-                </div>
-                <div class="form-group">
-                    <label for="sales_person_name">Sales Person</label>
-                    <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.sales_person_name if sale.sales_person_name else username }}" class="mt-1" readonly>
-                </div>
-            </div>
-
-            <h3 class="text-xl font-semibold text-gray-700 mb-4">Products Sold</h3>
-
-            <div class="mb-4">
-                <label for="product_search" class="block text-sm font-medium text-gray-700">Search Product</label>
-                <input
-                    type="text"
-                    id="product_search"
-                    placeholder="Type to search products..."
-                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    oninput="filterProductOptions()"
-                >
-            </div>
-
-            <div id="products-container">
-                <!-- Product rows will be added here by JavaScript -->
-                {% if sale.id %}
-                    <!-- For editing an existing sale, populate with its single item -->
-                    <div class="product-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4 p-4 border rounded-lg bg-gray-50">
-                        <div class="form-group">
-                            <label for="product_id_0">Product</label>
-                            <select id="product_id_0" name="product_id[]" class="mt-1 product-select w-full p-2 border rounded-md" required onchange="updateProductDetails(this, 0)">
-                                <option value="">Select Product</option>
-                                {% for item in inventory_items %}
-                                    <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}" data-is-fixed-price="{{ 'true' if item.is_fixed_price else 'false' }}" data-fixed-sale-price="{{ item.fixed_sale_price }}" data-item-type="{{ item.item_type }}" {% if sale.product_id == item.id %}selected{% endif %}>
-                                        {{ item.product_name }} ({{ "%.2f" | format(item.current_stock) }} {{ 'packs' if business_type != 'Hardware' else 'units' }} in stock)
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="quantity_sold_0">Quantity</label>
-                            <input type="number" id="quantity_sold_0" name="quantity_sold[]" step="0.01" min="0.01" value="{{ sale.quantity_sold }}" class="mt-1 quantity-input w-full p-2 border rounded-md" required oninput="calculateItemTotal(0)">
-                        </div>
-                        <div class="form-group">
-                            <label for="sale_unit_type_0">Unit Type</label>
-                            <select id="sale_unit_type_0" name="sale_unit_type[]" class="mt-1 unit-type-select w-full p-2 border rounded-md" required onchange="calculateItemTotal(0)">
-                                <option value="pack" {% if sale.sale_unit_type == 'pack' %}selected{% endif %}>{{ 'Pack(s)' if business_type != 'Hardware' else 'Unit(s)' }}</option>
-                                <option value="tab" {% if sale.sale_unit_type == 'tab' %}selected{% endif %}>{{ 'Tab(s)' if business_type != 'Hardware' else 'Piece(s)' }}</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="price_type_0">Price Type</label>
-                            <select id="price_type_0" name="price_type[]" class="mt-1 price-type-select w-full p-2 border rounded-md" required onchange="toggleCustomPrice(0)">
-                                <option value="internal_percentage" {% if sale.price_type == 'internal_percentage' %}selected{% endif %}>Internal Percentage</option>
-                                {% if user_role == 'admin' %}
-                                <option value="custom_price" {% if sale.price_type == 'custom_price' %}selected{% endif %}>Custom Price</option>
-                                {% endif %}
-                            </select>
-                        </div>
-                        <div class="form-group col-span-2">
-                            <label for="custom_price_0">Custom Price (per {{ 'pack/unit' if business_type != 'Hardware' else 'unit/piece' }})</label>
-                            <input type="number" id="custom_price_0" name="custom_price[]" step="0.01" min="0" value="{{ sale.custom_price }}" class="mt-1 custom-price-input w-full p-2 border rounded-md" style="display: {{ 'block' if sale.price_type == 'custom_price' else 'none' }};" oninput="calculateItemTotal(0)">
-                        </div>
-                        <div class="form-group">
-                            <label for="item_total_0">Item Total</label>
-                            <input type="text" id="item_total_0" name="item_total[]" value="{{ '%.2f' | format(sale.total_amount) }}" class="mt-1 item-total-display w-full p-2 border rounded-md bg-gray-200" readonly>
-                        </div>
-                        <div class="form-group">
-                            <button type="button" onclick="removeItemRow(this)" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out w-full">Remove</button>
-                        </div>
+        <form method="POST" id="saleForm">
+            <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="customer_phone" class="block text-sm font-medium text-gray-700">Customer Phone (Optional)</label>
+                        <input type="text" id="customer_phone" name="customer_phone" value="{{ sale.customer_phone if sale.customer_phone else '' }}"
+                               class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
-                {% else %}
-                    <!-- For adding new sales, start with one empty row -->
-                    <div class="product-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4 p-4 border rounded-lg bg-gray-50">
-                        <div class="form-group">
-                            <label for="product_id_0">Product</label>
-                            <select id="product_id_0" name="product_id[]" class="mt-1 product-select w-full p-2 border rounded-md" required onchange="updateProductDetails(this, 0)">
-                                <option value="">Select Product</option>
-                                {% for item in inventory_items %}
-                                    <option value="{{ item.id }}" data-sale-price="{{ item.sale_price }}" data-unit-price-per-tab="{{ item.unit_price_per_tab }}" data-number-of-tabs="{{ item.number_of_tabs }}" data-is-fixed-price="{{ 'true' if item.is_fixed_price else 'false' }}" data-fixed-sale-price="{{ item.fixed_sale_price }}" data-item-type="{{ item.item_type }}">
-                                        {{ item.product_name }} ({{ "%.2f" | format(item.current_stock) }} {{ 'packs' if business_type != 'Hardware' else 'units' }} in stock)
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="quantity_sold_0">Quantity</label>
-                            <input type="number" id="quantity_sold_0" name="quantity_sold[]" step="0.01" min="0.01" value="" class="mt-1 quantity-input w-full p-2 border rounded-md" required oninput="calculateItemTotal(0)">
-                        </div>
-                        <div class="form-group">
-                            <label for="sale_unit_type_0">Unit Type</label>
-                            <select id="sale_unit_type_0" name="sale_unit_type[]" class="mt-1 unit-type-select w-full p-2 border rounded-md" required onchange="calculateItemTotal(0)">
-                                <option value="pack">{{ 'Pack(s)' if business_type != 'Hardware' else 'Unit(s)' }}</option>
-                                <option value="tab">{{ 'Tab(s)' if business_type != 'Hardware' else 'Piece(s)' }}</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="price_type_0">Price Type</label>
-                            <select id="price_type_0" name="price_type[]" class="mt-1 price-type-select w-full p-2 border rounded-md" required onchange="toggleCustomPrice(0)">
-                                <option value="internal_percentage">Internal Percentage</option>
-                                {% if user_role == 'admin' %}
-                                <option value="custom_price">Custom Price</option>
-                                {% endif %}
-                            </select>
-                        </div>
-                        <div class="form-group col-span-2">
-                            <label for="custom_price_0">Custom Price (per {{ 'pack/unit' if business_type != 'Hardware' else 'unit/piece' }})</label>
-                            <input type="number" id="custom_price_0" name="custom_price[]" step="0.01" min="0" value="" class="mt-1 custom-price-input w-full p-2 border rounded-md" style="display: none;" oninput="calculateItemTotal(0)">
-                        </div>
-                        <div class="form-group">
-                            <label for="item_total_0">Item Total</label>
-                            <input type="text" id="item_total_0" name="item_total[]" value="0.00" class="mt-1 item-total-display w-full p-2 border rounded-md bg-gray-200" readonly>
-                        </div>
-                        <div class="form-group">
-                            <button type="button" onclick="removeItemRow(this)" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out w-full">Remove</button>
-                        </div>
+                    <div>
+                        <label for="sales_person_name" class="block text-sm font-medium text-gray-700">Sales Person</label>
+                        <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.sales_person_name }}" readonly
+                               class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed">
                     </div>
-                {% endif %}
+                </div>
+
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Items to Sell</h2>
+
+                {# Product Search Section - Now applies to new/empty rows #}
+                <div class="flex items-center space-x-2 mb-4">
+                    <input type="text" id="product-search-input" placeholder="Search products..."
+                           class="flex-grow p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <button type="button" id="apply-search-btn" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        Search
+                    </button>
+                </div>
+
+                <div id="items-container" class="space-y-4 mb-6">
+                    {# Item rows will be added here by JavaScript #}
+                    {% if 'items' in sale and sale['items'] is iterable and not sale['items'] is string %}
+                        {% for item_data in sale['items'] %}
+                            <div class="item-row p-4 border border-gray-200 rounded-md relative">
+                                <button type="button" class="remove-item-btn absolute top-2 right-2 text-red-500 hover:text-red-700 focus:outline-none">
+                                    <i class="fas fa-times-circle"></i>
+                                </button>
+                                <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Product</label>
+                                        <select name="product_id" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm product-select">
+                                            <option value="">Select a Product</option>
+                                            {# Options will be populated by JavaScript #}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Unit Type</label>
+                                        <select name="sale_unit_type" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm unit-type-select">
+                                            <option value="pack" {% if item_data.sale_unit_type == 'pack' %}selected{% endif %}>Pack</option>
+                                            <option value="tab" {% if item_data.sale_unit_type == 'tab' %}selected{% endif %}>Tab/Piece</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Quantity</label>
+                                        <input type="number" name="quantity_sold" value="{{ item_data.quantity_sold }}" min="0.01" step="0.01" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm quantity-input">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Unit Price (GH₵)</label>
+                                        <input type="number" name="price_at_time_per_unit_sold" value="{{ item_data.price_at_time_per_unit_sold }}" min="0.01" step="0.01" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm unit-price-input">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">Item Total (GH₵)</label>
+                                        <input type="text" name="item_total_amount" value="{{ item_data.total_amount }}" readonly class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 item-total-input">
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <button type="button" id="add-item-btn" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Add Another Item</button>
+
+                <div class="mt-6 text-right">
+                    <p class="text-xl font-bold text-gray-800">Grand Total: GH₵<span id="grand-total">0.00</span></p>
+                </div>
             </div>
 
-            <button type="button" onclick="addProductRow()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out mt-4 mb-6">
-                Add Another Product
-            </button>
+            <input type="hidden" name="cart_items_json" id="cart-items-json">
 
-            <div class="form-group mt-6">
-                <label for="grand_total">Grand Total</label>
-                <input type="text" id="grand_total" name="grand_total" value="0.00" class="mt-1 w-full p-3 border-2 border-blue-400 rounded-md text-xl font-bold text-gray-800 bg-blue-50" readonly>
+            <div class="flex items-center mt-6">
+                <input type="checkbox" id="send_sms_receipt" name="send_sms_receipt" class="form-checkbox h-5 w-5 text-indigo-600">
+                <label for="send_sms_receipt" class="ml-2 text-gray-700">Send SMS Receipt to Customer</label>
             </div>
 
-            <div class="flex justify-end gap-4 mt-8">
-                <a href="{{ url_for('sales') }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">Cancel</a>
-                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">
-                    {{ 'Update Sale' if sale.id else 'Record Sale' }}
-                </button>
+            <div class="flex justify-end space-x-4 mt-6">
+                <a href="{{ url_for('sales') }}" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2">Cancel</a>
+                <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">Record Sale</button>
             </div>
         </form>
     </div>
 
-    <!-- Print-ready receipt area -->
-    {% if print_ready %}
-    <div class="print-area p-8 bg-white rounded-lg shadow-xl mt-8">
-        <h2 class="text-2xl font-bold mb-2">{{ pharmacy_info.name }}</h2>
-        <h3 class="text-lg mb-4">{{ pharmacy_info.location }}, {{ pharmacy_info.address }}</h3>
-        <p class="text-center mb-4">Contact: {{ pharmacy_info.contact }}</p>
-
-        <h3 class="text-xl font-bold mb-4">SALES RECEIPT</h3>
-        <p><strong>Transaction ID:</strong> {{ last_transaction_id }}</p>
-        <p><strong>Date:</strong> {{ last_transaction_date }}</p>
-        <p><strong>Sales Person:</strong> {{ last_transaction_sales_person }}</p>
-        {% if last_transaction_customer_phone %}
-        <p><strong>Customer Phone:</strong> {{ last_transaction_customer_phone }}</p>
-        {% endif %}
-        <br>
-        <table>
-            <thead>
-                <tr>
-                    <th>Product</th>
-                    <th class="text-right">Qty</th>
-                    <th class="text-right">Unit Price</th>
-                    <th class="text-right">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in last_transaction_details %}
-                <tr>
-                    <td>{{ item.product_name }}</td>
-                    <td class="text-right">{{ "%.2f" | format(item.quantity_sold) }} {{ 'tab(s)' if item.sale_unit_type == 'tab' else ('pack(s)' if business_type != 'Hardware' else 'unit(s)') }}</td>
-                    <td class="text-right">GH₵{{ "%.2f" | format(item.price_at_time_per_unit_sold) }}</td>
-                    <td class="text-right">GH₵{{ "%.2f" | format(item.total_amount) }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            <tfoot>
-                <tr>
-                    <th colspan="3" class="text-right">Grand Total:</th>
-                    <th class="text-right">GH₵{{ "%.2f" | format(last_transaction_grand_total) }}</th>
-                </tr>
-            </tfoot>
-        </table>
-        <p class="text-center mt-6">Thank you for your business!</p>
-    </div>
-
-    <div class="mt-4 flex gap-4">
-        <button type="button" onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">Print Receipt</button>
-        <a href="{{ url_for('add_sale') }}" class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out">New Sale</a>
-    </div>
-    {% endif %}
-
     <script>
-        let productRowCounter = 0;
-        // Store the original full list of inventory items
-        const allInventoryItems = {{ inventory_items | tojson }};
-        let filteredInventoryItems = [...allInventoryItems]; // Start with all items
-        const userRole = "{{ user_role }}";
-        const businessType = "{{ business_type }}";
+        const inventoryItems = {{ inventory_items | tojson }}; // Passed from Flask
 
-        // Function to create a new product row HTML
-        function createProductRow(index, itemData = null) {
-            const isEditMode = itemData !== null;
-            // Use filteredInventoryItems for rendering options
-            const productOptions = filteredInventoryItems.map(item => {
-                const selected = isEditMode && itemData.product_id === item.id ? 'selected' : '';
-                const unitText = businessType !== 'Hardware' ? 'packs' : 'units';
-                // Corrected: Use JavaScript's toFixed(2) for current_stock
-                return `<option value="${item.id}" 
-                                data-sale-price="${item.sale_price}" 
-                                data-unit-price-per-tab="${item.unit_price_per_tab}" 
-                                data-number-of-tabs="${item.number_of_tabs}" 
-                                data-is-fixed-price="${item.is_fixed_price}" 
-                                data-fixed-sale-price="${item.fixed_sale_price}" 
-                                data-item-type="${item.item_type}" 
-                                ${selected}>
-                            ${item.product_name} (${item.current_stock.toFixed(2)} ${unitText} in stock)
-                        </option>`;
-            }).join('');
+        const itemsContainer = document.getElementById('items-container');
+        const addItemBtn = document.getElementById('add-item-btn');
+        const grandTotalSpan = document.getElementById('grand-total');
+        const cartItemsJsonInput = document.getElementById('cart-items-json');
+        const productSearchInput = document.getElementById('product-search-input');
+        const applySearchBtn = document.getElementById('apply-search-btn');
 
-            const unitTypePackText = businessType !== 'Hardware' ? 'Pack(s)' : 'Unit(s)';
-            const unitTypeTabText = businessType !== 'Hardware' ? 'Tab(s)' : 'Piece(s)';
-            const priceUnitText = businessType !== 'Hardware' ? 'pack/unit' : 'unit/piece';
+        // Function to render options for a product select dropdown
+        function renderProductSelectOptions(selectElement, itemsToRender, selectedProductId = null) {
+            selectElement.innerHTML = '<option value="">Select a Product</option>'; // Clear existing options
+            itemsToRender.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = `${item.product_name} (Stock: ${item.current_stock.toFixed(2)})`;
+                // Add data attributes
+                option.dataset.salePrice = item.sale_price;
+                option.dataset.unitPricePerTab = item.unit_price_per_tab;
+                option.dataset.numberOfTabs = item.number_of_tabs;
+                option.dataset.itemType = item.item_type;
+                option.dataset.isFixedPrice = item.is_fixed_price;
+                option.dataset.fixedSalePrice = item.fixed_sale_price;
 
-            const priceTypeOptions = `
-                <option value="internal_percentage" ${isEditMode && itemData.price_type === 'internal_percentage' ? 'selected' : ''}>Internal Percentage</option>
-                ${userRole === 'admin' ? `<option value="custom_price" ${isEditMode && itemData.price_type === 'custom_price' ? 'selected' : ''}>Custom Price</option>` : ''}
-            `;
+                if (selectedProductId && item.id === selectedProductId) {
+                    option.selected = true;
+                }
+                selectElement.appendChild(option);
+            });
+        }
 
-            const customPriceDisplay = isEditMode && itemData.price_type === 'custom_price' ? 'block' : 'none';
-            const customPriceValue = isEditMode && itemData.custom_price ? itemData.custom_price : '';
-            const quantityValue = isEditMode ? itemData.quantity_sold : '';
-            const itemTotalValue = isEditMode ? itemData.total_amount.toFixed(2) : '0.00';
+        // Function to filter products and update *only empty* product select dropdowns
+        function applyProductSearch() {
+            const searchTerm = productSearchInput.value.toLowerCase().trim();
+            const filteredItems = searchTerm
+                ? inventoryItems.filter(item =>
+                    item.product_name.toLowerCase().includes(searchTerm) ||
+                    item.category.toLowerCase().includes(searchTerm) ||
+                    (item.batch_number && item.batch_number.toLowerCase().includes(searchTerm))
+                  )
+                : [...inventoryItems]; // If search is empty, show all
 
-            return `
-                <div class="product-row grid grid-cols-1 md:grid-cols-4 gap-4 items-end mb-4 p-4 border rounded-lg bg-gray-50">
-                    <div class="form-group">
-                        <label for="product_id_${index}">Product</label>
-                        <select id="product_id_${index}" name="product_id[]" class="mt-1 product-select w-full p-2 border rounded-md" required onchange="updateProductDetails(this, ${index})">
-                            <option value="">Select Product</option>
-                            ${productOptions}
+            // Update all product selects that are currently unselected
+            document.querySelectorAll('.product-select').forEach(selectElement => {
+                // Only update if the select element does not have a value currently selected
+                // OR if it's the specific dropdown that the user is interacting with for a new search
+                if (!selectElement.value) { // This condition ensures it only applies to empty dropdowns
+                    renderProductSelectOptions(selectElement, filteredItems, null); // No pre-selection for empty
+                }
+            });
+        }
+
+        function updateGrandTotal() {
+            let grandTotal = 0;
+            document.querySelectorAll('.item-total-input').forEach(input => {
+                grandTotal += parseFloat(input.value) || 0;
+            });
+            grandTotalSpan.textContent = grandTotal.toFixed(2);
+            updateCartItemsJson(); // Update JSON whenever total changes
+        }
+
+        function calculateItemTotal(itemRow) {
+            const productSelect = itemRow.querySelector('.product-select');
+            const unitTypeSelect = itemRow.querySelector('.unit-type-select');
+            const quantityInput = itemRow.querySelector('.quantity-input');
+            const unitPriceInput = itemRow.querySelector('.unit-price-input');
+            const itemTotalInput = itemRow.querySelector('.item-total-input');
+
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            const productData = inventoryItems.find(item => item.id === productSelect.value); // Always use full inventory for data lookup
+
+            let quantity = parseFloat(quantityInput.value) || 0;
+            let unitPrice = parseFloat(unitPriceInput.value) || 0;
+            let itemTotal = 0;
+
+            if (productData && quantity > 0 && unitPrice > 0) {
+                itemTotal = quantity * unitPrice;
+            }
+            itemTotalInput.value = itemTotal.toFixed(2);
+            updateGrandTotal();
+        }
+
+        function populateUnitPrice(itemRow) {
+            const productSelect = itemRow.querySelector('.product-select');
+            const unitTypeSelect = itemRow.querySelector('.unit-type-select');
+            const unitPriceInput = itemRow.querySelector('.unit-price-input');
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            const productData = inventoryItems.find(item => item.id === productSelect.value); // Always use full inventory for data lookup
+
+            if (productData) {
+                if (productData.is_fixed_price) {
+                    if (unitTypeSelect.value === 'tab') {
+                        unitPriceInput.value = (productData.fixed_sale_price / productData.number_of_tabs).toFixed(2);
+                    } else { // 'pack'
+                        unitPriceInput.value = productData.fixed_sale_price.toFixed(2);
+                    }
+                } else {
+                    if (unitTypeSelect.value === 'tab') {
+                        unitPriceInput.value = productData.unit_price_per_tab.toFixed(2);
+                    } else { // 'pack'
+                        unitPriceInput.value = productData.sale_price.toFixed(2);
+                    }
+                }
+            } else {
+                unitPriceInput.value = '0.00';
+            }
+            calculateItemTotal(itemRow);
+        }
+
+        function createItemRow(itemData = {}) {
+            const itemRow = document.createElement('div');
+            itemRow.className = 'item-row p-4 border border-gray-200 rounded-md relative';
+            itemRow.innerHTML = `
+                <button type="button" class="remove-item-btn absolute top-2 right-2 text-red-500 hover:text-red-700 focus:outline-none">
+                    <i class="fas fa-times-circle"></i>
+                </button>
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Product</label>
+                        <select name="product_id" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm product-select">
+                            <option value="">Select a Product</option>
+                            {# Options will be populated by JavaScript #}
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="quantity_sold_${index}">Quantity</label>
-                        <input type="number" id="quantity_sold_${index}" name="quantity_sold[]" step="0.01" min="0.01" value="${quantityValue}" class="mt-1 quantity-input w-full p-2 border rounded-md" required oninput="calculateItemTotal(${index})">
-                    </div>
-                    <div class="form-group">
-                        <label for="sale_unit_type_${index}">Unit Type</label>
-                        <select id="sale_unit_type_${index}" name="sale_unit_type[]" class="mt-1 unit-type-select w-full p-2 border rounded-md" required onchange="calculateItemTotal(${index})">
-                            <option value="pack" ${isEditMode && itemData.sale_unit_type === 'pack' ? 'selected' : ''}>${unitTypePackText}</option>
-                            <option value="tab" ${isEditMode && itemData.sale_unit_type === 'tab' ? 'selected' : ''}>${unitTypeTabText}</option>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Unit Type</label>
+                        <select name="sale_unit_type" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm unit-type-select">
+                            <option value="pack" ${itemData.sale_unit_type === 'pack' ? 'selected' : ''}>Pack</option>
+                            <option value="tab" ${itemData.sale_unit_type === 'tab' ? 'selected' : ''}>Tab/Piece</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="price_type_${index}">Price Type</label>
-                        <select id="price_type_${index}" name="price_type[]" class="mt-1 price-type-select w-full p-2 border rounded-md" required onchange="toggleCustomPrice(${index})">
-                            ${priceTypeOptions}
-                        </select>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Quantity</label>
+                        <input type="number" name="quantity_sold" value="${itemData.quantity_sold || ''}" min="0.01" step="0.01" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm quantity-input">
                     </div>
-                    <div class="form-group col-span-2">
-                        <label for="custom_price_${index}">Custom Price (per ${priceUnitText})</label>
-                        <input type="number" id="custom_price_${index}" name="custom_price[]" step="0.01" min="0" value="${customPriceValue}" class="mt-1 custom-price-input w-full p-2 border rounded-md" style="display: ${customPriceDisplay};" oninput="calculateItemTotal(${index})">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Unit Price (GH₵)</label>
+                        <input type="number" name="price_at_time_per_unit_sold" value="${itemData.price_at_time_per_unit_sold || ''}" min="0.01" step="0.01" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm unit-price-input">
                     </div>
-                    <div class="form-group">
-                        <label for="item_total_${index}">Item Total</label>
-                        <input type="text" id="item_total_${index}" name="item_total[]" value="${itemTotalValue}" class="mt-1 item-total-display w-full p-2 border rounded-md bg-gray-200" readonly>
-                    </div>
-                    <div class="form-group">
-                        <button type="button" onclick="removeItemRow(this)" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out w-full">Remove</button>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Item Total (GH₵)</label>
+                        <input type="text" name="item_total_amount" value="${itemData.total_amount || '0.00'}" readonly class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 item-total-input">
                     </div>
                 </div>
             `;
-        }
+            itemsContainer.appendChild(itemRow);
 
-        // Add a new product row
-        function addProductRow() {
-            productRowCounter++;
-            const container = document.getElementById('products-container');
-            container.insertAdjacentHTML('beforeend', createProductRow(productRowCounter));
-            calculateGrandTotal(); // Recalculate grand total after adding a new row
-        }
+            const productSelect = itemRow.querySelector('.product-select');
+            const unitTypeSelect = itemRow.querySelector('.unit-type-select');
+            const quantityInput = itemRow.querySelector('.quantity-input');
+            const unitPriceInput = itemRow.querySelector('.unit-price-input');
+            const removeItemBtn = itemRow.querySelector('.remove-item-btn');
 
-        // Remove a product row
-        function removeItemRow(button) {
-            const row = button.closest('.product-row');
-            if (document.querySelectorAll('.product-row').length > 1) {
-                row.remove();
-                calculateGrandTotal();
-            } else {
-                alert('You must have at least one product in the sale.');
-            }
-        }
+            // Populate the product select for this new row with ALL inventory items by default
+            renderProductSelectOptions(productSelect, inventoryItems, itemData.product_id);
 
-        // Update product details (e.g., prices, stock) when product selection changes
-        function updateProductDetails(selectElement, index) {
-            const selectedOption = selectElement.options[selectElement.selectedIndex];
-            // Find the actual inventory item from allInventoryItems based on selected value
-            const selectedItem = allInventoryItems.find(item => item.id === selectedOption.value);
 
-            const quantityInput = document.getElementById(`quantity_sold_${index}`);
-            const unitTypeSelect = document.getElementById(`sale_unit_type_${index}`);
-            const priceTypeSelect = document.getElementById(`price_type_${index}`);
-            const customPriceInput = document.getElementById(`custom_price_${index}`);
-
-            // Reset quantity and custom price
-            quantityInput.value = '';
-            customPriceInput.value = '';
-            customPriceInput.style.display = 'none'; // Hide custom price by default
-
-            if (!selectedItem) {
-                // If no item is selected, disable/reset related fields
-                unitTypeSelect.value = 'pack'; // Default
-                unitTypeSelect.querySelector('option[value="tab"]').disabled = false; // Enable by default
-                priceTypeSelect.value = 'internal_percentage';
-                priceTypeSelect.querySelector('option[value="custom_price"]').disabled = false; // Enable by default
-                calculateItemTotal(index);
-                return;
-            }
-
-            // Set default unit type based on item type
-            if (selectedItem.item_type === 'Hardware Material' || selectedItem.item_type === 'Provision Store' || selectedItem.item_type === 'Supermarket') {
-                unitTypeSelect.value = 'pack'; // Default to 'unit' for hardware, 'pack' for supermarket/provision
-                // Disable 'tab' option if it's a hardware/provision/supermarket item, unless it has multiple pieces
-                const tabOption = unitTypeSelect.querySelector('option[value="tab"]');
-                if (tabOption) {
-                    if (selectedItem.number_of_tabs > 1) {
-                        tabOption.disabled = false;
-                        tabOption.textContent = businessType !== 'Hardware' ? 'Tab(s)' : 'Piece(s)';
-                    } else {
-                        tabOption.disabled = true;
-                        tabOption.textContent = businessType !== 'Hardware' ? 'Tab(s) (N/A)' : 'Piece(s) (N/A)';
-                    }
-                }
-            } else { // Pharmacy
-                unitTypeSelect.value = 'pack'; // Default to pack for pharmacy
-                const tabOption = unitTypeSelect.querySelector('option[value="tab"]');
-                if (tabOption) {
-                    tabOption.disabled = false;
-                    tabOption.textContent = 'Tab(s)';
-                }
-            }
-
-            // If fixed price, force 'internal_percentage' and hide custom price for non-admins
-            if (selectedItem.is_fixed_price) {
-                priceTypeSelect.value = 'internal_percentage';
-                if (userRole !== 'admin') {
-                    // Disable custom price option for non-admins if it's a fixed price item
-                    const customPriceOption = priceTypeSelect.querySelector('option[value="custom_price"]');
-                    if (customPriceOption) {
-                        customPriceOption.disabled = true;
-                    }
-                }
-            } else {
-                // Enable custom price option if not fixed price (for admins)
-                const customPriceOption = priceTypeSelect.querySelector('option[value="custom_price"]');
-                if (customPriceOption) {
-                    customPriceOption.disabled = false;
-                }
-            }
-
-            calculateItemTotal(index);
-        }
-
-        // Toggle visibility of custom price input
-        function toggleCustomPrice(index) {
-            const priceTypeSelect = document.getElementById(`price_type_${index}`);
-            const customPriceInput = document.getElementById(`custom_price_${index}`);
-            if (priceTypeSelect.value === 'custom_price') {
-                customPriceInput.style.display = 'block';
-                customPriceInput.setAttribute('required', 'required');
-            } else {
-                customPriceInput.style.display = 'none';
-                customPriceInput.removeAttribute('required');
-                customPriceInput.value = ''; // Clear custom price if not used
-            }
-            calculateItemTotal(index);
-        }
-
-        // Calculate total for a single item row
-        function calculateItemTotal(index) {
-            const productSelect = document.getElementById(`product_id_${index}`);
-            const quantityInput = document.getElementById(`quantity_sold_${index}`);
-            const unitTypeSelect = document.getElementById(`sale_unit_type_${index}`);
-            const priceTypeSelect = document.getElementById(`price_type_${index}`);
-            const customPriceInput = document.getElementById(`custom_price_${index}`);
-            const itemTotalDisplay = document.getElementById(`item_total_${index}`);
-
-            const selectedOption = productSelect.options[productSelect.selectedIndex];
-            const selectedItem = allInventoryItems.find(item => item.id === selectedOption.value);
-
-            if (!selectedItem) {
-                itemTotalDisplay.value = '0.00';
-                calculateGrandTotal();
-                return;
-            }
-
-            const salePricePerPack = parseFloat(selectedItem.sale_price);
-            const unitPricePerTab = parseFloat(selectedItem.unit_price_per_tab);
-            const numberOfTabs = parseInt(selectedItem.number_of_tabs);
-            const isFixedPrice = selectedItem.is_fixed_price;
-            const fixedSalePrice = parseFloat(selectedItem.fixed_sale_price);
-
-            let quantity = parseFloat(quantityInput.value);
-            if (isNaN(quantity) || quantity <= 0) {
-                itemTotalDisplay.value = '0.00';
-                calculateGrandTotal();
-                return;
-            }
-
-            let pricePerUnit = 0;
-            if (priceTypeSelect.value === 'custom_price' && userRole === 'admin') {
-                let customPrice = parseFloat(customPriceInput.value);
-                if (isNaN(customPrice) || customPrice <= 0) {
-                    // Fallback to internal percentage if custom price is invalid
-                    if (unitTypeSelect.value === 'tab') {
-                        pricePerUnit = isFixedPrice ? (fixedSalePrice / numberOfTabs) : unitPricePerTab;
-                    } else {
-                        pricePerUnit = isFixedPrice ? fixedSalePrice : salePricePerPack;
-                    }
-                } else {
-                    pricePerUnit = customPrice;
-                }
-            } else {
-                if (unitTypeSelect.value === 'tab') {
-                    pricePerUnit = isFixedPrice ? (fixedSalePrice / numberOfTabs) : unitPricePerTab;
-                } else {
-                    pricePerUnit = isFixedPrice ? fixedSalePrice : salePricePerPack;
-                }
-            }
-
-            let itemTotal = quantity * pricePerUnit;
-            itemTotalDisplay.value = itemTotal.toFixed(2);
-            calculateGrandTotal();
-        }
-
-        // Calculate grand total of all items
-        function calculateGrandTotal() {
-            let grandTotal = 0;
-            document.querySelectorAll('.item-total-display').forEach(input => {
-                grandTotal += parseFloat(input.value || 0);
+            productSelect.addEventListener('change', () => populateUnitPrice(itemRow));
+            unitTypeSelect.addEventListener('change', () => populateUnitPrice(itemRow));
+            quantityInput.addEventListener('input', () => calculateItemTotal(itemRow));
+            unitPriceInput.addEventListener('input', () => calculateItemTotal(itemRow));
+            removeItemBtn.addEventListener('click', () => {
+                itemRow.remove();
+                updateGrandTotal();
             });
-            document.getElementById('grand_total').value = grandTotal.toFixed(2);
+
+            // If editing or pre-populating, ensure initial values are calculated
+            if (itemData.product_id) {
+                populateUnitPrice(itemRow);
+                calculateItemTotal(itemRow);
+            } else {
+                calculateItemTotal(itemRow); // For new empty rows
+            }
         }
 
-        // Filter product options based on search input
-        function filterProductOptions() {
-            const searchQuery = document.getElementById('product_search').value.toLowerCase();
-            filteredInventoryItems = allInventoryItems.filter(item => 
-                item.product_name.toLowerCase().includes(searchQuery) ||
-                item.category.toLowerCase().includes(searchQuery) ||
-                (item.batch_number && item.batch_number.toLowerCase().includes(searchQuery))
-            );
+        // Function to update the hidden JSON input with current cart items
+        function updateCartItemsJson() {
+            const cartItems = [];
+            document.querySelectorAll('.item-row').forEach(itemRow => {
+                const productSelect = itemRow.querySelector('.product-select');
+                const unitTypeSelect = itemRow.querySelector('.unit-type-select');
+                const quantityInput = itemRow.querySelector('.quantity-input');
+                const unitPriceInput = itemRow.querySelector('.unit-price-input');
+                const itemTotalInput = itemRow.querySelector('.item-total-input');
 
-            // Update all product select dropdowns with filtered options
-            document.querySelectorAll('.product-select').forEach((selectElement, index) => {
-                const currentSelectedValue = selectElement.value; // Preserve current selection if possible
-                const unitText = businessType !== 'Hardware' ? 'packs' : 'units';
-                selectElement.innerHTML = '<option value="">Select Product</option>' +
-                    filteredInventoryItems.map(item => {
-                        const selected = (currentSelectedValue === item.id) ? 'selected' : '';
-                        return `<option value="${item.id}" 
-                                        data-sale-price="${item.sale_price}" 
-                                        data-unit-price-per-tab="${item.unit_price_per_tab}" 
-                                        data-number-of-tabs="${item.number_of_tabs}" 
-                                        data-is-fixed-price="${item.is_fixed_price}" 
-                                        data-fixed-sale-price="${item.fixed_sale_price}" 
-                                        data-item-type="${item.item_type}" 
-                                        ${selected}>
-                                    ${item.product_name} (${item.current_stock.toFixed(2)} ${unitText} in stock)
-                                </option>`;
-                    }).join('');
-                // If the previously selected item is no longer in the filtered list, clear selection
-                if (currentSelectedValue && !filteredInventoryItems.some(item => item.id === currentSelectedValue)) {
-                    selectElement.value = "";
+                // Only add items that have a product selected, and valid quantity/price
+                if (productSelect.value && parseFloat(quantityInput.value) > 0 && parseFloat(unitPriceInput.value) > 0) {
+                    cartItems.push({
+                        product_id: productSelect.value,
+                        product_name: productSelect.options[productSelect.selectedIndex].textContent.split(' (Stock:')[0].trim(), // Get clean product name
+                        quantity_sold: parseFloat(quantityInput.value),
+                        sale_unit_type: unitTypeSelect.value,
+                        price_at_time_per_unit_sold: parseFloat(unitPriceInput.value),
+                        item_total_amount: parseFloat(itemTotalInput.value)
+                    });
                 }
-                updateProductDetails(selectElement, index); // Update details for the current selection
             });
+            cartItemsJsonInput.value = JSON.stringify(cartItems);
         }
+
+        // Event listener for adding new item row
+        addItemBtn.addEventListener('click', () => createItemRow());
+        applySearchBtn.addEventListener('click', applyProductSearch);
+        // Optional: Live search on input change (can be performance heavy for large lists)
+        // productSearchInput.addEventListener('input', applyProductSearch);
 
 
         // Initial setup on page load
         document.addEventListener('DOMContentLoaded', () => {
-            // If it's an add sale page (not edit), ensure there's at least one row
-            if (!{{ 'true' if sale.id else 'false' }}) {
-                if (document.querySelectorAll('.product-row').length === 0) {
-                    addProductRow(); // Add an initial empty row if none exists
-                }
+            // If editing an existing sale, populate the rows
+            const initialItems = {{ sale['items'] | tojson | safe }};
+            if (initialItems && initialItems.length > 0) {
+                initialItems.forEach(item => createItemRow(item));
+            } else {
+                // For new sale, add one empty row by default
+                createItemRow();
+            }
+            updateGrandTotal(); // Calculate initial grand total
+        });
+
+        // Intercept form submission to ensure JSON is updated and perform stock validation
+        document.getElementById('saleForm').addEventListener('submit', (event) => {
+            updateCartItemsJson(); // Ensure JSON is up-to-date before validation
+            const cartItems = JSON.parse(cartItemsJsonInput.value);
+
+            if (cartItems.length === 0) {
+                alert('Please add at least one item to the sale.');
+                event.preventDefault(); // Stop form submission
+                return;
             }
 
-            // Re-calculate totals and set up event listeners for existing rows (e.g., on edit page)
-            document.querySelectorAll('.product-row').forEach((row, index) => {
-                const productSelect = row.querySelector('.product-select');
-                const quantityInput = row.querySelector('.quantity-input');
-                const unitTypeSelect = row.querySelector('.unit-type-select');
-                const priceTypeSelect = row.querySelector('.price-type-select');
-                const customPriceInput = row.querySelector('.custom-price-input');
+            for (const item of cartItems) {
+                if (!item.product_id || item.quantity_sold <= 0 || item.price_at_time_per_unit_sold <= 0) {
+                    alert('Please ensure all selected items have a product, positive quantity, and positive unit price.');
+                    event.preventDefault();
+                    return;
+                }
 
-                // Ensure initial state of custom price input is correct
-                if (priceTypeSelect.value === 'custom_price') {
-                    customPriceInput.style.display = 'block';
+                // Perform client-side stock validation
+                // Use the original inventoryItems for stock check, not the filtered list
+                const productData = inventoryItems.find(invItem => invItem.id === item.product_id);
+                if (productData) {
+                    let quantityForStockCheck = item.quantity_sold;
+                    // Adjust quantity based on unit type for stock check
+                    if (item.sale_unit_type === 'pack') {
+                        quantityForStockCheck = item.quantity_sold * productData.number_of_tabs;
+                    }
+                    if (quantityForStockCheck > productData.current_stock) {
+                        alert(`Insufficient stock for ${productData.product_name}. Available: ${productData.current_stock.toFixed(2)} units. You tried to sell: ${quantityForStockCheck.toFixed(2)} units.`);
+                        event.preventDefault();
+                        return;
+                    }
                 } else {
-                    customPriceInput.style.display = 'none';
+                    alert(`Product with ID ${item.product_id} not found in inventory.`);
+                    event.preventDefault();
+                    return;
                 }
-
-                // If in edit mode, ensure product details are updated and total calculated
-                if (productSelect.value) {
-                    updateProductDetails(productSelect, index);
-                }
-                calculateItemTotal(index);
-            });
-            calculateGrandTotal(); // Initial grand total calculation
-
-            // If it's a print-ready page, trigger print dialog
-            {% if print_ready %}
-                window.print();
-            {% endif %}
+            }
         });
+
     </script>
-</body>
-</html>
+{% endif %}
+
+{# Receipt print area #}
+{% if print_ready and last_transaction_details %}
+    <div id="receipt-print-area" class="bg-white p-8 rounded-lg shadow-lg max-w-md mx-auto my-8 print-area">
+        <h2 class="text-2xl font-bold text-center mb-4">{{ pharmacy_info.name }}</h2>
+        <p class="text-center text-sm text-gray-600">{{ pharmacy_info.address }}</p>
+        <p class="text-center text-sm text-gray-600">{{ pharmacy_info.location }}</p>
+        <p class="text-center text-sm text-gray-600 mb-6">{{ pharmacy_info.contact }}</p>
+
+        <div class="border-t border-b border-gray-300 py-2 mb-4 text-sm">
+            <p><strong>Transaction ID:</strong> {{ last_transaction_id }}</p>
+            <p><strong>Date:</strong> {{ last_transaction_date }}</p>
+            <p><strong>Sales Person:</strong> {{ last_transaction_sales_person }}</p>
+            <p><strong>Customer Phone:</strong> {{ last_transaction_customer_phone if last_transaction_customer_phone else 'N/A' }}</p>
+        </div>
+
+        <h3 class="text-lg font-semibold mb-2">Items Sold:</h3>
+        <ul class="mb-4 text-sm">
+            {% for item in last_transaction_details %}
+                <li class="flex justify-between py-1 border-b border-gray-200 last:border-b-0">
+                    <span>{{ item.product_name }} ({{ "%.2f"|format(item.quantity_sold) }} {{ item.sale_unit_type }})</span>
+                    <span>GH₵{{ "%.2f"|format(item.total_amount) }}</span>
+                </li>
+            {% endfor %}
+        </ul>
+
+        <div class="flex justify-between items-center text-lg font-bold border-t border-gray-400 pt-4 mt-4">
+            <span>Grand Total:</span>
+            <span>GH₵{{ "%.2f"|format(last_transaction_grand_total) }}</span>
+        </div>
+
+        <p class="text-center text-sm mt-6 text-gray-600">Thank you for your business!</p>
+        <p class="text-center text-xs text-gray-500">Powered by BizApp</p>
+
+        <div class="text-center mt-6 no-print">
+            <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Print</button>
+            <a href="{{ url_for('add_sale') }}" class="ml-4 text-gray-600 hover:text-gray-800">New Sale</a>
+        </div>
+    </div>
+    <style>
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            .print-area, .print-area * {
+                visibility: visible;
+            }
+            .print-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                padding: 20mm; /* Add some padding for print */
+            }
+            .no-print {
+                display: none;
+            }
+        }
+    </style>
+{% endif %}
+{% endblock %}

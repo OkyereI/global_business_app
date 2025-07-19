@@ -1,169 +1,138 @@
-<!-- templates/sales_list.html -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales Records - Pharmaceutical Store</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
-        .table-container {
-            max-height: 600px; /* Adjust as needed */
-            overflow-y: auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.5rem;
-        }
-        .sticky-header th {
-            position: sticky;
-            top: 0;
-            background-color: #f7fafc;
-            z-index: 10;
-            box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.05);
-        }
-    </style>
-</head>
-<body class="flex flex-col items-center min-h-screen p-4 bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-6xl">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-3xl font-bold text-gray-800">Sales Records</h2>
-            {% if user_role in ['admin', 'sales'] %}
-            <a href="{{ url_for('add_sale') }}"
-               class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
-            >
-                Record New Sale
-            </a>
-            {% endif %}
-        </div>
+{% extends 'base.html' %}
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="mb-4">
-                    {% for category, message in messages %}
-                        <div class="p-3 mb-2 rounded-md
-                            {% if category == 'success' %} bg-green-100 text-green-700
-                            {% elif category == 'danger' %} bg-red-100 text-red-700
-                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
-                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
-                            {{ message | safe }} {# Added | safe filter here #}
-                        </div>
-                    {% endfor %}
-                </div>
-            {% endif %}
-        {% endwith %}
+{% block content %}
+<div class="container mx-auto p-4">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">Sales Records</h1>
 
-        <div class="flex flex-col md:flex-row justify-between items-center mb-4 space-y-3 md:space-y-0 md:space-x-4">
-            <form action="{{ url_for('sales') }}" method="GET" class="w-full md:w-1/2 flex space-x-2">
-                <input
-                    type="text"
-                    id="search_query"
-                    name="search"
-                    placeholder="Search sales (product, customer, person, trans ID)"
-                    value="{{ search_query }}"
-                    class="flex-grow px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                >
-                <button
-                    type="submit"
-                    class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
-                >
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mb-4">
+                {% for category, message in messages %}
+                    <div class="p-3 rounded-lg text-white {% if category == 'success' %}bg-green-500{% elif category == 'danger' %}bg-red-500{% elif category == 'warning' %}bg-yellow-500{% else %}bg-blue-500{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="bg-white p-6 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
+        <div class="flex flex-col md:flex-row items-center w-full md:w-auto mb-4 md:mb-0">
+            <form action="{{ url_for('sales') }}" method="GET" class="flex w-full md:w-auto">
+                <input type="text" name="search" placeholder="Search sales..."
+                       class="form-input mt-1 block w-full md:w-64 border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2 mr-2"
+                       value="{{ search_query if search_query else '' }}">
+                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
                     Search
                 </button>
-                <a href="{{ url_for('sales') }}"
-                   class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out flex items-center justify-center"
-                >
-                    Clear
-                </a>
             </form>
-            <div class="w-full md:w-auto flex justify-end">
-                {# Only Pharmacy businesses can process returns #}
-                {% if user_role in ['admin', 'sales'] and business_type == 'Pharmacy' %}
-                <a href="{{ url_for('return_item') }}"
-                   class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
-                >
-                    Process Return
-                </a>
-                {% endif %}
+        </div>
+        <a href="{{ url_for('add_sale') }}" class="w-full md:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
+            <i class="fas fa-plus-circle mr-2"></i> Record New Sale
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Sales Overview</h2>
+            <div class="flex justify-between items-center bg-gray-50 p-3 rounded-md">
+                <span class="text-gray-700 font-medium">Total Displayed Sales:</span>
+                <span class="text-green-600 font-bold text-lg">GH₵{{ "%.2f"|format(total_displayed_sales) }}</span>
             </div>
         </div>
-
-        <div class="mb-4 text-right text-lg font-bold text-gray-700">
-            Total Displayed Sales: GH₵{{ "%.2f" | format(total_displayed_sales) }}
-        </div>
-
-        {% if transactions %}
-        <div class="table-container">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="sticky-header">
-                    <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction ID</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer Phone</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Person</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
-                        <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    {% for transaction in transactions %}
-                    <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ transaction.id[:8].upper() }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ transaction.sale_date }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ transaction.customer_phone if transaction.customer_phone else 'N/A' }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ transaction.sales_person_name }}</td>
-                        <td class="px-6 py-4 text-sm text-gray-500">
-                            <ul class="list-disc list-inside space-y-1">
-                                {% for sale_item in transaction['items'] %}
-                                    <li class="{% if sale_item.expires_soon == 'Expired' %}text-red-600 font-bold{% elif sale_item.expires_soon %}text-yellow-600{% endif %}">
-                                        {{ sale_item.product_name }} ({{ "%.2f" | format(sale_item.quantity_sold) }} {{ sale_item.sale_unit_type }}s)
-                                        - GH₵{{ "%.2f" | format(sale_item.total_amount) }}
-                                        {% if sale_item.expiry_date %}
-                                            <span class="text-xs {% if sale_item.expires_soon == 'Expired' %}text-red-700{% elif sale_item.expires_soon %}text-yellow-700{% else %}text-gray-500{% endif %}">
-                                                (Exp: {{ sale_item.expiry_date.strftime('%Y-%m-%d') }})
-                                            </span>
-                                        {% endif %}
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-gray-900">GH₵{{ "%.2f" | format(transaction.total_amount) }}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            {% if user_role == 'admin' %}
-                                {# Only allow editing if there's only one item in the transaction #}
-                                {% if transaction['items'] | length == 1 %}
-                                <a href="{{ url_for('edit_sale', sale_id=transaction['items'][0].id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
-                                {% else %}
-                                <span class="text-gray-400 mr-3" title="Cannot edit multi-item transactions directly.">Edit</span>
-                                {% endif %}
-                                <a href="{{ url_for('delete_sale', sale_id=transaction['items'][0].id) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to delete this sale record? This will also adjust inventory stock.');">Delete</a>
-                            {% elif user_role == 'sales' %}
-                                {# Sales can only edit if there's only one item in the transaction #}
-                                {% if transaction['items'] | length == 1 %}
-                                <a href="{{ url_for('edit_sale', sale_id=transaction['items'][0].id) }}" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
-                                {% else %}
-                                <span class="text-gray-400 mr-3" title="Cannot edit multi-item transactions directly.">Edit</span>
-                                {% endif %}
-                                <a href="{{ url_for('delete_sale', sale_id=transaction['items'][0].id) }}" class="text-red-600 hover:text-red-900" onclick="return confirm('Are you sure you want to delete this sale record? (Note: Stock will NOT be adjusted for sales role)');">Delete</a>
-                            {% else %}
-                                <span class="text-gray-400 mr-3">No Actions</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <p class="text-center text-gray-500 text-lg py-8">No sales records found.</p>
-        {% endif %}
-
-        <div class="mt-8 text-center">
-            <a href="{{ url_for('dashboard') }}"
-               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
-            >
-                Back to Dashboard
-            </a>
-        </div>
+        {# You can add more overview cards here if needed, e.g., sales by month, top products #}
     </div>
-</body>
-</html>
+
+    <div class="bg-white p-6 rounded-lg shadow-md">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Recent Sales Transactions</h2>
+        {% if transactions %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead>
+                        <tr class="w-full bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                            <th class="py-3 px-6 text-left">Transaction ID</th>
+                            <th class="py-3 px-6 text-left">Date</th>
+                            <th class="py-3 px-6 text-left">Customer Phone</th>
+                            <th class="py-3 px-6 text-left">Sales Person</th>
+                            <th class="py-3 px-6 text-left">Total Amount</th>
+                            <th class="py-3 px-6 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-gray-600 text-sm font-light">
+                        {% for transaction in transactions %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-100">
+                                <td class="py-3 px-6 text-left whitespace-nowrap">
+                                    <div class="font-medium text-gray-800">{{ transaction.id[:8].upper() }}</div>
+                                </td>
+                                <td class="py-3 px-6 text-left">
+                                    {{ transaction.sale_date }}
+                                </td>
+                                <td class="py-3 px-6 text-left">
+                                    {{ transaction.customer_phone if transaction.customer_phone else 'N/A' }}
+                                </td>
+                                <td class="py-3 px-6 text-left">
+                                    {{ transaction.sales_person_name }}
+                                </td>
+                                <td class="py-3 px-6 text-left">
+                                    GH₵{{ "%.2f"|format(transaction.total_amount) }}
+                                </td>
+                                <td class="py-3 px-6 text-center">
+                                    <div class="flex item-center justify-center space-x-2">
+                                        <a href="#" onclick="toggleTransactionDetails('{{ transaction.id }}')" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        {% if user_role in ['admin', 'sales'] %}
+                                        {# Pass the transaction.id for editing the whole transaction #}
+                                        <a href="{{ url_for('edit_sale_transaction', transaction_id=transaction.id) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        {# Pass the transaction.id for deleting the whole transaction #}
+                                        <a href="{{ url_for('delete_sale_transaction', transaction_id=transaction.id) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110"
+                                           onclick="return confirm('Are you sure you want to delete this sale transaction (ID: {{ transaction.id[:8].upper() }})? This will return stock to inventory for all items in this transaction.');">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                        {% endif %}
+                                        <a href="{{ url_for('print_sale_receipt', transaction_id=transaction.id) }}" target="_blank" class="w-4 mr-2 transform hover:text-blue-500 hover:scale-110">
+                                            <i class="fas fa-print"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr id="details-{{ transaction.id }}" class="hidden bg-gray-50">
+                                <td colspan="6" class="p-4">
+                                    <div class="bg-gray-100 p-4 rounded-lg shadow-inner">
+                                        <h4 class="font-semibold mb-2 text-gray-700">Items in this Transaction:</h4>
+                                        <ul class="list-disc list-inside text-gray-600">
+                                            {% for item in transaction['items'] %} {# Use bracket notation here #}
+                                                <li>
+                                                    {{ item['product_name'] }} - {{ item['quantity_sold'] }} {{ item['sale_unit_type'] }} @ GH₵{{ "%.2f"|format(item['price_at_time_per_unit_sold']) }} per {{ item['sale_unit_type'] }} = GH₵{{ "%.2f"|format(item['total_amount']) }}
+                                                    {% if item['expires_soon'] == 'Expired' %}
+                                                        <span class="text-red-500 ml-2">(Expired: {{ item['expiry_date'].strftime('%Y-%m-%d') }})</span>
+                                                    {% elif item['expires_soon'] %}
+                                                        <span class="text-yellow-500 ml-2">(Expires Soon: {{ item['expiry_date'].strftime('%Y-%m-%d') }})</span>
+                                                    {% endif %}
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-gray-600 text-center py-4">No sales records found.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    function toggleTransactionDetails(transactionId) {
+        const detailsRow = document.getElementById('details-' + transactionId);
+        if (detailsRow) {
+            detailsRow.classList.toggle('hidden');
+        }
+    }
+</script>
+{% endblock %}
