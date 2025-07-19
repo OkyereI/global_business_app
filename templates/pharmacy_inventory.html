@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ business_type }} Inventory - {{ session.get('business_name', 'Business Dashboard') }}</title>
+    <title>Pharmacy Inventory - {{ session.get('business_name', 'Business Dashboard') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
@@ -126,7 +126,7 @@
         {% endwith %}
 
         <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
-            <h1 class="text-3xl font-bold text-gray-800">{{ business_type }} Inventory</h1>
+            <h1 class="text-3xl font-bold text-gray-800">Pharmacy Inventory</h1>
             <div class="flex flex-wrap gap-4">
                 {% if user_role == 'admin' %}
                 <a href="{{ url_for('add_inventory_item') }}" class="btn btn-primary flex items-center">
@@ -166,8 +166,9 @@
                         <th class="py-2 px-4 border-b">Sale Price (GH₵)</th>
                         <th class="py-2 px-4 border-b">Stock</th>
                         <th class="py-2 px-4 border-b">Batch No.</th>
-                        <th class="py-2 px-4 border-b">Pieces/Pack</th>
+                        <th class="py-2 px-4 border-b">Units/Pack</th>
                         <th class="py-2 px-4 border-b">Unit Price (GH₵)</th>
+                        <th class="py-2 px-4 border-b">Expiry Date</th>
                         <th class="py-2 px-4 border-b">Profit Margin (%)</th>
                         <th class="py-2 px-4 border-b">Actions</th>
                     </tr>
@@ -183,6 +184,18 @@
                         <td class="py-2 px-4 border-b">{{ item.batch_number if item.batch_number else 'N/A' }}</td>
                         <td class="py-2 px-4 border-b">{{ item.number_of_tabs }}</td>
                         <td class="py-2 px-4 border-b">{{ "%.2f"|format(item.unit_price_per_tab) }}</td>
+                        <td class="py-2 px-4 border-b">
+                            {% if item.expiry_date %}
+                                {{ item.expiry_date.strftime('%Y-%m-%d') }}
+                                {% if item.is_expired %}
+                                    <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Expired</span>
+                                {% elif item.is_expiring_soon %}
+                                    <span class="ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Expiring Soon</span>
+                                {% endif %}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
                         <td class="py-2 px-4 border-b">
                             {% if item.profit_margin is not none %}
                                 {{ "%.2f"|format(item.profit_margin) }}
@@ -213,15 +226,5 @@
             {% endif %}
         </div>
     </div>
-    <footer class="bg-gray-800 text-white py-8 px-4 mt-auto">
-        <div class="container mx-auto text-center">
-            <p>&copy; Zion Global Business. All rights reserved.</p>
-            <p>contact:0547096268</p>
-        </div>
-    </footer>
 </body>
 </html>
-
-     
-
-   

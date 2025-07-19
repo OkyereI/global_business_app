@@ -583,7 +583,7 @@ def download_inventory_csv(business_id):
     return response
 
 @app.route('/super_admin/upload_inventory/<business_id>', methods=['GET', 'POST'])
-def upload_inventory_csv(business_id):
+def upload_inventory_csv_super_admin(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
         return redirect(url_for('login'))
@@ -638,7 +638,7 @@ def upload_inventory_csv(business_id):
                         if sale_price == 0.0 and unit_price_per_tab_with_markup > 0:
                             sale_price = unit_price_per_tab_with_markup * number_of_tabs
                         elif unit_price_per_tab_with_markup == 0.0 and sale_price > 0 and number_of_tabs > 0:
-                            unit_price_per_tab_with_markup = sale_price / number_of_tabs
+                             unit_price_per_tab_with_markup = sale_price / number_of_tabs
 
                     elif item_type in ['Hardware Material', 'Provision Store']:
                         sale_price = float(row.get('sale_price', 0.0))
@@ -709,12 +709,160 @@ def upload_inventory_csv(business_id):
     
     return render_template('upload_inventory.html', business=business, user_role=session.get('role'))
 
+# NEW ROUTE: Export all registered businesses to CSV
+@app.route('/super_admin/download_businesses_csv')
+@login_required
+def download_businesses_csv():
+    # ACCESS CONTROL: Only super_admin or admin can export business data
+    if session.get('role') not in ['super_admin', 'admin']:
+        flash('Access denied. Super Admin or Admin role required.', 'danger')
+        return redirect(url_for('login'))
+
+    businesses = Business.query.all()
+
+    si = io.StringIO()
+    headers = ['id', 'name', 'address', 'location', 'contact', 'type']
+    writer = csv.DictWriter(si, fieldnames=headers)
+    writer.writeheader()
+
+    for business in businesses:
+        writer.writerow({
+            'id': business.id,
+            'name': business.name,
+            'address': business.address,
+            'location': business.location,
+            'contact': business.contact,
+            'type': business.type
+        })
+
+    output = si.getvalue()
+    si.close()
+
+    response = Response(output, mimetype='text/csv')
+    response.headers["Content-Disposition"] = f"attachment; filename=registered_businesses_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return response
+
+# NEW ROUTE: Transfer Inventory Between Businesses
+@app.route('/admin/transfer_inventory', methods=['GET', 'POST'])
+@login_required
+def transfer_inventory():
+    # ACCESS CONTROL: Only super_admin or admin can transfer inventory
+    if session.get('role') not in ['super_admin', 'admin']:
+        flash('Access denied. Super Admin or Admin role required.', 'danger')
+        return redirect(url_for('login'))
+
+    all_businesses = Business.query.all()
+    
+    # Get all unique categories across all businesses for the dropdown
+    all_categories = db.session.query(InventoryItem.category).distinct().all()
+    all_categories = sorted([c[0] for c in all_categories if c[0]]) # Extract string and sort
+
+    # Get all unique item types for filtering
+    all_item_types = db.session.query(InventoryItem.item_type).distinct().all()
+    all_item_types = sorted([t[0] for t in all_item_types if t[0]])
+
+    if request.method == 'POST':
+        source_business_id = request.form.get('source_business_id')
+        target_business_id = request.form.get('target_business_id')
+        category_to_transfer = request.form.get('category_to_transfer').strip()
+        item_type_filter = request.form.get('item_type_filter', '').strip() # Get the selected item type filter
+
+        if not source_business_id or not target_business_id or not category_to_transfer:
+            flash('Please select both source and target businesses and a category.', 'danger')
+            return render_template('transfer_inventory.html', businesses=all_businesses, categories=all_categories, user_role=session.get('role'), business_types=all_item_types)
+
+        if source_business_id == target_business_id:
+            flash('Source and target businesses cannot be the same.', 'danger')
+            return render_template('transfer_inventory.html', businesses=all_businesses, categories=all_categories, user_role=session.get('role'), business_types=all_item_types)
+
+        source_business = Business.query.get(source_business_id)
+        target_business = Business.query.get(target_business_id)
+
+        if not source_business or not target_business:
+            flash('Invalid source or target business selected.', 'danger')
+            return render_template('transfer_inventory.html', businesses=all_businesses, categories=all_categories, user_role=session.get('role'), business_types=all_item_types)
+
+        # Fetch items from source business for the specified category and optional item_type
+        items_to_transfer_query = InventoryItem.query.filter_by(
+            business_id=source_business_id,
+            category=category_to_transfer,
+            is_active=True
+        )
+        if item_type_filter:
+            items_to_transfer_query = items_to_transfer_query.filter_by(item_type=item_type_filter)
+
+        items_to_transfer = items_to_transfer_query.all()
+
+        if not items_to_transfer:
+            # Corrected f-string syntax here: used double quotes for 'any'
+            flash(f'No active inventory items found in "{source_business.name}" for category "{category_to_transfer}" and type "{item_type_filter if item_type_filter else "any"}".', 'warning')
+            return render_template('transfer_inventory.html', businesses=all_businesses, categories=all_categories, user_role=session.get('role'), business_types=all_item_types)
+
+        transferred_count = 0
+        updated_count = 0
+        
+        for item in items_to_transfer:
+            # Check if an item with the same product_name already exists in the target business
+            existing_target_item = InventoryItem.query.filter_by(
+                product_name=item.product_name,
+                business_id=target_business_id
+            ).first()
+
+            if existing_target_item:
+                # Update existing item's stock and other relevant fields
+                existing_target_item.current_stock += item.current_stock # Add stock
+                existing_target_item.purchase_price = item.purchase_price # Overwrite purchase price
+                existing_target_item.sale_price = item.sale_price # Overwrite sale price
+                existing_target_item.number_of_tabs = item.number_of_tabs # Overwrite units/pack
+                existing_target_item.unit_price_per_tab = item.unit_price_per_tab # Overwrite unit price
+                existing_target_item.last_updated = datetime.now()
+                existing_target_item.batch_number = item.batch_number # Overwrite batch number
+                existing_target_item.is_fixed_price = item.is_fixed_price
+                existing_target_item.fixed_sale_price = item.fixed_sale_price
+                existing_target_item.is_active = item.is_active # Maintain active status
+
+                # For expiry date, update only if the source item has a valid, newer expiry date
+                if item.expiry_date and (not existing_target_item.expiry_date or item.expiry_date > existing_target_item.expiry_date):
+                    existing_target_item.expiry_date = item.expiry_date
+
+                db.session.add(existing_target_item)
+                updated_count += 1
+            else:
+                # Add new item
+                new_item = InventoryItem(
+                    business_id=target_business_id,
+                    product_name=item.product_name,
+                    category=item.category,
+                    purchase_price=item.purchase_price,
+                    sale_price=item.sale_price,
+                    current_stock=item.current_stock,
+                    last_updated=datetime.now(), # Set current time for new record
+                    batch_number=item.batch_number,
+                    number_of_tabs=item.number_of_tabs,
+                    unit_price_per_tab=item.unit_price_per_tab,
+                    item_type=item.item_type,
+                    expiry_date=item.expiry_date,
+                    is_fixed_price=item.is_fixed_price,
+                    fixed_sale_price=item.fixed_sale_price,
+                    is_active=True # New items are active
+                )
+                db.session.add(new_item)
+                transferred_count += 1
+        
+        db.session.commit()
+        flash(f'Inventory transfer completed: {transferred_count} new items added, {updated_count} existing items updated (stock added and details overwritten) from "{source_business.name}" to "{target_business.name}" for category "{category_to_transfer}".', 'success')
+
+        return redirect(url_for('transfer_inventory'))
+
+    return render_template('transfer_inventory.html', businesses=all_businesses, categories=all_categories, user_role=session.get('role'), business_types=all_item_types)
+
 
 # --- Business User Management ---
 
 @app.route('/manage_business_users')
 def manage_business_users():
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+    # ACCESS CONTROL: Allows 'admin' and 'viewer' roles to view this page
+    if 'username' not in session or session.get('role') not in ['admin', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to manage business users or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
     
@@ -724,22 +872,31 @@ def manage_business_users():
 
 @app.route('/manage_business_users/add', methods=['GET', 'POST'])
 def add_business_user():
-    if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+    # ACCESS CONTROL: Allows 'admin' and 'viewer' roles to add business users
+    if 'username' not in session or session.get('role') not in ['admin', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to add business users or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
     
     business_id = get_current_business_id()
+    current_user_role = session.get('role')
     
     if request.method == 'POST':
         username = request.form['username'].strip()
         password = request.form['password'].strip()
         role = request.form['role'].strip()
 
+        # ACCESS CONTROL: Viewer role specific restriction: can only add 'sales' or 'viewer' users
+        if current_user_role == 'viewer' and role == 'admin':
+            flash('As a Viewer, you can only add Sales or Viewer users, not Admin users.', 'danger')
+            return render_template('add_edit_business_user.html', title='Add New Business User', user={
+                'username': username, 'role': role
+            }, user_role=current_user_role)
+
         if User.query.filter_by(username=username, business_id=business_id).first():
             flash('Username already exists for this business.', 'danger')
             return render_template('add_edit_business_user.html', title='Add New Business User', user={
                 'username': username, 'role': role
-            }, user_role=session.get('role'))
+            }, user_role=current_user_role)
         
         new_user = User(username=username, password=password, role=role, business_id=business_id)
         db.session.add(new_user)
@@ -747,11 +904,13 @@ def add_business_user():
         flash(f'User "{username}" added successfully!', 'success')
         return redirect(url_for('manage_business_users'))
     
-    return render_template('add_edit_business_user.html', title='Add New Business User', user={}, user_role=session.get('role'))
+    return render_template('add_edit_business_user.html', title='Add New Business User', user={}, user_role=current_user_role)
 
 
 @app.route('/manage_business_users/edit/<username>', methods=['GET', 'POST'])
 def edit_business_user(username):
+    # ACCESS CONTROL: Allows 'admin' role to edit business users
+    # Viewers cannot edit existing users, only add new ones (sales/viewer)
     if 'username' not in session or session.get('role') != 'admin' or not get_current_business_id():
         flash('You do not have permission to edit business users or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -788,6 +947,7 @@ def edit_business_user(username):
 
 @app.route('/manage_business_users/delete/<username>')
 def delete_business_user(username):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to delete business users or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -813,25 +973,234 @@ def delete_business_user(username):
 
 @app.route('/inventory')
 def inventory():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to view inventory or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
-    inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
-    # Serialize items for JSON display (e.g., in client-side JS)
-    serialized_inventory_items = [serialize_inventory_item(item) for item in inventory_items]
+    search_query = request.args.get('search', '').strip() # Get search query from URL parameters
+
+    inventory_items_query = InventoryItem.query.filter_by(business_id=business_id, is_active=True)
+
+    # Apply search filter if query exists
+    if search_query:
+        inventory_items_query = inventory_items_query.filter(
+            InventoryItem.product_name.ilike(f'%{search_query}%') |
+            InventoryItem.category.ilike(f'%{search_query}%') |
+            InventoryItem.batch_number.ilike(f'%{search_query}%')
+        )
     
+    inventory_items = inventory_items_query.all()
+    
+    today = date.today()
+    three_months_from_now = today + timedelta(days=90) # Define threshold for "expiring soon"
+
+    # Calculate profit margin and expiry flags for each item
+    for item in inventory_items:
+        item.profit_margin = 0.0
+        if item.sale_price > 0:
+            item.profit_margin = ((item.sale_price - item.purchase_price) / item.sale_price) * 100
+
+        item.is_expiring_soon = False
+        item.is_expired = False
+        if item.expiry_date:
+            if item.expiry_date < today:
+                item.is_expired = True
+            elif item.expiry_date >= today and item.expiry_date <= three_months_from_now:
+                item.is_expiring_soon = True
+
     business_type = get_current_business_type()
     if business_type == 'Pharmacy':
-        return render_template('pharmacy_inventory.html', inventory_items=inventory_items, user_role=session.get('role'))
+        return render_template('pharmacy_inventory.html', inventory_items=inventory_items, user_role=session.get('role'), search_query=search_query)
     elif business_type in ['Hardware', 'Supermarket', 'Provision Store']:
-        return render_template('hardware_inventory.html', inventory_items=inventory_items, user_role=session.get('role'), business_type=business_type) # Pass business_type
-    return render_template('inventory.html', inventory_items=inventory_items, user_role=session.get('role'))
+        return render_template('hardware_inventory.html', inventory_items=inventory_items, user_role=session.get('role'), business_type=business_type, search_query=search_query) # Pass business_type
+    return render_template('inventory.html', inventory_items=inventory_items, user_role=session.get('role'), search_query=search_query)
+
+# NEW ROUTE: Download CSV for current business's inventory
+@app.route('/inventory/download_current_csv')
+@login_required
+def download_current_inventory_csv():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
+    if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
+        flash('You do not have permission to download inventory or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    business_name = session.get('business_name', 'current_business')
+    inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
+
+    si = io.StringIO()
+    headers = [
+        'id', 'product_name', 'category', 'purchase_price', 'sale_price', 'current_stock', 
+        'last_updated', 'batch_number', 'number_of_tabs', 'unit_price_per_tab', 'item_type', 
+        'expiry_date', 'is_fixed_price', 'fixed_sale_price', 'business_id', 'is_active'
+    ]
+    
+    writer = csv.DictWriter(si, fieldnames=headers)
+    writer.writeheader()
+    
+    for item in inventory_items:
+        row_to_write = {
+            'id': item.id,
+            'product_name': item.product_name,
+            'category': item.category,
+            'purchase_price': f"{item.purchase_price:.2f}",
+            'sale_price': f"{item.sale_price:.2f}",
+            'current_stock': f"{item.current_stock:.2f}",
+            'last_updated': item.last_updated.strftime('%Y-%m-%d %H:%M:%S'),
+            'batch_number': item.batch_number,
+            'number_of_tabs': item.number_of_tabs,
+            'unit_price_per_tab': f"{item.unit_price_per_tab:.2f}",
+            'item_type': item.item_type,
+            'expiry_date': item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else '',
+            'is_fixed_price': str(item.is_fixed_price),
+            'fixed_sale_price': f"{item.fixed_sale_price:.2f}",
+            'business_id': item.business_id,
+            'is_active': str(item.is_active)
+        }
+        writer.writerow(row_to_write)
+
+    output = si.getvalue()
+    si.close()
+
+    response = Response(output, mimetype='text/csv')
+    response.headers["Content-Disposition"] = f"attachment; filename={business_name.replace(' ', '_')}_inventory_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+    return response
+
+# NEW ROUTE: Admin can upload inventory to their current business
+@app.route('/inventory/upload_csv', methods=['GET', 'POST'])
+@login_required
+def upload_current_inventory_csv():
+    # ACCESS CONTROL: Only admin can upload inventory to their current business
+    if session.get('role') not in ['admin'] or not get_current_business_id():
+        flash('You do not have permission to upload inventory or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    business_id = get_current_business_id()
+    business_name = session.get('business_name', 'Your Business')
+
+    if request.method == 'POST':
+        if 'csv_file' not in request.files:
+            flash('No file part', 'danger')
+            return redirect(request.url)
+        
+        file = request.files['csv_file']
+        if file.filename == '':
+            flash('No selected file', 'danger')
+            return redirect(request.url)
+        
+        if file and file.filename.endswith('.csv'):
+            stream = io.StringIO(file.stream.read().decode("UTF8"))
+            csv_reader = csv.DictReader(stream)
+            
+            updated_count = 0
+            added_count = 0
+            errors = []
+
+            for row in csv_reader:
+                try:
+                    product_name = row['product_name'].strip()
+                    category = row['category'].strip()
+                    purchase_price = float(row['purchase_price'])
+                    current_stock = float(row['current_stock'])
+                    batch_number = row.get('batch_number', '').strip()
+                    number_of_tabs = int(row.get('number_of_tabs', 1))
+                    item_type = row.get('item_type', session.get('business_type', 'Pharmacy')).strip() # Default to business type
+                    expiry_date_str = row.get('expiry_date', '').strip()
+                    expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date() if expiry_date_str else None
+                    is_fixed_price = row.get('is_fixed_price', 'False').lower() == 'true'
+                    fixed_sale_price = float(row.get('fixed_sale_price', 0.0))
+                    is_active = row.get('is_active', 'True').lower() == 'true' # Read is_active from CSV
+
+                    if number_of_tabs <= 0:
+                        errors.append(f"Skipping '{product_name}': 'Number of units/pieces per pack' must be greater than zero.")
+                        continue
+
+                    sale_price = 0.0
+                    unit_price_per_tab_with_markup = 0.0
+                    
+                    # Determine sale_price and unit_price_per_tab based on item_type and fixed_price status
+                    if is_fixed_price:
+                        sale_price = fixed_sale_price
+                        if number_of_tabs > 0:
+                            unit_price_per_tab_with_markup = fixed_sale_price / number_of_tabs
+                    else:
+                        if item_type == 'Pharmacy':
+                            # For Pharmacy, assuming sale_price and unit_price_per_tab are derived from purchase_price + markup
+                            # If CSV provides them, use them directly. Otherwise, apply a default markup (e.g., 20%)
+                            sale_price = float(row.get('sale_price', purchase_price * 1.2)) # Default 20% markup
+                            unit_price_per_tab_with_markup = float(row.get('unit_price_per_tab', sale_price / number_of_tabs if number_of_tabs > 0 else sale_price))
+                        elif item_type in ['Hardware Material', 'Provision Store', 'Supermarket']:
+                            sale_price = float(row.get('sale_price', purchase_price * 1.2)) # Default 20% markup
+                            unit_price_per_tab_with_markup = float(row.get('unit_price_per_tab', sale_price / number_of_tabs if number_of_tabs > 0 else sale_price))
+                        else: # Fallback for unknown types, or if item_type is not explicitly provided in CSV
+                            sale_price = float(row.get('sale_price', purchase_price * 1.2))
+                            unit_price_per_tab_with_markup = float(row.get('unit_price_per_tab', sale_price / number_of_tabs if number_of_tabs > 0 else sale_price))
+
+                    existing_item = InventoryItem.query.filter_by(
+                        product_name=product_name, business_id=business_id
+                    ).first()
+
+                    if existing_item:
+                        # Update existing item
+                        existing_item.category = category
+                        existing_item.purchase_price = purchase_price
+                        existing_item.sale_price = sale_price
+                        existing_item.current_stock = current_stock
+                        existing_item.last_updated = datetime.now()
+                        existing_item.batch_number = batch_number
+                        existing_item.number_of_tabs = number_of_tabs
+                        existing_item.unit_price_per_tab = unit_price_per_tab_with_markup
+                        existing_item.item_type = item_type
+                        existing_item.expiry_date = expiry_date_obj
+                        existing_item.is_fixed_price = is_fixed_price
+                        existing_item.fixed_sale_price = fixed_sale_price
+                        existing_item.is_active = is_active # Update is_active
+                        updated_count += 1
+                    else:
+                        # Add new item
+                        new_item = InventoryItem(
+                            business_id=business_id,
+                            product_name=product_name,
+                            category=category,
+                            purchase_price=purchase_price,
+                            sale_price=sale_price,
+                            current_stock=current_stock,
+                            batch_number=batch_number,
+                            number_of_tabs=number_of_tabs,
+                            unit_price_per_tab=unit_price_per_tab_with_markup,
+                            item_type=item_type,
+                            expiry_date=expiry_date_obj,
+                            is_fixed_price=is_fixed_price,
+                            fixed_sale_price=fixed_sale_price,
+                            is_active=is_active # Set is_active for new item
+                        )
+                        db.session.add(new_item)
+                        added_count += 1
+                except Exception as e:
+                    errors.append(f"Error processing row for product '{row.get('product_name', 'N/A')}': {e}. Row data: {row}")
+            
+            db.session.commit()
+            
+            if errors:
+                flash(f'CSV upload completed with {updated_count} updated, {added_count} added, and {len(errors)} errors. Check server console for details.', 'warning')
+                for error in errors:
+                    print(f"CSV Upload Error: {error}")
+            else:
+                flash(f'CSV inventory uploaded successfully! {updated_count} items updated, {added_count} items added.', 'success')
+            
+            return redirect(url_for('inventory')) # Redirect to the inventory list
+        else:
+            flash('Invalid file type. Please upload a CSV file.', 'danger')
+            return redirect(request.url)
+    
+    return render_template('upload_current_inventory.html', business_name=business_name, user_role=session.get('role'))
 
 
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def add_inventory_item():
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to add inventory items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -951,6 +1320,7 @@ def add_inventory_item():
 
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 def edit_inventory_item(item_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to edit inventory items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1105,6 +1475,7 @@ def edit_inventory_item(item_id):
 
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory_item(item_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to delete inventory items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1122,6 +1493,7 @@ def delete_inventory_item(item_id):
 
 @app.route('/sales')
 def sales():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to view sales records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1205,6 +1577,7 @@ def sales():
 
 @app.route('/sales/add', methods=['GET', 'POST'])
 def add_sale():
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to add sales records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1317,6 +1690,7 @@ def add_sale():
 
 @app.route('/sales/edit/<sale_id>', methods=['GET', 'POST'])
 def edit_sale(sale_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to edit sales records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1429,6 +1803,7 @@ def edit_sale(sale_id):
 
 @app.route('/sales/delete/<sale_id>')
 def delete_sale(sale_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to delete sales records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1451,7 +1826,8 @@ def delete_sale(sale_id):
 
 @app.route('/reports')
 def reports():
-    if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
+    if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to view reports or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
 
@@ -1538,6 +1914,7 @@ def reports():
 
 @app.route('/send_daily_sales_sms_report')
 def send_daily_sales_sms_report():
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to send daily sales reports or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1602,6 +1979,7 @@ def send_daily_sales_sms_report():
 
 @app.route('/companies')
 def companies():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
         flash('You do not have permission to manage companies or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1616,6 +1994,7 @@ def companies():
 
 @app.route('/companies/add', methods=['GET', 'POST'])
 def add_company():
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to add companies or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1654,6 +2033,7 @@ def add_company():
 
 @app.route('/companies/edit/<company_id>', methods=['GET', 'POST'])
 def edit_company(company_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to edit companies or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1690,6 +2070,7 @@ def edit_company(company_id):
 
 @app.route('/companies/delete/<company_id>')
 def delete_company(company_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to delete companies or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1712,6 +2093,7 @@ def delete_company(company_id):
 
 @app.route('/companies/transaction/<company_id>', methods=['GET', 'POST'])
 def company_transaction(company_id):
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
         flash('You do not have permission to record company transactions or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1894,6 +2276,7 @@ def print_company_receipt(transaction_id):
 
 @app.route('/future_orders')
 def future_orders():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to view future orders or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -1908,6 +2291,7 @@ def future_orders():
 
 @app.route('/future_orders/add', methods=['GET', 'POST'])
 def add_future_order():
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to add future orders or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2025,10 +2409,12 @@ def add_future_order():
 
         return redirect(url_for('future_orders'))
 
-    return render_template('add_edit_future_order.html', title='Add Future Order', order={}, user_role=session.get('role'), inventory_items=serialized_inventory_items)
+    # For GET request or re-render on error, ensure 'order' always has 'items' as an empty list
+    return render_template('add_edit_future_order.html', title='Add Future Order', order={'items': []}, user_role=session.get('role'), inventory_items=serialized_inventory_items)
 
 @app.route('/future_orders/edit/<order_id>', methods=['GET', 'POST'])
 def edit_future_order(order_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to edit future orders or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2148,7 +2534,7 @@ def edit_future_order(order_id):
         'remaining_balance': order_to_edit.remaining_balance,
         'date_ordered': order_to_edit.date_ordered.strftime('%Y-%m-%d %H:%M:%S'),
         'actual_collection_date': order_to_edit.actual_collection_date.strftime('%Y-%m-%d %H:%M:%S') if order_to_edit.actual_collection_date else '',
-        'items': order_to_edit.get_items() # For pre-populating cart
+        'items': order_to_edit.get_items() # <--- IMPORTANT: Call get_items() here
     }
     # Format expected_collection_date for HTML input
     order_data_for_form['expected_collection_date'] = order_to_edit.expected_collection_date.strftime('%Y-%m-%d') if order_to_edit.expected_collection_date else ''
@@ -2158,6 +2544,7 @@ def edit_future_order(order_id):
 
 @app.route('/future_orders/delete/<order_id>')
 def delete_future_order(order_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to delete future orders or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2185,6 +2572,7 @@ def delete_future_order(order_id):
 
 @app.route('/future_orders/collect/<order_id>', methods=['GET', 'POST'])
 def collect_future_order(order_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to mark orders as collected or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2238,6 +2626,7 @@ def collect_future_order(order_id):
 
 @app.route('/future_orders/payment/<order_id>', methods=['GET', 'POST'])
 def future_order_payment(order_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to record payments or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2277,6 +2666,7 @@ def future_order_payment(order_id):
 # NEW: Routes for Hirable Items
 @app.route('/hirable_items')
 def hirable_items():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to view hirable items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2291,6 +2681,7 @@ def hirable_items():
 
 @app.route('/hirable_items/add', methods=['GET', 'POST'])
 def add_hirable_item():
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to add hirable items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2326,6 +2717,7 @@ def add_hirable_item():
 
 @app.route('/hirable_items/edit/<item_id>', methods=['GET', 'POST'])
 def edit_hirable_item(item_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to edit hirable items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2361,6 +2753,7 @@ def edit_hirable_item(item_id):
 
 @app.route('/hirable_items/delete/<item_id>')
 def delete_hirable_item(item_id):
+    # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to delete hirable items or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2380,6 +2773,7 @@ def delete_hirable_item(item_id):
 # NEW: Routes for Rental Records
 @app.route('/rental_records')
 def rental_records():
+    # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
         flash('You do not have permission to view rental records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2394,6 +2788,7 @@ def rental_records():
 
 @app.route('/rental_records/add', methods=['GET', 'POST'])
 def add_rental_record():
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to add rental records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2600,6 +2995,7 @@ def print_rental_receipt(record_id):
 
 @app.route('/rental_records/mark_returned/<record_id>', methods=['GET', 'POST'])
 def mark_rental_returned(record_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to mark rental records as returned or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
@@ -2634,6 +3030,7 @@ def mark_rental_returned(record_id):
 
 @app.route('/rental_records/cancel/<record_id>')
 def cancel_rental_record(record_id):
+    # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to cancel rental records or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
