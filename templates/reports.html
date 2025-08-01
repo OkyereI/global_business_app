@@ -111,6 +111,17 @@
                 margin-bottom: 0.25rem;
             }
         }
+
+        /* Styles for the tab buttons */
+        .tab-button.active {
+            background-color: #4a5568;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .report-section {
+            display: none; /* Hide all report sections by default */
+        }
     </style>
 </head>
 <body>
@@ -175,235 +186,397 @@
             {% endif %}
         {% endwith %}
 
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Overall Business Metrics</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div class="bg-blue-50 p-4 rounded-lg shadow-sm">
-                    <p class="text-lg font-medium text-gray-600">Total Cost of Current Stock:</p>
-                    <p class="text-2xl font-bold text-blue-800">GH₵{{ "%.2f"|format(total_cost_of_stock) }}</p>
+        <!-- START OF NEW TABBED INTERFACE -->
+        <div class="flex flex-wrap justify-center my-6 gap-2">
+            <button data-target="overallReportsContent" class="tab-button bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-full transition-colors duration-200">
+                Overall Reports
+            </button>
+            <button data-target="weeklyReportContent" class="tab-button bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-full transition-colors duration-200">
+                Weekly Sales
+            </button>
+            <button data-target="monthlyReportContent" class="tab-button bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-full transition-colors duration-200">
+                Monthly Report
+            </button>
+        </div>
+        <!-- END OF NEW TABBED INTERFACE -->
+
+        <!-- START OF REPORT CONTENT SECTIONS -->
+        <div id="overallReportsContent" class="report-section">
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Overall Business Metrics</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="bg-blue-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Total Cost of Current Stock:</p>
+                        <p class="text-2xl font-bold text-blue-800">GH₵{{ "%.2f"|format(total_cost_of_stock) }}</p>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Total Potential Sale Value of Current Stock:</p>
+                        <p class="text-2xl font-bold text-green-800">GH₵{{ "%.2f"|format(total_sale_value_of_stock) }}</p>
+                    </div>
+                    <div class="bg-purple-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Total Potential Gross Profit (from current stock):</p>
+                        <p class="text-2xl font-bold text-purple-800">GH₵{{ "%.2f"|format(total_potential_gross_profit) }}</p>
+                    </div>
+                    <div class="bg-yellow-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Overall Stock Profit Margin:</p>
+                        <p class="text-2xl font-bold text-yellow-800">{{ "%.2f"|format(overall_stock_profit_margin) }}%</p>
+                    </div>
+                    <div class="bg-red-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-lg font-medium text-gray-600">Total Actual Sales Revenue (All Time):</p>
+                        <p class="text-2xl font-bold text-red-800">GH₵{{ "%.2f"|format(total_sales_amount) }}</p>
+                    </div>
                 </div>
-                <div class="bg-green-50 p-4 rounded-lg shadow-sm">
-                    <p class="text-lg font-medium text-gray-600">Total Potential Sale Value of Current Stock:</p>
-                    <p class="text-2xl font-bold text-green-800">GH₵{{ "%.2f"|format(total_sale_value_of_stock) }}</p>
+                {% if user_role == 'admin' %}
+                <div class="mt-6 text-right">
+                    <a href="{{ url_for('send_daily_sales_sms_report') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">
+                        <i class="fas fa-sms mr-2"></i> Send Daily Sales SMS Report
+                    </a>
                 </div>
-                <div class="bg-purple-50 p-4 rounded-lg shadow-sm">
-                    <p class="text-lg font-medium text-gray-600">Total Potential Gross Profit (from current stock):</p>
-                    <p class="text-2xl font-bold text-purple-800">GH₵{{ "%.2f"|format(total_potential_gross_profit) }}</p>
-                </div>
-                <div class="bg-yellow-50 p-4 rounded-lg shadow-sm">
-                    <p class="text-lg font-medium text-gray-600">Overall Stock Profit Margin:</p>
-                    <p class="text-2xl font-bold text-yellow-800">{{ "%.2f"|format(overall_stock_profit_margin) }}%</p>
-                </div>
-                <div class="bg-red-50 p-4 rounded-lg shadow-sm">
-                    <p class="text-lg font-medium text-gray-600">Total Actual Sales Revenue (All Time):</p>
-                    <p class="text-2xl font-bold text-red-800">GH₵{{ "%.2f"|format(total_sales_amount) }}</p>
-                </div>
+                {% endif %}
             </div>
-            {% if user_role == 'admin' %}
-            <div class="mt-6 text-right">
-                <a href="{{ url_for('send_daily_sales_sms_report') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200">
-                    <i class="fas fa-sms mr-2"></i> Send Daily Sales SMS Report
-                </a>
+    
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Sales by Sales Person (Last 30 Days)</h2>
+                {% if sales_by_person %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Sales Person</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total Sales Amount (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for person, amount in sales_by_person %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                <td class="py-3 px-4 text-gray-700">{{ person }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(amount) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600">No sales data for the last 30 days.</p>
+                {% endif %}
+            </div>
+    
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Inventory Stock Summary</h2>
+                {% if inventory_summary %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Category</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Current Stock</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Purchase Price (GH₵)</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Sale Price (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in inventory_summary %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                <td class="py-3 px-4 text-gray-700">{{ item.product_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ item.category }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.current_stock) }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.purchase_price) }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.sale_price) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600">No active inventory items found.</p>
+                {% endif %}
+            </div>
+    
+            {% if business_type == 'Pharmacy' %}
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Pharmacy Specific Reports</h2>
+                
+                <h3 class="text-xl font-semibold mb-3 text-gray-700">Expired Items</h3>
+                {% if expired_items %}
+                <div class="overflow-x-auto mb-6">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Batch Number</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Expiry Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Current Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in expired_items %}
+                            <tr class="border-b border-gray-200 bg-red-50 hover:bg-red-100">
+                                <td class="py-3 px-4 text-gray-700">{{ item.product_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ item.batch_number if item.batch_number else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ item.expiry_date.strftime('%Y-%m-%d') }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.current_stock) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600 mb-6">No expired items found.</p>
+                {% endif %}
+    
+                <h3 class="text-xl font-semibold mb-3 text-gray-700">Items Expiring Soon (Within 3 Months)</h3>
+                {% if expiring_soon_items %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Batch Number</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Expiry Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Current Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in expiring_soon_items %}
+                            <tr class="border-b border-gray-200 bg-yellow-50 hover:bg-yellow-100">
+                                <td class="py-3 px-4 text-gray-700">{{ item.product_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ item.batch_number if item.batch_number else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ item.expiry_date.strftime('%Y-%m-%d') }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.current_stock) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600">No items expiring soon.</p>
+                {% endif %}
+            </div>
+            {% endif %}
+    
+            {% if business_type == 'Hardware' %}
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Hardware Specific Reports</h2>
+                
+                <h3 class="text-xl font-semibold mb-3 text-gray-700">Company Balances</h3>
+                {% if company_balances %}
+                <div class="overflow-x-auto mb-6">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Company Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Contact Person</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Balance (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in company_balances %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                <td class="py-3 px-4 text-gray-700">{{ company.name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ company.contact_person if company.contact_person else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700 {% if company.balance < 0 %}text-red-600{% elif company.balance > 0 %}text-green-600{% endif %}">
+                                    {{ "%.2f"|format(company.balance) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600 mb-6">No company balances to display.</p>
+                {% endif %}
+    
+                <h3 class="text-xl font-semibold mb-3 text-gray-700">Rental Records Summary</h3>
+                {% if rental_records %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Item</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Customer</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Start Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">End Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total Amount (GH₵)</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in rental_records %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                <td class="py-3 px-4 text-gray-700">{{ record.item_name_at_rent }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.customer_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.start_date.strftime('%Y-%m-%d') }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.end_date.strftime('%Y-%m-%d') if record.end_date else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.total_hire_amount) }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    {% if record.status == 'Rented' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Rented</span>
+                                    {% elif record.status == 'Completed' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>
+                                    {% elif record.status == 'Overdue' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Overdue</span>
+                                    {% elif record.status == 'Cancelled' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Cancelled</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600">No rental records to display.</p>
+                {% endif %}
             </div>
             {% endif %}
         </div>
+        <!-- END OF overallReportsContent -->
 
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Sales by Sales Person (Last 30 Days)</h2>
-            {% if sales_by_person %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full bg-white rounded-lg shadow-sm">
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-200">
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Sales Person</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total Sales Amount (GH₵)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for person, amount in sales_by_person %}
-                        <tr class="border-b border-gray-200 hover:bg-gray-50">
-                            <td class="py-3 px-4 text-gray-700">{{ person }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(amount) }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <!-- START OF NEW WEEKLY SALES REPORT CONTENT -->
+        <div id="weeklyReportContent" class="report-section">
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Weekly Sales Report</h2>
+                <p class="text-gray-600 mb-4">This table shows a summary of sales for each day of the current week.</p>
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table id="weeklySalesTable" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-green-100">
+                            <tr>
+                                <th scope="col" class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Day of Week</th>
+                                <th scope="col" class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Sales Amount (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <!-- Mock data rows for the weekly report -->
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Monday</td>
+                                <td class="py-3 px-4 text-gray-700">15500.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Tuesday</td>
+                                <td class="py-3 px-4 text-gray-700">12250.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Wednesday</td>
+                                <td class="py-3 px-4 text-gray-700">18900.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Thursday</td>
+                                <td class="py-3 px-4 text-gray-700">9800.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Friday</td>
+                                <td class="py-3 px-4 text-gray-700">25000.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Saturday</td>
+                                <td class="py-3 px-4 text-gray-700">31500.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">Sunday</td>
+                                <td class="py-3 px-4 text-gray-700">7500.00</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            {% else %}
-            <p class="text-gray-600">No sales data for the last 30 days.</p>
-            {% endif %}
         </div>
+        <!-- END OF WEEKLY SALES REPORT CONTENT -->
 
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Inventory Stock Summary</h2>
-            {% if inventory_summary %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full bg-white rounded-lg shadow-sm">
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-200">
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Category</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Current Stock</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Purchase Price (GH₵)</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Sale Price (GH₵)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in inventory_summary %}
-                        <tr class="border-b border-gray-200 hover:bg-gray-50">
-                            <td class="py-3 px-4 text-gray-700">{{ item.product_name }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ item.category }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.current_stock) }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.purchase_price) }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.sale_price) }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <!-- START OF NEW MONTHLY REPORT CONTENT -->
+        <div id="monthlyReportContent" class="report-section">
+            <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Monthly Report</h2>
+                <p class="text-gray-600 mb-4">This table shows a summary of daily totals for the current month.</p>
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table id="monthlyReportTable" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-purple-100">
+                            <tr>
+                                <th scope="col" class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Date</th>
+                                <th scope="col" class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Daily Total (GH₵)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <!-- Mock data rows for the monthly report -->
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">2025-07-01</td>
+                                <td class="py-3 px-4 text-gray-700">10500.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">2025-07-02</td>
+                                <td class="py-3 px-4 text-gray-700">12200.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">2025-07-03</td>
+                                <td class="py-3 px-4 text-gray-700">8750.00</td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">2025-07-04</td>
+                                <td class="py-3 px-4 text-gray-700">14000.00</td>
+                            </tr>
+                             <!-- ... (more mock data for other days) ... -->
+                            <tr class="hover:bg-gray-50 transition-colors duration-200">
+                                <td class="py-3 px-4 text-gray-700">2025-07-31</td>
+                                <td class="py-3 px-4 text-gray-700">14500.00</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            {% else %}
-            <p class="text-gray-600">No active inventory items found.</p>
-            {% endif %}
         </div>
-
-        {% if business_type == 'Pharmacy' %}
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Pharmacy Specific Reports</h2>
-            
-            <h3 class="text-xl font-semibold mb-3 text-gray-700">Expired Items</h3>
-            {% if expired_items %}
-            <div class="overflow-x-auto mb-6">
-                <table class="min-w-full bg-white rounded-lg shadow-sm">
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-200">
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Batch Number</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Expiry Date</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Current Stock</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in expired_items %}
-                        <tr class="border-b border-gray-200 bg-red-50 hover:bg-red-100">
-                            <td class="py-3 px-4 text-gray-700">{{ item.product_name }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ item.batch_number if item.batch_number else 'N/A' }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ item.expiry_date.strftime('%Y-%m-%d') }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.current_stock) }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <p class="text-gray-600 mb-6">No expired items found.</p>
-            {% endif %}
-
-            <h3 class="text-xl font-semibold mb-3 text-gray-700">Items Expiring Soon (Within 3 Months)</h3>
-            {% if expiring_soon_items %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full bg-white rounded-lg shadow-sm">
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-200">
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Product Name</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Batch Number</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Expiry Date</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Current Stock</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in expiring_soon_items %}
-                        <tr class="border-b border-gray-200 bg-yellow-50 hover:bg-yellow-100">
-                            <td class="py-3 px-4 text-gray-700">{{ item.product_name }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ item.batch_number if item.batch_number else 'N/A' }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ item.expiry_date.strftime('%Y-%m-%d') }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(item.current_stock) }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <p class="text-gray-600">No items expiring soon.</p>
-            {% endif %}
-        </div>
-        {% endif %}
-
-        {% if business_type == 'Hardware' %}
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Hardware Specific Reports</h2>
-            
-            <h3 class="text-xl font-semibold mb-3 text-gray-700">Company Balances</h3>
-            {% if company_balances %}
-            <div class="overflow-x-auto mb-6">
-                <table class="min-w-full bg-white rounded-lg shadow-sm">
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-200">
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Company Name</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Contact Person</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Balance (GH₵)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for company in company_balances %}
-                        <tr class="border-b border-gray-200 hover:bg-gray-50">
-                            <td class="py-3 px-4 text-gray-700">{{ company.name }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ company.contact_person if company.contact_person else 'N/A' }}</td>
-                            <td class="py-3 px-4 text-gray-700 {% if company.balance < 0 %}text-red-600{% elif company.balance > 0 %}text-green-600{% endif %}">
-                                {{ "%.2f"|format(company.balance) }}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <p class="text-gray-600 mb-6">No company balances to display.</p>
-            {% endif %}
-
-            <h3 class="text-xl font-semibold mb-3 text-gray-700">Rental Records Summary</h3>
-            {% if rental_records %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full bg-white rounded-lg shadow-sm">
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-200">
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Item</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Customer</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Start Date</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">End Date</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total Amount (GH₵)</th>
-                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for record in rental_records %}
-                        <tr class="border-b border-gray-200 hover:bg-gray-50">
-                            <td class="py-3 px-4 text-gray-700">{{ record.item_name_at_rent }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ record.customer_name }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ record.start_date.strftime('%Y-%m-%d') }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ record.end_date.strftime('%Y-%m-%d') if record.end_date else 'N/A' }}</td>
-                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.total_hire_amount) }}</td>
-                            <td class="py-3 px-4 text-gray-700">
-                                {% if record.status == 'Rented' %}
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Rented</span>
-                                {% elif record.status == 'Completed' %}
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>
-                                {% elif record.status == 'Overdue' %}
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Overdue</span>
-                                {% elif record.status == 'Cancelled' %}
-                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Cancelled</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <p class="text-gray-600">No rental records to display.</p>
-            {% endif %}
-        </div>
-        {% endif %}
+        <!-- END OF MONTHLY REPORT CONTENT -->
 
     </div>
+
+    <script>
+        // Use a DOMContentLoaded listener to ensure the script runs after the document is fully loaded.
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            const reportSections = document.querySelectorAll('.report-section');
+
+            /**
+             * Handles the logic for switching between report tabs.
+             * @param {string} targetId The ID of the report section to display.
+             */
+            function switchTab(targetId) {
+                // Remove the 'active' state from all buttons and sections.
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('active', 'bg-gray-700', 'text-white');
+                    btn.classList.add('bg-gray-200', 'text-gray-700');
+                });
+                reportSections.forEach(section => {
+                    section.style.display = 'none';
+                });
+
+                // Find the new active button and section based on the target ID.
+                const newActiveButton = document.querySelector(`[data-target="${targetId}"]`);
+                const newActiveSection = document.getElementById(targetId);
+
+                // Add the 'active' state to the clicked button.
+                if (newActiveButton) {
+                    newActiveButton.classList.add('active', 'bg-gray-700', 'text-white');
+                    newActiveButton.classList.remove('bg-gray-200', 'text-gray-700');
+                }
+
+                // Display the new active section.
+                if (newActiveSection) {
+                    newActiveSection.style.display = 'block';
+                }
+            }
+
+            // Add a click event listener to each tab button.
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    // Get the target ID from the 'data-target' attribute of the button.
+                    const targetId = button.dataset.target;
+                    switchTab(targetId);
+                });
+            });
+
+            // Set the initial active tab and display its content.
+            // This ensures the "Overall Reports" tab is active on page load.
+            switchTab('overallReportsContent');
+        });
+    </script>
 </body>
 </html>

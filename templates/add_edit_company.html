@@ -36,6 +36,13 @@
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
             outline: none;
         }
+        /* Style for readonly inputs to make them look like display fields */
+        .form-control[readonly] {
+            background-color: #f0f4f8; /* Lighter background */
+            border-color: #d1d9e0; /* Slightly darker border */
+            color: #667085; /* Muted text color */
+            cursor: not-allowed; /* Indicate it's not editable */
+        }
         .btn {
             padding: 0.75rem 1.5rem;
             border-radius: 8px;
@@ -123,6 +130,23 @@
             <div class="form-group">
                 <label for="address" class="block text-sm">Address</label>
                 <textarea id="address" name="address" rows="3" class="form-control mt-1">{{ company.address if company else '' }}</textarea>
+            </div>
+
+            {# Display Fields for Creditors and Debtors - These are calculated, not input #}
+            <div class="form-group">
+                <label for="total_creditors" class="block text-sm">Total Creditors (GH₵)</label>
+                <input type="text" id="total_creditors" name="total_creditors"
+                       class="form-control mt-1"
+                       value="{{ '%.2f'|format(company.total_creditors) if company.total_creditors is not none else '0.00' }}"
+                       readonly>
+            </div>
+
+            <div class="form-group">
+                <label for="total_debtors" class="block text-sm">Total Debtors (GH₵)</label>
+                <input type="text" id="total_debtors" name="total_debtors"
+                       class="form-control mt-1"
+                       value="{{ '%.2f'|format(company.total_debtors) if company.total_debtors is not none else '0.00' }}"
+                       readonly>
             </div>
 
             <div class="flex justify-end space-x-4 mt-6">

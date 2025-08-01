@@ -1,316 +1,81 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - {{ business_name }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            font-family: "Inter", sans-serif;
-            background-color: #f3f4f6;
-        }
-        .sidebar {
-            width: 250px;
-            background-color: #1a202c;
-            color: #ffffff;
-            padding: 1.5rem;
-            height: 100vh;
-            position: fixed;
-            top: 0;
-            left: 0;
-            overflow-y: auto;
-            transition: transform 0.3s ease-in-out;
-            transform: translateX(0);
-            z-index: 1000;
-        }
-        .sidebar.hidden {
-            transform: translateX(-100%);
-        }
-        .main-content {
-            margin-left: 250px;
-            padding: 1.5rem;
-            transition: margin-left 0.3s ease-in-out;
-        }
-        .main-content.full-width {
-            margin-left: 0;
-        }
-        .sidebar a {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 0.75rem;
-            color: #ffffff;
-            text-decoration: none;
-            transition: background-color 0.2s;
-        }
-        .sidebar a i {
-            margin-right: 0.75rem;
-            width: 20px;
-            text-align: center;
-        }
-        .sidebar a:hover {
-            background-color: #2d3748;
-        }
-        .sidebar a.active {
-            background-color: #4a5568;
-            font-weight: bold;
-        }
-        .flash-message {
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-        }
-        .flash-success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .flash-danger {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .flash-warning {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
-        }
-        .flash-info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-        .flash-message i {
-            margin-right: 0.75rem;
-        }
-        .menu-toggle {
-            display: none; /* Hidden by default, shown on small screens */
-            position: fixed;
-            top: 1rem;
-            left: 1rem;
-            z-index: 1001;
-            background-color: #1a202c;
-            color: white;
-            padding: 0.5rem;
-            border-radius: 0.5rem;
-            cursor: pointer;
-        }
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-                position: fixed;
-                height: 100vh;
-                top: 0;
-                left: 0;
-                width: 250px;
-            }
-            .sidebar.active {
-                transform: translateX(0);
-            }
-            .main-content {
-                margin-left: 0;
-                width: 100%;
-            }
-            .menu-toggle {
-                display: block;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="menu-toggle" id="menuToggle">
-        <i class="fas fa-bars"></i>
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mx-auto p-6 bg-white rounded-lg shadow-md">
+    <h2 class="text-3xl font-bold text-gray-800 mb-6">Dashboard</h2>
+
+    <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded-md" role="alert">
+        <p class="font-bold">Welcome, {{ username }}!</p>
+        <p>You are logged in as a <span class="font-semibold">{{ user_role.replace('_', ' ').title() }}</span> for the business: <span class="font-semibold">{{ business_name }} ({{ business_type }})</span>.</p>
     </div>
 
-    <div class="sidebar" id="sidebar">
-        <h2 class="text-2xl font-bold mb-6 text-center sidebar-title">{{ business_name }}</h2>
-        <nav class="sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="active flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
-            </a>
-            {% if user_role in ['admin', 'sales', 'viewer'] %}
-            <a href="{{ url_for('inventory') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-boxes mr-3"></i> Inventory
-            </a>
-            <a href="{{ url_for('sales') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-chart-line mr-3"></i> Sales
-            </a>
-            {% endif %}
-            {% if business_type == 'Hardware' %}
-            <a href="{{ url_for('hirable_items') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-tools mr-3"></i> Hirable Items
-            </a>
-            <a href="{{ url_for('rental_records') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-calendar-alt mr-3"></i> Rental Records
-            </a>
-            <a href="{{ url_for('companies') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-building mr-3"></i> Companies
-            </a>
-            <a href="{{ url_for('future_orders') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-clock mr-3"></i> Future Orders
-            </a>
-            {% endif %}
-            {% if user_role == 'admin' or user_role == 'viewer' %} {# Allow viewer to manage users to add salespersons #}
-            <a href="{{ url_for('manage_business_users') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-users mr-3"></i> Manage Users
-            </a>
-            {% endif %}
-            {% if user_role in ['super_admin', 'admin'] %}
-            <a href="{{ url_for('super_admin_dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-user-shield mr-3"></i> Admin Panel
-            </a>
-            {% endif %}
-            <a href="{{ url_for('reports') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-file-alt mr-3"></i> Reports
-            </a>
-            <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
-                <i class="fas fa-sign-out-alt mr-3"></i> Logout
-            </a>
-        </nav>
-    </div>
-
-    <div class="main-content" id="mainContent">
-        <h1 class="text-3xl font-bold mb-6 text-gray-800">Dashboard</h1>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="flash-message flash-{{ category }} mb-4">
-                        <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Welcome, {{ username }}!</h2>
-            <p class="text-gray-600">You are logged in as a <span class="font-bold">{{ user_role.replace('_', ' ').title() }}</span> for the business: <span class="font-bold">{{ business_name }} ({{ business_type }})</span>.</p>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {# Quick Actions Card #}
+        <div class="card p-6">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Quick Actions</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {% if user_role in ['admin', 'sales'] %}
+                <a href="{{ url_for('add_sale') }}" class="btn btn-primary bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
+                    <i class="fas fa-cash-register mr-2"></i> Record New Sale
+                </a>
+                {% endif %}
+                <a href="{{ url_for('inventory') }}" class="btn btn-secondary bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
+                    <i class="fas fa-boxes mr-2"></i> View Inventory
+                </a>
+                <a href="{{ url_for('reports') }}" class="btn btn-secondary bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
+                    <i class="fas fa-chart-line mr-2"></i> View Reports
+                </a>
+                {% if user_role == 'admin' %}
+                <a href="{{ url_for('manage_business_users') }}" class="btn btn-secondary bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
+                    <i class="fas fa-users mr-2"></i> Manage Users
+                </a>
+                {% endif %}
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-            <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-xl font-semibold mb-4 text-gray-700">Quick Actions</h3>
-                <div class="space-y-3">
-                    {% if user_role in ['admin', 'sales'] %}
-                    <a href="{{ url_for('sales') }}" class="block w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-                        <i class="fas fa-cash-register mr-2"></i> Record New Sale
-                    </a>
-                    {% if business_type == 'Hardware' %}
-                    <a href="{{ url_for('add_rental_record') }}" class="block w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-                        <i class="fas fa-handshake mr-2"></i> Issue Rental Item
-                    </a>
-                    <a href="{{ url_for('add_future_order') }}" class="block w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-                        <i class="fas fa-clipboard-list mr-2"></i> Add Future Order
-                    </a>
-                    {% endif %}
-                    {% endif %}
-                    <a href="{{ url_for('inventory') }}" class="block w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-                        <i class="fas fa-boxes mr-2"></i> View Inventory
-                    </a>
-                    <a href="{{ url_for('reports') }}" class="block w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-                        <i class="fas fa-chart-pie mr-2"></i> View Reports
-                    </a>
-                    {% if user_role == 'admin' or user_role == 'viewer' %} {# Allow viewer to manage users to add salespersons #}
-                    <a href="{{ url_for('manage_business_users') }}" class="block w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-                        <i class="fas fa-users mr-2"></i> Manage Users
-                    </a>
-                    {% endif %}
+        {# Business Overview Card #}
+        <div class="card p-6">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Business Overview</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div class="bg-blue-50 p-4 rounded-md text-center shadow-sm">
+                    <p class="text-sm font-medium text-blue-700">Total Sales Today:</p>
+                    <p class="text-2xl font-bold text-blue-900">GH₵{{ "%.2f" | format(total_sales_today) }}</p>
+                </div>
+                <div class="bg-red-50 p-4 rounded-md text-center shadow-sm">
+                    <p class="text-sm font-medium text-red-700">Low Stock Items:</p>
+                    <p class="text-2xl font-bold text-red-900">{{ low_stock_items }}</p>
                 </div>
             </div>
-
-            <div class="bg-white p-6 rounded-lg shadow-md col-span-1 md:col-span-2">
-                <h3 class="text-xl font-semibold mb-4 text-gray-700">Business Overview</h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="bg-indigo-50 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg font-medium text-gray-600">Total Sales Today:</p>
-                        <p class="text-2xl font-bold text-indigo-800">GH₵0.00</p>
-                        <p class="text-sm text-gray-500"> (Data from backend)</p>
-                    </div>
-                    <div class="bg-red-50 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg font-medium text-gray-600">Low Stock Items:</p>
-                        <p class="text-2xl font-bold text-red-800">0</p>
-                        <p class="text-sm text-gray-500"> (Data from backend)</p>
-                    </div>
-                    {% if business_type == 'Hardware' %}
-                    <div class="bg-yellow-50 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg font-medium text-gray-600">Overdue Rentals:</p>
-                        <p class="text-2xl font-bold text-yellow-800">0</p>
-                        <p class="text-sm text-gray-500"> (Data from backend)</p>
-                    </div>
-                    <div class="bg-blue-50 p-4 rounded-lg shadow-sm">
-                        <p class="text-lg font-medium text-gray-600">Pending Future Orders:</p>
-                        <p class="text-2xl font-bold text-blue-800">0</p>
-                        <p class="text-sm text-gray-500"> (Data from backend)</p>
-                    </div>
-                    {% endif %}
-                </div>
-                <p class="text-sm text-gray-500 mt-4">Note: Actual data for these metrics would be fetched from your Flask backend (e.g., in the `dashboard` route).</p>
-            </div>
-        </div>
-
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-xl font-semibold mb-4 text-gray-700">Recent Activity</h3>
-            <p class="text-gray-600">This section would display a list of recent sales, rentals, or inventory updates.</p>
-            <p class="text-sm text-gray-500 mt-2"> (Data from backend)</p>
-            <div class="mt-4">
-                <ul class="list-disc list-inside text-gray-700">
-                    <li>Sale: Product X, GH₵50.00 (10 mins ago)</li>
-                    {% if business_type == 'Hardware' %}
-                    <li>Rental: Drill, Customer A (2 hours ago)</li>
-                    {% endif %}
-                    <li>Inventory Update: Item Y stock adjusted (yesterday)</li>
-                </ul>
-            </div>
+            <p class="text-sm text-gray-600 italic">Note: Actual data for these metrics would be fetched from your Flask backend (e.g., in the 'dashboard' route).</p>
         </div>
     </div>
 
-    <script>
-        const sidebar = document.getElementById('sidebar');
-        const mainContent = document.getElementById('mainContent');
-        const menuToggle = document.getElementById('menuToggle');
+    {# Sales by Sales Person (Today) Card #}
+    <div class="card p-6 mb-8">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Sales by Sales Person (Today)</h3>
+        {% if sales_by_person_today %}
+            {% for person, total_sales in sales_by_person_today %}
+                <div class="flex justify-between items-center border-b border-gray-200 py-2 last:border-b-0">
+                    <span class="text-lg text-gray-700">{{ person }}:</span>
+                    <span class="text-lg font-bold text-gray-900">GH₵{{ "%.2f" | format(total_sales) }}</span>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-gray-600">No sales recorded by sales persons today.</p>
+        {% endif %}
+    </div>
 
-        menuToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
-            // Optional: Adjust main content margin on toggle
-            // if (window.innerWidth <= 768) {
-            //     mainContent.classList.toggle('full-width');
-            // }
-        });
+    {# Recent Activity Card (Placeholder for now) #}
+    <div class="card p-6">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Recent Activity</h3>
+        <p class="text-gray-600 mb-4">This section would display a list of recent sales, rentals, or inventory updates.</p>
+        <ul class="list-disc list-inside text-gray-700 space-y-2">
+            <li>Sale: Product X, GH₵50.00 (10 mins ago)</li>
+            <li>Inventory Update: Item Y stock adjusted (yesterday)</li>
+            <li>Rental: Tool Z rented by John Doe (2 hours ago)</li>
+            {# You would dynamically populate this list from your backend #}
+        </ul>
+    </div>
 
-        // Close sidebar if clicking outside on small screens
-        mainContent.addEventListener('click', (event) => {
-            if (window.innerWidth <= 768 && sidebar.classList.contains('active') && !sidebar.contains(event.target) && !menuToggle.contains(event.target)) {
-                sidebar.classList.remove('active');
-                // mainContent.classList.add('full-width');
-            }
-        });
-
-        // Ensure sidebar state is correct on resize
-        window.addEventListener('resize', () => {
-            if (window.innerWidth > 768) {
-                sidebar.classList.remove('active'); // Ensure it's not "active" (hidden) on desktop
-                sidebar.style.transform = 'translateX(0)'; // Force visible
-                mainContent.style.marginLeft = '250px'; // Ensure correct margin
-            } else {
-                sidebar.style.transform = 'translateX(-100%)'; // Ensure hidden by default on mobile
-                mainContent.style.marginLeft = '0'; // Ensure no margin on mobile
-            }
-        });
-
-        // Initial setup on load for mobile responsiveness
-        document.addEventListener('DOMContentLoaded', () => {
-            if (window.innerWidth <= 768) {
-                sidebar.classList.remove('active'); // Start hidden on mobile
-                sidebar.style.transform = 'translateX(-100%)';
-                mainContent.style.marginLeft = '0';
-            }
-        });
-    </script>
-</body>
-</html>
+</div>
+{% endblock %}

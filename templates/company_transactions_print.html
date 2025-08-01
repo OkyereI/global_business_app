@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company Transactions - {{ company.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media print {
+            body {
+                font-size: 10pt;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top for longer content */
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .print-container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+            padding: 30px;
+            width: 100%;
+            max-width: 800px; /* Increased max-width for transaction list */
+            margin: 20px auto;
+            border: 1px solid #e2e8f0;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px dashed #cbd5e1;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .details-section {
+            margin-bottom: 20px;
+        }
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px dotted #e2e8f0;
+        }
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+        .transaction-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .transaction-table th, .transaction-table td {
+            border: 1px solid #eee;
+            padding: 8px;
+            text-align: left;
+        }
+        .transaction-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            color: #333;
+        }
+        .total-row {
+            font-weight: bold;
+            background-color: #e6f7ff;
+        }
+        .footer {
+            text-align: center;
+            border-top: 2px dashed #cbd5e1;
+            padding-top: 20px;
+            margin-top: 20px;
+            color: #64748b;
+            font-size: 0.85em;
+        }
+        .print-button {
+            background-color: #2563eb; /* Blue-700 */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        .print-button:hover {
+            background-color: #1d4ed8; /* Blue-800 */
+        }
+    </style>
+</head>
+<body>
+    <div class="print-container">
+        <div class="header">
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-2">{{ business_info.name or 'Business Name' }}</h1>
+            <p class="text-sm text-gray-600">{{ business_info.address or '123 Business St, City' }}{% if business_info.location %}, {{ business_info.location }}{% endif %}</p>
+            <p class="text-sm text-gray-600">Tel: {{ business_info.phone or 'N/A' }} | Email: {{ business_info.email or 'N/A' }}</p>
+            <h2 class="text-xl font-semibold text-gray-800 mt-4">Transactions for {{ company.name }}</h2>
+            {% if search_query or start_date or end_date %}
+                <p class="text-sm text-gray-700 mt-2">
+                    Filtered by:
+                    {% if search_query %} "<strong>{{ search_query }}</strong>" {% endif %}
+                    {% if start_date %} from <strong>{{ start_date }}</strong> {% endif %}
+                    {% if end_date %} to <strong>{{ end_date }}</strong> {% endif %}
+                </p>
+            {% endif %}
+        </div>
+
+        <div class="details-section">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Company Details</h3>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Company Name:</span>
+                <span class="text-gray-900">{{ company.name }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Contact Person:</span>
+                <span class="text-gray-900">{{ company.contact_person if company.contact_person else 'N/A' }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Phone:</span>
+                <span class="text-gray-900">{{ company.phone if company.phone else 'N/A' }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Current Balance:</span>
+                <span class="text-gray-900 font-bold">GH₵{{ "%.2f"|format(company.balance) }}</span>
+            </div>
+        </div>
+
+        <div class="details-section">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Transaction List</h3>
+            {% if transactions %}
+            <table class="transaction-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Amount (GH₵)</th>
+                        <th>Description</th>
+                        <th>Recorded By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set total_amount = 0 %}
+                    {% for transaction in transactions %}
+                    <tr>
+                        <td>{{ transaction.date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ transaction.type }}</td>
+                        <td>{{ "%.2f"|format(transaction.amount) }}</td>
+                        <td>{{ transaction.description if transaction.description else 'N/A' }}</td>
+                        <td>{{ transaction.recorded_by }}</td>
+                    </tr>
+                    {% set total_amount = total_amount + transaction.amount %}
+                    {% endfor %}
+                    <tr class="total-row">
+                        <td colspan="2">Total Transactions Amount:</td>
+                        <td>{{ "%.2f"|format(total_amount) }}</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tbody>
+            </table>
+            {% else %}
+            <p class="text-gray-700">No transactions found for this company with the applied filters.</p>
+            {% endif %}
+        </div>
+
+        <div class="footer">
+            <p>Generated on: {{ current_date }}</p> {# Changed from 'now' to 'current_date' #}
+            <button onclick="window.print()" class="print-button no-print">Print Transactions</button>
+        </div>
+    </div>
+</body>
+</html>

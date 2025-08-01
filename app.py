@@ -12,7 +12,7 @@ import io
 import csv # Import csv module for CSV export
 from flask_migrate import Migrate # Import Flask-Migrate
 from werkzeug.security import generate_password_hash, check_password_hash # Import for password hashing
-from sqlalchemy import func # Import func for aggregate functions
+from sqlalchemy import func,cast # Import func for aggregate functions
 
 
 # --- Flask-Login setup (if you are using it, otherwise remove these lines) ---
@@ -148,12 +148,38 @@ class Company(db.Model):
     phone = db.Column(db.String(50))
     email = db.Column(db.String(100))
     address = db.Column(db.String(255))
-    balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit
+    balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit (from your business's perspective)
 
     # Relationship to CompanyTransaction
     transactions = db.relationship('CompanyTransaction', backref='company', lazy=True, cascade="all, delete-orphan")
 
+    # REMOVE these lines if they are currently db.Column definitions:
+    # total_creditors = db.Column(db.Float, default=0.0)
+    # total_debtors = db.Column(db.Float, default=0.0)
+
+    # NEW: Relationships to Creditor and Debtor models
+    # This assumes your Creditor and Debtor models have 'company_id' foreign keys
+    creditors_list = db.relationship('Creditor', backref='company_creditor_rel', lazy=True, cascade="all, delete-orphan")
+    debtors_list = db.relationship('Debtor', backref='company_debtor_rel', lazy=True, cascade="all, delete-orphan")
+
     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
+
+    # NEW: Properties to calculate total creditors and debtors
+    @property
+    def total_creditors_amount(self):
+        # Sums the balance of all associated Creditor records
+        # Use func.sum for database-level aggregation for efficiency
+        # This will return None if no records, so default to 0.0
+        return db.session.query(func.sum(Creditor.balance)).filter_by(
+            company_id=self.id, business_id=self.business_id
+        ).scalar() or 0.0
+
+    @property
+    def total_debtors_amount(self):
+        # Sums the balance of all associated Debtor records
+        return db.session.query(func.sum(Debtor.balance)).filter_by(
+            company_id=self.id, business_id=self.business_id
+        ).scalar() or 0.0
 
     def __repr__(self):
         return f'<Company {self.name} (Balance: {self.balance})>'
@@ -237,7 +263,33 @@ class RentalRecord(db.Model):
 
     def __repr__(self):
         return f'<RentalRecord {self.item_name_at_rent} for {self.customer_name} (Status: {self.status})>'
+class Creditor(db.Model):
+    __tablename__ = 'creditors'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), nullable=False, index=True)
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
+    balance = db.Column(db.Float, default=0.0, nullable=False)
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
+    # Relationship to Company (optional, but good for direct access)
+    company = db.relationship('Company', backref='creditor_records', lazy=True)
+
+    def __repr__(self):
+        return f"<Creditor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
+
+class Debtor(db.Model):
+    __tablename__ = 'debtors'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), nullable=False, index=True)
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
+    balance = db.Column(db.Float, default=0.0, nullable=False)
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # Relationship to Company (optional, but good for direct access)
+    company = db.relationship('Company', backref='debtor_records', lazy=True)
+
+    def __repr__(self):
+        return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
 
 # --- Flask app setup (secret_key, Arkesel, etc.) ---
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your_super_secret_key_here')
@@ -295,6 +347,35 @@ def serialize_hirable_item(item):
         'is_active': item.is_active
     }
 
+
+def calculate_company_balance_details(company_id):
+    """
+    Calculates the balance, total debtors, and total creditors for a single company
+    based on its transactions from the database.
+    """
+    # Fetch all transactions for the given company_id
+    transactions = CompanyTransaction.query.filter_by(company_id=company_id).all()
+    current_balance = 0.0
+
+    for transaction in transactions:
+        if transaction.type == 'Debit':
+            current_balance += transaction.amount
+        elif transaction.type == 'Credit':
+            current_balance -= transaction.amount
+
+    total_debtors = 0.0
+    total_creditors = 0.0
+
+    if current_balance > 0:
+        total_debtors = current_balance
+    elif current_balance < 0:
+        total_creditors = abs(current_balance) # Use abs() for absolute value
+
+    return {
+        'balance': current_balance,
+        'total_debtors': total_debtors,
+        'total_creditors': total_creditors
+    }
 
 # --- Authentication Routes ---
 
@@ -404,6 +485,8 @@ def business_selection():
 
 # --- Dashboard Route ---
 
+# --- Placeholder routes for demonstration ---
+# In a real application, these would be fully implemented.
 @app.route('/dashboard')
 def dashboard():
     if 'username' not in session:
@@ -418,18 +501,23 @@ def dashboard():
     today = date.today()
 
     # Total Sales Today
-    # Ensure SaleRecord.sale_date is correctly cast to date for comparison
     total_sales_today = db.session.query(func.sum(SaleRecord.total_amount)).filter(
         SaleRecord.business_id == business_id,
-        func.cast(SaleRecord.sale_date, db.Date) == today # Correctly cast to date
+        cast(SaleRecord.sale_date, db.Date) == today
     ).scalar() or 0.0
 
-    # Low Stock Items
+    # Low Stock Items (Assuming InventoryItem model exists)
     low_stock_threshold = 5 # Define your low stock threshold
     low_stock_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
         InventoryItem.current_stock <= low_stock_threshold,
         InventoryItem.is_active == True
+    ).count()
+
+    # Total Inventory Items (Assuming InventoryItem model exists)
+    total_inventory_items = InventoryItem.query.filter_by(
+        business_id=business_id,
+        is_active=True
     ).count()
 
     # Sales by Sales Person Today
@@ -438,22 +526,21 @@ def dashboard():
         func.sum(SaleRecord.total_amount)
     ).filter(
         SaleRecord.business_id == business_id,
-        func.cast(SaleRecord.sale_date, db.Date) == today # Correctly cast to date
+        cast(SaleRecord.sale_date, db.Date) == today
     ).group_by(SaleRecord.sales_person_name).order_by(func.sum(SaleRecord.total_amount).desc()).all()
 
 
-    return render_template('base.html', # Render base.html directly for dashboard
-                           title='Dashboard', # Pass a title
-                           username=session['username'], 
+    return render_template('dashboard.html',
+                           title='Dashboard',
+                           username=session['username'],
                            user_role=session.get('role'),
                            business_name=session.get('business_name'),
                            business_type=session.get('business_type'),
                            total_sales_today=total_sales_today,
                            low_stock_items=low_stock_items,
+                           total_inventory_items=total_inventory_items,
                            sales_by_person_today=sales_by_person_today,
-                           current_year=datetime.now().year) # Pass current year for footer
-
-# --- Super Admin Routes (now also accessible by 'admin' role) ---
+                           current_year=datetime.now().year)
 
 @app.route('/super_admin_dashboard')
 def super_admin_dashboard():
@@ -1807,8 +1894,58 @@ def add_sale():
         session['last_transaction_sales_person'] = sales_person_name
         session['last_transaction_date'] = sale_date.strftime('%Y-%m-%d %H:%M:%S')
 
-        return redirect(url_for('add_sale', print_ready='true'))
+        # SMS Sending Logic for Sales Records
+        send_sms = 'send_sms_receipt' in request.form # Check if the checkbox was checked
+        if send_sms and customer_phone:
+            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+            
+            sms_message = (
+                f"{business_name_for_sms} Sales Receipt:\n"
+                f"Transaction ID: {transaction_id[:8].upper()}\n"
+                f"Date: {sale_date.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Total Amount: GH₵{total_grand_amount:.2f}\n"
+                f"Items: " + ", ".join([f"{item['product_name']} ({item['quantity_sold']} {item['sale_unit_type']})" for item in recorded_sale_details]) + "\n"
+                f"Sales Person: {sales_person_name}\n\n"
+                f"Thank you for your purchase!\n"
+                f"From: {business_name_for_sms}"
+            )
+            
+            print(f"Attempting to send SMS to {customer_phone} for sale transaction.")
+            print(f"SMS Payload: {sms_message}") # Print the actual message content
 
+            sms_payload = {
+                'action': 'send-sms',
+                'api_key': ARKESEL_API_KEY,
+                'to': customer_phone,
+                'from': ARKESEL_SENDER_ID,
+                'sms': sms_message
+            }
+            
+            try:
+                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+                sms_response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                sms_result = sms_response.json()
+                print(f"Arkesel SMS API Response: {sms_result}")
+
+                if sms_result.get('status') == 'success':
+                    flash(f'SMS receipt sent to customer {customer_phone} successfully!', 'success')
+                else:
+                    error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+                    flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
+            except requests.exceptions.HTTPError as http_err:
+                flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
+            except requests.exceptions.ConnectionError as conn_err:
+                flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
+            except requests.exceptions.Timeout as timeout_err:
+                flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
+            except requests.exceptions.RequestException as req_err:
+                flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
+            except json.JSONDecodeError:
+                flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+        elif send_sms and not customer_phone:
+            flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
+
+        return redirect(url_for('add_sale', print_ready='true'))
     # GET request / Initial render
     default_sale = {
         'sales_person_name': session.get('username', 'N/A'),
@@ -2299,6 +2436,7 @@ def send_daily_sales_sms_report():
 # --- New Hardware Business Routes ---
 
 @app.route('/companies')
+# @login_required # Uncomment this if you have a login_required decorator
 def companies():
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
@@ -2310,8 +2448,55 @@ def companies():
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
-    companies = Company.query.filter_by(business_id=business_id).all()
-    return render_template('company_list.html', companies=companies, user_role=session.get('role'), current_year=datetime.now().year)
+    search_query = request.args.get('search', '').strip()
+
+    companies_query = Company.query.filter_by(business_id=business_id)
+
+    if search_query:
+        companies_query = companies_query.filter(
+            Company.name.ilike(f'%{search_query}%') |
+            Company.contact_person.ilike(f'%{search_query}%') |
+            Company.phone.ilike(f'%{search_query}%') |
+            Company.email.ilike(f'%{search_query}%') |
+            Company.address.ilike(f'%{search_query}%')
+        )
+
+    companies = companies_query.all()
+
+    processed_companies = []
+    total_creditors_sum = 0.0 # Initialize sum for creditors
+    total_debtors_sum = 0.0   # Initialize sum for debtors
+
+    for company in companies:
+        # Ensure company.balance is a float, defaulting to 0.0 if None
+        company_balance = float(company.balance) if company.balance is not None else 0.0
+        
+        # Calculate total_creditors and total_debtors for each company based on balance
+        # A company is a creditor if its balance is negative (we owe them)
+        # A company is a debtor if its balance is positive (they owe us)
+        if company_balance < 0:
+            company.display_creditors = abs(company_balance) # Store as positive for display
+            company.display_debtors = 0.0
+            total_creditors_sum += abs(company_balance)
+        elif company_balance > 0:
+            company.display_creditors = 0.0
+            company.display_debtors = company_balance
+            total_debtors_sum += company_balance
+        else:
+            company.display_creditors = 0.0
+            company.display_debtors = 0.0
+
+        processed_companies.append(company)
+
+    return render_template('company_list.html', 
+                           companies=processed_companies, 
+                           user_role=session.get('role'), 
+                           search_query=search_query, 
+                           current_year=datetime.now().year,
+                           total_creditors_sum=total_creditors_sum, # Pass the sum of creditors
+                           total_debtors_sum=total_debtors_sum)     # Pass the sum of debtors
+
+
 
 @app.route('/companies/add', methods=['GET', 'POST'])
 def add_company():
@@ -2319,7 +2504,7 @@ def add_company():
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to add companies or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     if get_current_business_type() != 'Hardware':
         flash('This feature is only available for Hardware businesses.', 'warning')
         return redirect(url_for('dashboard'))
@@ -2331,11 +2516,18 @@ def add_company():
         phone = request.form['phone'].strip()
         email = request.form['email'].strip()
         address = request.form['address'].strip()
-
+        
+        # Check if company with this name already exists for this business
         if Company.query.filter_by(name=name, business_id=business_id).first():
             flash('Company with this name already exists for this business.', 'danger')
-            return render_template('add_edit_company.html', title='Add New Company', company=request.form, current_year=datetime.now().year)
-        
+            # Pass the form data back to pre-fill the form fields on error
+            form_data = request.form.to_dict()
+            # For display purposes on error, you can still pass these as 0.0
+            # They are NOT being passed to the Company constructor here.
+            form_data['total_creditors_amount'] = 0.0 # Use the property name for consistency
+            form_data['total_debtors_amount'] = 0.0   # Use the property name for consistency
+            return render_template('add_edit_company.html', title='Add New Company', company=form_data, current_year=datetime.now().year)
+
         new_company = Company(
             business_id=business_id,
             name=name,
@@ -2343,14 +2535,64 @@ def add_company():
             phone=phone,
             email=email,
             address=address,
-            balance=0.0
+            balance=0.0            # New company starts with 0 balance
+            # IMPORTANT: REMOVE total_creditors and total_debtors here.
+            # They are calculated properties, not direct columns.
+            # total_creditors=0.0,
+            # total_debtors=0.0
         )
         db.session.add(new_company)
         db.session.commit()
+
+        # After the company is created, you might want to initialize Creditor/Debtor records
+        # for it with a 0 balance, though they will be created on first transaction anyway.
+        # This is optional, as the current transaction logic handles creation if not exists.
+        # new_creditor_record = Creditor(business_id=business_id, company_id=new_company.id, balance=0.0)
+        # new_debtor_record = Debtor(business_id=business_id, company_id=new_company.id, balance=0.0)
+        # db.session.add(new_creditor_record)
+        # db.session.add(new_debtor_record)
+        # db.session.commit() # Commit again if you add these here
+
         flash(f'Company "{name}" added successfully!', 'success')
         return redirect(url_for('companies'))
+
+    # For GET request, display an empty form for adding
+    # Initialize company dictionary with default values for a new company
+    empty_company = {
+        'name': '', 'contact_person': '', 'phone': '', 'email': '', 'address': '',
+        'balance': 0.0, # This is the actual column
+        'total_creditors_amount': 0.0, # For display in template, matching property name
+        'total_debtors_amount': 0.0    # For display in template, matching property name
+    }
+    return render_template('add_edit_company.html', title='Add New Company', company=empty_company, current_year=datetime.now().year)
+
+# The filter_company_transactions function is fine as is, no changes needed for this error.
+def filter_company_transactions(company_id, search_query, start_date_str, end_date_str):
+    transactions_query = CompanyTransaction.query.filter_by(company_id=company_id)
+
+    if search_query:
+        transactions_query = transactions_query.filter(
+            CompanyTransaction.description.ilike(f'%{search_query}%') |
+            CompanyTransaction.type.ilike(f'%{search_query}%') |
+            CompanyTransaction.recorded_by.ilike(f'%{search_query}%')
+        )
+
+    if start_date_str:
+        try:
+            start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            transactions_query = transactions_query.filter(cast(CompanyTransaction.date, db.Date) >= start_date_obj)
+        except ValueError:
+            flash('Invalid start date format. Please use YYYY-MM-DD.', 'danger')
     
-    return render_template('add_edit_company.html', title='Add New Company', company={}, current_year=datetime.now().year)
+    if end_date_str:
+        try:
+            end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            transactions_query = transactions_query.filter(cast(CompanyTransaction.date, db.Date) <= end_date_obj)
+        except ValueError:
+            flash('Invalid end date format. Please use YYYY-MM-DD.', 'danger')
+
+    return transactions_query.order_by(CompanyTransaction.date.desc()).all()
+
 
 @app.route('/companies/edit/<company_id>', methods=['GET', 'POST'])
 def edit_company(company_id):
@@ -2358,7 +2600,7 @@ def edit_company(company_id):
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
         flash('You do not have permission to edit companies or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     if get_current_business_type() != 'Hardware':
         flash('This feature is only available for Hardware businesses.', 'warning')
         return redirect(url_for('dashboard'))
@@ -2366,29 +2608,47 @@ def edit_company(company_id):
     business_id = get_current_business_id()
     company_to_edit = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
 
+    # --- THIS IS THE CRITICAL CORRECTION: CALCULATE BALANCES BEFORE RENDERING ---
+    # This ensures that total_creditors and total_debtors are always up-to-date
+    # based on transactions, not user input.
+    balance_details = calculate_company_balance_details(company_id)
+    company_to_edit.balance = balance_details['balance']
+    company_to_edit.total_creditors = balance_details['total_creditors']
+    company_to_edit.total_debtors = balance_details['total_debtors']
+    # Note: These calculated values are updated on the Python object for display,
+    # but are NOT committed to the database here. They should only be updated
+    # in the database when transactions are added, edited, or deleted.
+
     if request.method == 'POST':
         name = request.form['name'].strip()
         contact_person = request.form['contact_person'].strip()
         phone = request.form['phone'].strip()
         email = request.form['email'].strip()
         address = request.form['address'].strip()
+        
+        # IMPORTANT: Do NOT retrieve total_creditors and total_debtors from request.form here.
+        # They are calculated fields and should not be modified by this form submission.
 
+        # Check for duplicate name (excluding the current company being edited)
         if Company.query.filter(Company.name == name, Company.business_id == business_id, Company.id != company_id).first():
             flash('Company with this name already exists for this business.', 'danger')
-            return render_template('add_edit_company.html', title='Edit Company', company=request.form, current_year=datetime.now().year)
-        
+            # Pass the form data back, ensuring the calculated balance details are preserved
+            form_data = request.form.to_dict()
+            form_data['total_creditors'] = company_to_edit.total_creditors # Use the already calculated values
+            form_data['total_debtors'] = company_to_edit.total_debtors   # Use the already calculated values
+            return render_template('add_edit_company.html', title='Edit Company', company=form_data, current_year=datetime.now().year)
+
         company_to_edit.name = name
         company_to_edit.contact_person = contact_person
         company_to_edit.phone = phone
         company_to_edit.email = email
         company_to_edit.address = address
-        
-        db.session.commit()
+
+        db.session.commit() # Commit changes to the company's static details
         flash(f'Company "{name}" updated successfully!', 'success')
         return redirect(url_for('companies'))
-    
-    return render_template('add_edit_company.html', title='Edit Company', company=company_to_edit, current_year=datetime.now().year)
 
+    return render_template('add_edit_company.html', title='Edit Company', company=company_to_edit, current_year=datetime.now().year)
 @app.route('/companies/delete/<company_id>')
 def delete_company(company_id):
     # ACCESS CONTROL: Allows admin role
@@ -2412,11 +2672,224 @@ def delete_company(company_id):
     flash(f'Company "{company_to_delete.name}" deleted successfully!', 'success')
     return redirect(url_for('companies'))
 
-@app.route('/companies/transaction/<company_id>', methods=['GET', 'POST'])
+@app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
+@login_required
 def company_transaction(company_id):
-    # ACCESS CONTROL: Allows admin, sales, and viewer roles
-    if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
-        flash('You do not have permission to record company transactions or no business selected.', 'danger')
+    """
+    Handles company transactions, including recording new transactions,
+    updating company balance, sending SMS receipts, and displaying
+    a list of transactions with filtering capabilities.
+    """
+    business_id = get_current_business_id()
+    company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
+
+    business_info = session.get('business_info', {})
+    if not business_info or not business_info.get('name'):
+        business_details = Business.query.filter_by(id=business_id).first()
+        if business_details:
+            business_info = {
+                'name': business_details.name,
+                'address': business_details.address,
+                'location': business_details.location,
+                'phone': business_details.contact,
+                'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+            }
+        else:
+            business_info = {
+                'name': "Your Enterprise Name", # Replace with actual constant
+                'address': "Your Pharmacy Address", # Replace with actual constant
+                'location': "Your Pharmacy Location", # Replace with actual constant
+                'phone': "Your Pharmacy Contact", # Replace with actual constant
+                'email': 'info@example.com' # Default email
+            }
+
+    last_company_transaction_id = None
+    last_company_transaction_details = None
+    # print_ready is no longer passed to this template, it's for the dedicated print route
+
+    transactions = [] # Initialize here to ensure it's always defined
+
+    if request.method == 'POST':
+        transaction_type = request.form['type']
+        amount = float(request.form['amount'])
+        description = request.form.get('description')
+        send_sms_receipt = 'send_sms_receipt' in request.form
+        recorded_by = session['username']
+
+        new_transaction = CompanyTransaction(
+            business_id=business_id,
+            company_id=company.id,
+            type=transaction_type,
+            amount=amount,
+            description=description,
+            recorded_by=recorded_by
+        )
+        db.session.add(new_transaction)
+
+        if transaction_type == 'Debit':
+            company.balance += amount
+            debtor_record = Debtor.query.filter_by(company_id=company.id, business_id=business_id).first()
+            if not debtor_record:
+                debtor_record = Debtor(company_id=company.id, business_id=business_id, balance=0.0)
+                db.session.add(debtor_record)
+            debtor_record.balance += amount
+        elif transaction_type == 'Credit':
+            company.balance -= amount
+            creditor_record = Creditor.query.filter_by(company_id=company.id, business_id=business_id).first()
+            if not creditor_record:
+                creditor_record = Creditor(company_id=company.id, business_id=business_id, balance=0.0)
+                db.session.add(creditor_record)
+            creditor_record.balance += amount
+            
+        db.session.add(company)
+        db.session.commit()
+
+        flash(f'Transaction recorded successfully! Company balance updated to GH₵{company.balance:.2f}', 'success')
+
+        last_company_transaction_details = {
+            'id': new_transaction.id,
+            'transaction_type': new_transaction.type,
+            'amount': new_transaction.amount,
+            'description': new_transaction.description,
+            'date': new_transaction.date.strftime('%Y-%m-%d %H:%M:%S'),
+            'recorded_by': new_transaction.recorded_by,
+            'company_name': company.name,
+            'company_id': company.id,
+            'new_balance': company.balance
+        }
+        session['last_company_transaction_id'] = new_transaction.id
+        session['last_company_transaction_details'] = last_company_transaction_details
+
+        if send_sms_receipt and company.phone:
+            message = (f"Dear {company.name}, a {new_transaction.type} transaction of GH₵{new_transaction.amount:.2f} "
+                       f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{company.balance:.2f}. "
+                       f"Description: {new_transaction.description or 'N/A'}")
+            # Assuming send_sms function exists
+            # sms_success, sms_msg = send_sms(company.phone, message)
+            # if sms_success:
+            #     flash(f'SMS receipt sent to {company.phone}.', 'info')
+            # else:
+            #     flash(f'Failed to send SMS receipt: {sms_msg}', 'warning')
+        elif send_sms_receipt and not company.phone:
+            flash('Cannot send SMS receipt: Company contact number not available.', 'warning')
+
+        # Redirect to the main page, not the print page directly after POST
+        # The print_last_company_transaction_receipt route is for printing after redirect
+        return redirect(url_for('company_transaction', company_id=company.id))
+
+
+    # --- Logic for GET request and initial page load ---
+    # Base query for transactions
+    transactions_query = CompanyTransaction.query.filter_by(
+        company_id=company.id,
+        business_id=business_id
+    )
+
+    search_query = request.args.get('search', '').strip()
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    if search_query:
+        transactions_query = transactions_query.filter(
+            (CompanyTransaction.description.ilike(f'%{search_query}%')) |
+            (CompanyTransaction.type.ilike(f'%{search_query}%')) |
+            (CompanyTransaction.recorded_by.ilike(f'%{search_query}%'))
+        )
+
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            transactions_query = transactions_query.filter(CompanyTransaction.date >= start_date)
+        except ValueError:
+            flash('Invalid start date format.', 'danger')
+            pass
+
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            transactions_query = transactions_query.filter(CompanyTransaction.date < (end_date + timedelta(days=1)))
+        except ValueError:
+            flash('Invalid end date format.', 'danger')
+            pass
+
+    transactions = transactions_query.order_by(CompanyTransaction.date.desc()).all()
+
+    # --- NEW: Calculate total transactions amount for display on the main page ---
+    total_transactions_sum = sum(t.amount for t in transactions)
+    # --- END NEW ---
+
+    return render_template('company_transaction.html',
+                           company=company,
+                           transactions=transactions,
+                           search_query=search_query,
+                           start_date=start_date_str,
+                           end_date=end_date_str,
+                           business_info=business_info,
+                           # last_company_transaction_id and last_company_transaction_details
+                           # are only for the dedicated print route now.
+                           # print_ready is also no longer passed to this template.
+                           total_transactions_sum=total_transactions_sum, # NEW: Pass the calculated sum
+                           current_year=datetime.now().year
+                           )
+
+@app.route('/company/print_last_receipt')
+@login_required
+def print_last_company_transaction_receipt():
+    """
+    Renders a dedicated, minimal page for printing the last recorded company transaction receipt.
+    This page is designed to be immediately printed.
+    """
+    business_id = get_current_business_id()
+
+    # Retrieve last transaction details from session
+    last_company_transaction_details = session.pop('last_company_transaction_details', None)
+    last_company_transaction_id = session.pop('last_company_transaction_id', None)
+
+    if not last_company_transaction_details:
+        flash('No recent transaction details found for printing.', 'warning')
+        return redirect(url_for('companies')) # Redirect to companies list or dashboard
+
+    # Fetch the company and business info needed for the receipt
+    company = Company.query.filter_by(id=last_company_transaction_details['company_id'], business_id=business_id).first()
+    if not company: # Fallback if company not found (shouldn't happen if transaction exists)
+        flash('Company not found for the last transaction.', 'danger')
+        return redirect(url_for('companies'))
+
+    business_info = session.get('business_info', {})
+    if not business_info or not business_info.get('name'):
+        business_details = Business.query.filter_by(id=business_id).first()
+        if business_details:
+            business_info = {
+                'name': business_details.name,
+                'address': business_details.address,
+                'location': business_details.location,
+                'phone': business_details.contact,
+                'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+            }
+        else:
+            business_info = {
+                'name': "Your Enterprise Name", # Replace with actual constant
+                'address': "Your Pharmacy Address", # Replace with actual constant
+                'location': "Your Pharmacy Location", # Replace with actual constant
+                'phone': "Your Pharmacy Contact", # Replace with actual constant
+                'email': 'info@example.com' # Default email
+            }
+
+    current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    return render_template('company_last_receipt_print.html',
+                           transaction_details=last_company_transaction_details,
+                           company=company,
+                           business_info=business_info,
+                           current_date=current_date)
+
+# NEW ROUTE: Send SMS for a specific Company Transaction
+@app.route('/companies/transaction/send_sms/<string:transaction_id>')
+@login_required
+def send_company_transaction_sms(transaction_id):
+    # ACCESS CONTROL: Allows admin, sales roles
+    if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
+        flash('You do not have permission to send SMS receipts or no business selected.', 'danger')
         return redirect(url_for('dashboard'))
     
     if get_current_business_type() != 'Hardware':
@@ -2424,177 +2897,187 @@ def company_transaction(company_id):
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
-    company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
+    transaction = CompanyTransaction.query.filter_by(id=transaction_id, business_id=business_id).first_or_404()
+    company = Company.query.filter_by(id=transaction.company_id, business_id=business_id).first_or_404()
+
+    if not company.phone:
+        flash(f'SMS receipt not sent: No phone number configured for company {company.name}.', 'warning')
+        return redirect(url_for('company_transaction', company_id=company.id))
+
+    business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+    current_balance_str = f"GH₵{company.balance:.2f}" if company.balance >= 0 else f"-GH₵{abs(company.balance):.2f}"
     
-    print_ready = request.args.get('print_ready', 'false').lower() == 'true'
-    last_company_transaction_id = session.pop('last_company_transaction_id', '')
-    last_company_transaction_details = session.pop('last_company_transaction_details', None)
+    sms_message = (
+        f"{business_name_for_sms} Transaction Alert for {company.name}:\n"
+        f"Type: {transaction.type}\n"
+        f"Amount: GH₵{transaction.amount:.2f}\n"
+        f"New Balance: {current_balance_str}\n"
+        f"Date: {transaction.date.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Description: {transaction.description if transaction.description else 'N/A'}\n"
+        f"Recorded By: {transaction.recorded_by}\n\n"
+        f"Thank you for your business!\n"
+        f"From: {business_name_for_sms}"
+    )
+    
+    sms_payload = {
+        'action': 'send-sms',
+        'api_key': ARKESEL_API_KEY,
+        'to': company.phone,
+        'from': ARKESEL_SENDER_ID,
+        'sms': sms_message
+    }
+    
+    try:
+        sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+        sms_response.raise_for_status()
+        sms_result = sms_response.json()
 
-    # Fetch pharmacy info for the receipt
-    pharmacy_info = session.get('business_info', {
-        'name': ENTERPRISE_NAME,
-        'location': PHARMACY_LOCATION, # Reusing for consistency, rename if needed
-        'address': PHARMACY_ADDRESS,
-        'contact': PHARMACY_CONTACT
-    })
-
-    if request.method == 'POST':
-        transaction_type = request.form['type'] # 'Credit' or 'Debit'
-        amount = float(request.form['amount'])
-        description = request.form['description'].strip()
-        send_sms = 'send_sms_receipt' in request.form # Check if the checkbox was checked
-        
-        # Debugging prints for SMS condition
-        print(f"DEBUG: send_sms_receipt checkbox state: {send_sms}")
-        print(f"DEBUG: company.phone value: {company.phone}")
-
-        if amount <= 0:
-            flash('Amount must be positive.', 'danger')
-            return render_template('company_transaction.html', company=company, transactions=[], user_role=session.get('role'), print_ready=False, current_year=datetime.now().year)
-
-        if transaction_type == 'Credit':
-            company.balance += amount
-            flash(f'GH₵{amount:.2f} credited to {company.name}. New balance: GH₵{company.balance:.2f}', 'success')
-        elif transaction_type == 'Debit':
-            company.balance -= amount
-            flash(f'GH₵{amount:.2f} debited from {company.name}. New balance: GH₵{company.balance:.2f}', 'success')
+        if sms_result.get('status') == 'success':
+            flash(f'SMS receipt sent to {company.name} successfully!', 'success')
         else:
-            flash('Invalid transaction type.', 'danger')
-            return render_template('company_transaction.html', company=company, transactions=[], user_role=session.get('role'), print_ready=False, current_year=datetime.now().year)
-
-        new_transaction = CompanyTransaction(
-            company_id=company.id, business_id=business_id, type=transaction_type,
-            amount=amount, description=description, recorded_by=session['username']
-        )
-        db.session.add(new_transaction)
-        db.session.commit()
-
-        # Store transaction details in session for printing
-        session['last_company_transaction_id'] = new_transaction.id
-        session['last_company_transaction_details'] = {
-            'date': new_transaction.date.strftime('%Y-%m-%d %H:%M:%S'),
-            'company_name': company.name,
-            'recorded_by': new_transaction.recorded_by,
-            'transaction_type': new_transaction.type,
-            'amount': new_transaction.amount,
-            'description': description,
-            'new_balance': company.balance
-        }
-
-        # SMS Sending Logic
-        if send_sms and company.phone:
-            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-            current_balance_str = f"GH₵{company.balance:.2f}" if company.balance >= 0 else f"-GH₵{abs(company.balance):.2f}"
-            
-            sms_message = (
-                f"{business_name_for_sms} Transaction Alert for {company.name}:\n"
-                f"Type: {transaction_type}\n"
-                f"Amount: GH₵{amount:.2f}\n"
-                f"New Balance: {current_balance_str}\n"
-                f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Description: {description if description else 'N/A'}\n"
-                f"Recorded By: {session.get('username', 'N/A')}\n\n"
-                f"Thank you for your business!\n"
-                f"From: {business_name_for_sms}"
-            )
-            
-            print(f"Attempting to send SMS to {company.phone} for company transaction.")
-            print(f"SMS Payload: {sms_message}") # Print the actual message content
-
-            sms_payload = {
-                'action': 'send-sms',
-                'api_key': ARKESEL_API_KEY,
-                'to': company.phone,
-                'from': ARKESEL_SENDER_ID,
-                'sms': sms_message
-            }
-            
-            try:
-                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                sms_response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-                sms_result = sms_response.json()
-                print(f"Arkesel SMS API Response: {sms_result}")
-
-                if sms_result.get('status') == 'success':
-                    flash(f'SMS receipt sent to {company.name} successfully!', 'success')
-                else:
-                    # If the API reports an error (status is not 'success'), use its error message
-                    error_message = sms_result.get('message', 'Unknown error from SMS provider.')
-                    flash(f'Failed to send SMS receipt to {company.name}. Error: {error_message}', 'danger')
-            except requests.exceptions.HTTPError as http_err:
-                flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
-            except requests.exceptions.ConnectionError as conn_err:
-                flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
-            except requests.exceptions.Timeout as timeout_err:
-                flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
-            except requests.exceptions.RequestException as req_err:
-                flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
-            except json.JSONDecodeError:
-                flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
-        elif send_sms and not company.phone:
-            flash(f'SMS receipt not sent to {company.name}: No phone number configured for the company.', 'warning')
-
-        # Redirect back to the same page with print_ready flag
-        return redirect(url_for('company_transaction', company_id=company.id, print_ready=True))
-    
-    transactions = CompanyTransaction.query.filter_by(company_id=company.id).order_by(CompanyTransaction.date.desc()).all()
-    
-    print(f"Fetching transactions for company: {company.name}")
-    for t in transactions:
-        print(f"Transaction ID: {t.id}, Type: {t.type}, Amount: {t.amount}, Date: {t.date}, Recorded By: {t.recorded_by}")
-
-    return render_template('company_transaction.html', 
-                           company=company, 
-                           transactions=transactions, 
-                           user_role=session.get('role'),
-                           print_ready=print_ready,
-                           last_company_transaction_id=last_company_transaction_id,
-                           last_company_transaction_details=last_company_transaction_details,
-                           pharmacy_info=pharmacy_info, # Pass pharmacy info for the receipt
-                           current_year=datetime.now().year
-                           )
-
-# Corrected route definition for print_company_receipt
-@app.route('/companies/transaction/print/<string:transaction_id>', methods=['GET'])
+            error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+            flash(f'Failed to send SMS receipt to {company.name}. Error: {error_message}', 'danger')
+    except requests.exceptions.RequestException as e:
+        flash(f'Network error sending SMS receipt: {e}', 'danger')
+    except json.JSONDecodeError:
+        flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+        
+    return redirect(url_for('company_transaction', company_id=company.id))
+@app.route('/print_company_receipt/<string:transaction_id>')
 @login_required
 def print_company_receipt(transaction_id):
-    # transaction_id is now a string, matching the database column type
-    transaction = CompanyTransaction.query.get_or_404(transaction_id) 
-    company = Company.query.get_or_404(transaction.company_id)
+    """
+    Renders a printable receipt for a specific company transaction.
+    """
+    business_id = get_current_business_id()
 
-    # Fetch pharmacy info (assuming you have a way to get this, e.g., from a Business model or environment variables)
-    # Using session.get('business_info') for consistency
-    pharmacy_info = session.get('business_info', {
-        "name": ENTERPRISE_NAME,
-        "location": PHARMACY_LOCATION,
-        "address": PHARMACY_ADDRESS,
-        "contact": PHARMACY_CONTACT
-    })
+    transaction = CompanyTransaction.query.filter_by(id=transaction_id, business_id=business_id).first_or_404()
+    company = Company.query.filter_by(id=transaction.company_id, business_id=business_id).first_or_404()
 
-    # Prepare transaction details for the receipt
-    last_company_transaction_details = {
-        'date': transaction.date.strftime('%Y-%m-%d %H:%M:%S'),
-        'company_name': company.name,
-        'recorded_by': transaction.recorded_by,
-        'transaction_type': transaction.type,
-        'amount': transaction.amount,
-        'description': transaction.description,
-        'new_balance': company.balance # Assuming company.balance reflects the balance *after* this transaction
-    }
+    # Fetch business info for the receipt header/footer
+    business_info = session.get('business_info', {})
+    
+    if not business_info or not business_info.get('name'):
+        business_details = Business.query.filter_by(id=business_id).first()
+        if business_details:
+            business_info = {
+                'name': business_details.name,
+                'address': business_details.address,
+                'location': business_details.location,
+                'phone': business_details.contact,
+                'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+            }
+        else:
+            business_info = {
+                'name': "Your Enterprise Name", # Replace with actual constant
+                'address': "Your Pharmacy Address", # Replace with actual constant
+                'location': "Your Pharmacy Location", # Replace with actual constant
+                'phone': "Your Pharmacy Contact", # Replace with actual constant
+                'email': 'info@example.com' # Default email
+            }
 
-    # This route will render the same company_transaction.html template,
-    # but set print_ready to True to display the receipt section.
-    # It also passes the details for the specific transaction to be printed.
-    return render_template(
-        'company_transaction.html',
-        company=company, # Pass the company object for general page info
-        transactions=[], # No need to display full history on receipt page, can be empty
-        print_ready=True,
-        last_company_transaction_id=transaction.id,
-        last_company_transaction_details=last_company_transaction_details,
-        pharmacy_info=pharmacy_info,
-        current_year=datetime.now().year
+    current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Now access the properties directly from the company object
+    # No need for separate db.session.query for total_creditor_amount/total_debtor_amount here
+    # as they are calculated via @property on the Company model.
+
+    return render_template('company_receipt_template.html',
+                           transaction=transaction,
+                           company=company,
+                           business_info=business_info,
+                           current_date=current_date,
+                           total_creditor_amount=company.total_creditors_amount, # Use the property
+                           total_debtor_amount=company.total_debtors_amount # Use the property
+                           )
+
+@app.route('/print_all_company_transactions/<string:company_id>')
+@login_required
+def print_all_company_transactions(company_id):
+    """
+    Renders a printable list of all transactions for a specific company,
+    with optional filtering by search query, start date, and end date.
+    """
+    business_id = get_current_business_id()
+
+    # Fetch the company details
+    company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
+
+    # Get filter parameters from the request query string
+    search_query = request.args.get('search', '').strip()
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    # Build the base query for company transactions
+    transactions_query = CompanyTransaction.query.filter_by(
+        company_id=company.id,
+        business_id=business_id
     )
+
+    # Apply search filter if provided
+    if search_query:
+        transactions_query = transactions_query.filter(
+            (CompanyTransaction.description.ilike(f'%{search_query}%')) |
+            (CompanyTransaction.type.ilike(f'%{search_query}%'))
+        )
+
+    # Apply date filters if provided
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            transactions_query = transactions_query.filter(CompanyTransaction.date >= start_date)
+        except ValueError:
+            flash('Invalid start date format. Please use YYYY-MM-DD.', 'danger')
+            pass
+
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            transactions_query = transactions_query.filter(CompanyTransaction.date < (end_date + timedelta(days=1)))
+        except ValueError:
+            flash('Invalid end date format. Please use YYYY-MM-DD.', 'danger')
+            pass
+
+    # Order transactions by date, newest first
+    transactions = transactions_query.order_by(CompanyTransaction.date.desc()).all()
+
+    # --- FIX START: Calculate total transactions amount here ---
+    total_transactions_sum = sum(t.amount for t in transactions)
+    # --- FIX END ---
+
+    # Fetch business info for the receipt header/footer
+    business_info = session.get('business_info', {})
+    if not business_info or not business_info.get('name'):
+        business_details = Business.query.filter_by(id=business_id).first()
+        if business_details:
+            business_info = {
+                'name': business_details.name,
+                'address': business_details.address,
+                'location': business_details.location,
+                'phone': business_details.contact,
+                'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+            }
+        else:
+            business_info = {
+                'name': "Your Enterprise Name", # Replace with actual constant
+                'address': "Your Pharmacy Address", # Replace with actual constant
+                'location': "Your Pharmacy Location", # Replace with actual constant
+                'phone': "Your Pharmacy Contact", # Replace with actual constant
+                'email': 'info@example.com' # Default email
+            }
+
+    current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    return render_template('company_transaction.html',
+                           company=company,
+                           transactions=transactions,
+                           business_info=business_info,
+                           current_date=current_date,
+                           search_query=search_query,
+                           start_date=start_date_str,
+                           end_date=end_date_str,
+                           total_transactions_sum=total_transactions_sum # NEW: Pass the calculated sum
+                           )
 
 
 @app.route('/future_orders')
@@ -2611,6 +3094,7 @@ def future_orders():
     business_id = get_current_business_id()
     orders = FutureOrder.query.filter_by(business_id=business_id).order_by(FutureOrder.date_ordered.desc()).all()
     return render_template('future_order_list.html', orders=orders, user_role=session.get('role'), current_year=datetime.now().year)
+
 
 @app.route('/future_orders/add', methods=['GET', 'POST'])
 def add_future_order():
@@ -3073,9 +3557,18 @@ def edit_hirable_item(item_id):
         daily_hire_price = float(request.form['daily_hire_price'])
         current_stock = int(request.form['current_stock'])
 
-        if HirableItem.query.filter(HirableItem.item_name == item_name, HirableItem.business_id == business_id, HirableItem.id != item_id).first():
+        # Check for duplicate name, excluding the current item being edited
+        if HirableItem.query.filter(HirableItem.item_name == item_name,
+                                    HirableItem.business_id == business_id,
+                                    HirableItem.id != item_id).first():
             flash('Hirable item with this name already exists for this business.', 'danger')
-            return render_template('add_edit_hirable_item.html', title='Edit Hirable Item', item=request.form, user_role=session.get('role'), current_year=datetime.now().year)
+            # --- IMPORTANT FIX HERE: Pass the original item_to_edit object back ---
+            # This ensures item.id is available for url_for in the form action
+            return render_template('add_edit_hirable_item.html',
+                                   title=f'Edit Hirable Item: {item_to_edit.item_name}', # Keep original title
+                                   item=item_to_edit, # Pass the SQLAlchemy object
+                                   user_role=session.get('role'),
+                                   current_year=datetime.now().year)
         
         item_to_edit.item_name = item_name
         item_to_edit.description = description
@@ -3083,11 +3576,20 @@ def edit_hirable_item(item_id):
         item_to_edit.current_stock = current_stock
         item_to_edit.last_updated = datetime.now()
         
+        # Handle is_active checkbox
+        item_to_edit.is_active = 'is_active' in request.form # Checkbox is present if checked
+
         db.session.commit()
         flash(f'Hirable item "{item_name}" updated successfully!', 'success')
         return redirect(url_for('hirable_items'))
     
-    return render_template('add_edit_hirable_item.html', title=f'Edit Hirable Item: {item_to_edit.item_name}', item=item_to_edit, user_role=session.get('role'), current_year=datetime.now().year)
+    # GET request or initial render
+    return render_template('add_edit_hirable_item.html',
+                           title=f'Edit Hirable Item: {item_to_edit.item_name}',
+                           item=item_to_edit, # This is already correct for GET
+                           user_role=session.get('role'),
+                           current_year=datetime.now().year)
+
 
 @app.route('/hirable_items/delete/<item_id>')
 def delete_hirable_item(item_id):
@@ -3367,7 +3869,128 @@ def mark_rental_returned(record_id):
         return redirect(url_for('rental_records'))
     
     return render_template('mark_rental_returned.html', record=record, user_role=session.get('role'), current_year=datetime.now().year)
+# app.py - New route for importing inventory from another business
 
+@app.route('/inventory/import_from_business', methods=['GET', 'POST'])
+@login_required
+def import_inventory_from_business():
+    # ACCESS CONTROL: Only admin can import inventory from another business
+    if session.get('role') not in ['admin'] or not get_current_business_id():
+        flash('You do not have permission to import inventory or no business selected.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    current_business_id = get_current_business_id()
+    current_business_type = get_current_business_type()
+
+    # Fetch all other businesses of the same type, excluding the current business
+    other_businesses_same_type = Business.query.filter(
+        Business.id != current_business_id,
+        Business.type == current_business_type
+    ).all()
+
+    if request.method == 'POST':
+        source_business_id = request.form.get('source_business_id')
+
+        if not source_business_id:
+            flash('Please select a source business.', 'danger')
+            return render_template('import_inventory_from_business.html',
+                                   other_businesses=other_businesses_same_type,
+                                   user_role=session.get('role'),
+                                   current_year=datetime.now().year)
+
+        source_business = Business.query.get(source_business_id)
+        if not source_business or source_business.type != current_business_type:
+            flash('Invalid source business selected or business type mismatch.', 'danger')
+            return render_template('import_inventory_from_business.html',
+                                   other_businesses=other_businesses_same_type,
+                                   user_role=session.get('role'),
+                                   current_year=datetime.now().year)
+
+        # Fetch inventory items from the source business
+        source_inventory_items = InventoryItem.query.filter_by(
+            business_id=source_business_id,
+            is_active=True # Only import active items
+        ).all()
+
+        if not source_inventory_items:
+            flash(f'No active inventory items found in "{source_business.name}" to import.', 'warning')
+            return render_template('import_inventory_from_business.html',
+                                   other_businesses=other_businesses_same_type,
+                                   user_role=session.get('role'),
+                                   current_year=datetime.now().year)
+
+        updated_count = 0
+        added_count = 0
+        errors = []
+
+        for item in source_inventory_items:
+            try:
+                # Check if an item with the same product_name already exists in the current business
+                existing_target_item = InventoryItem.query.filter_by(
+                    product_name=item.product_name,
+                    business_id=current_business_id
+                ).first()
+
+                if existing_target_item:
+                    # Update existing item's stock and other relevant fields
+                    # You might want to define a more sophisticated merge logic here
+                    # For simplicity, we'll update key fields and add stock.
+                    existing_target_item.current_stock += item.current_stock # Add stock
+                    existing_target_item.purchase_price = item.purchase_price # Overwrite purchase price
+                    existing_target_item.sale_price = item.sale_price # Overwrite sale price
+                    existing_target_item.number_of_tabs = item.number_of_tabs # Overwrite units/pack
+                    existing_target_item.unit_price_per_tab = item.unit_price_per_tab # Overwrite unit price
+                    existing_target_item.last_updated = datetime.now()
+                    existing_target_item.batch_number = item.batch_number # Overwrite batch number
+                    existing_target_item.is_fixed_price = item.is_fixed_price
+                    existing_target_item.fixed_sale_price = item.fixed_sale_price
+                    existing_target_item.is_active = item.is_active # Maintain active status
+
+                    # For expiry date, update only if the source item has a valid, newer expiry date
+                    if item.expiry_date and (not existing_target_item.expiry_date or item.expiry_date > existing_target_item.expiry_date):
+                        existing_target_item.expiry_date = item.expiry_date
+
+                    db.session.add(existing_target_item)
+                    updated_count += 1
+                else:
+                    # Add new item to the current business's inventory
+                    new_item = InventoryItem(
+                        business_id=current_business_id,
+                        product_name=item.product_name,
+                        category=item.category,
+                        purchase_price=item.purchase_price,
+                        sale_price=item.sale_price,
+                        current_stock=item.current_stock,
+                        last_updated=datetime.now(),
+                        batch_number=item.batch_number,
+                        number_of_tabs=item.number_of_tabs,
+                        unit_price_per_tab=item.unit_price_per_tab,
+                        item_type=item.item_type,
+                        expiry_date=item.expiry_date,
+                        is_fixed_price=item.is_fixed_price,
+                        fixed_sale_price=item.fixed_sale_price,
+                        is_active=True # New items are active by default
+                    )
+                    db.session.add(new_item)
+                    added_count += 1
+            except Exception as e:
+                errors.append(f"Error processing item '{item.product_name}': {e}")
+        
+        db.session.commit()
+        
+        if errors:
+            flash(f'Inventory import completed with {updated_count} updated, {added_count} added, and {len(errors)} errors. Check console for details.', 'warning')
+            for error in errors:
+                print(f"Inventory Import Error: {error}")
+        else:
+            flash(f'Inventory imported successfully! {updated_count} items updated, {added_count} items added from "{source_business.name}".', 'success')
+        
+        return redirect(url_for('inventory')) # Redirect to current business's inventory
+
+    return render_template('import_inventory_from_business.html',
+                           other_businesses=other_businesses_same_type,
+                           user_role=session.get('role'),
+                           current_year=datetime.now().year)
 @app.route('/rental_records/cancel/<record_id>')
 def cancel_rental_record(record_id):
     # ACCESS CONTROL: Allows admin and sales roles
