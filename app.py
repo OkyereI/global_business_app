@@ -315,37 +315,71 @@ def get_current_business_type():
     return None
 
 # --- JSON Serialization Helper for InventoryItem and HirableItem ---
-def serialize_inventory_item(item):
-    """Converts an InventoryItem SQLAlchemy object to a JSON-serializable dictionary."""
-    return {
-        'id': item.id,
-        'product_name': item.product_name,
-        'category': item.category,
-        'purchase_price': item.purchase_price,
-        'sale_price': item.sale_price,
-        'current_stock': item.current_stock,
-        'last_updated': item.last_updated.isoformat(), # Convert datetime to ISO 8601 string
-        'batch_number': item.batch_number,
-        'number_of_tabs': item.number_of_tabs,
-        'unit_price_per_tab': item.unit_price_per_tab,
-        'item_type': item.item_type,
-        'expiry_date': item.expiry_date.isoformat() if item.expiry_date else None, # Convert date to ISO 8601 string
-        'is_fixed_price': item.is_fixed_price,
-        'fixed_sale_price': item.fixed_sale_price,
-        'is_active': item.is_active
-    }
+def safe_convert(value, converter, default):
+    """Safe conversion with exception handling"""
+    try:
+        return converter(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
 
+def serialize_inventory_item(item):
+    try:
+        # Handle dates with duck-typing and fallbacks
+        last_updated = item.last_updated.isoformat() if hasattr(item.last_updated, 'isoformat') else None
+        expiry_date = item.expiry_date.isoformat() if hasattr(item.expiry_date, 'isoformat') else None
+
+        return {
+            'id': safe_convert(item.id, str, ''),
+            'product_name': safe_convert(item.product_name, str, 'N/A'),
+            'category': safe_convert(item.category, str, 'N/A'),
+            'purchase_price': safe_convert(item.purchase_price, float, 0.0),
+            'sale_price': safe_convert(item.sale_price, float, 0.0),
+            'current_stock': safe_convert(item.current_stock, float, 0.0),
+            'last_updated': last_updated,
+            'batch_number': safe_convert(item.batch_number, str, 'N/A'),
+            'number_of_tabs': safe_convert(item.number_of_tabs, float, 1.0),
+            'unit_price_per_tab': safe_convert(item.unit_price_per_tab, float, 0.0),
+            'item_type': safe_convert(item.item_type, str, 'N/A'),
+            'expiry_date': expiry_date,
+            'is_fixed_price': safe_convert(item.is_fixed_price, bool, False),
+            'fixed_sale_price': safe_convert(item.fixed_sale_price, float, 0.0),
+            'is_active': safe_convert(item.is_active, bool, False)
+        }
+    except Exception as e:
+        # Log full error details for debugging
+        print(f"CRITICAL: Serialization failed for {getattr(item, 'id', 'UNKNOWN')}: {str(e)}")
+        # Return minimal error-safe representation
+        return {
+            "id": getattr(item, "id", "error"),
+            "product_name": "Serialization Error",
+            "current_stock": 0.0,
+            "sale_price": 0.0,
+            # Include other required fields with safe defaults
+        }
 def serialize_hirable_item(item):
     """Converts a HirableItem SQLAlchemy object to a JSON-serializable dictionary."""
-    return {
-        'id': item.id,
-        'item_name': item.item_name,
-        'description': item.description,
-        'daily_hire_price': item.daily_hire_price,
-        'current_stock': item.current_stock,
-        'last_updated': item.last_updated.isoformat(),
-        'is_active': item.is_active
-    }
+    try:
+        return {
+            'id': str(item.id),
+            'item_name': str(item.item_name),
+            'description': str(item.description) if item.description is not None else '',
+            'daily_hire_price': float(item.daily_hire_price),
+            'current_stock': int(item.current_stock),
+            'last_updated': item.last_updated.isoformat() if isinstance(item.last_updated, (datetime, datetime.date)) else None,
+            'is_active': bool(item.is_active)
+        }
+    except Exception as e:
+        print(f"ERROR: Failed to serialize HirableItem with ID {item.id if hasattr(item, 'id') else 'Unknown'}: {e}")
+        return {
+            'id': str(item.id) if hasattr(item, 'id') else 'error_id',
+            'item_name': 'Serialization Error',
+            'description': 'Error',
+            'daily_hire_price': 0.0,
+            'current_stock': 0,
+            'last_updated': None,
+            'is_active': False
+        }
+
 
 
 def calculate_company_balance_details(company_id):
@@ -376,6 +410,24 @@ def calculate_company_balance_details(company_id):
         'total_debtors': total_debtors,
         'total_creditors': total_creditors
     }
+def serialize_sale_record(sale):
+    """Converts a SaleRecord SQLAlchemy object to a JSON-serializable dictionary."""
+    return {
+        'id': sale.id,
+        'product_id': sale.product_id,
+        'product_name': sale.product_name,
+        'quantity_sold': float(sale.quantity_sold),
+        'sale_unit_type': sale.sale_unit_type,
+        'price_at_time_per_unit_sold': float(sale.price_at_time_per_unit_sold),
+        'total_amount': float(sale.total_amount),
+        'sale_date': sale.sale_date.isoformat(),
+        'customer_phone': sale.customer_phone,
+        'sales_person_name': sale.sales_person_name,
+        'transaction_id': sale.transaction_id
+    }
+
+
+
 
 # --- Authentication Routes ---
 
@@ -1679,6 +1731,7 @@ def delete_inventory_item(item_id):
 # --- Sales Records Management ---
 
 @app.route('/sales')
+@login_required # Ensure this decorator is present for access control
 def sales():
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
@@ -1721,138 +1774,391 @@ def sales():
             elif time_to_expiry.days < 0:
                 sale_item_expires_soon = 'Expired'
 
-        # Augment the sale record with expiry info
+        # Augment the sale record with expiry info and ensure all fields are JSON-serializable
         sale_data = {
-            'id': sale.id,
-            'product_id': sale.product_id,
-            'product_name': sale.product_name,
-            'quantity_sold': sale.quantity_sold,
-            'sale_unit_type': sale.sale_unit_type,
-            'price_at_time_per_unit_sold': sale.price_at_time_per_unit_sold,
-            'total_amount': sale.total_amount,
-            'sale_date': sale.sale_date,
-            'customer_phone': sale.customer_phone,
-            'sales_person_name': sale.sales_person_name,
-            'reference_number': sale.reference_number,
-            'transaction_id': sale.transaction_id,
-            'expiry_date': sale_item_expiry_date, # Pass expiry date
-            'expires_soon': sale_item_expires_soon # Pass expiry status
+            'id': str(sale.id),
+            'product_id': str(sale.product_id),
+            'product_name': str(sale.product_name),
+            'quantity_sold': float(sale.quantity_sold), # Convert Numeric to float
+            'sale_unit_type': str(sale.sale_unit_type),
+            'price_at_time_per_unit_sold': float(sale.price_at_time_per_unit_sold), # Convert Numeric to float
+            'total_amount': float(sale.total_amount), # Convert Numeric to float
+            'sale_date': sale.sale_date.isoformat(), # Convert datetime to ISO 8601 string
+            'customer_phone': str(sale.customer_phone) if sale.customer_phone else None,
+            'sales_person_name': str(sale.sales_person_name) if sale.sales_person_name else None,
+            'reference_number': str(sale.reference_number) if hasattr(sale, 'reference_number') and sale.reference_number else None, # Ensure reference_number exists and is string
+            'transaction_id': str(sale.transaction_id) if sale.transaction_id else 'N/A',
+            'expiry_date': sale_item_expiry_date.isoformat() if sale_item_expiry_date else None, # Convert date to ISO 8601 string
+            'expires_soon': sale_item_expires_soon # This is already boolean or string 'Expired'
         }
 
         if transaction_id not in transactions:
             transactions[transaction_id] = {
-                'id': transaction_id,
-                'sale_date': sale.sale_date.strftime('%Y-%m-%d %H:%M:%S'),
-                'customer_phone': sale.customer_phone,
-                'sales_person_name': sale.sales_person_name,
+                'id': str(transaction_id),
+                'sale_date': sale.sale_date.isoformat(), # Convert datetime to ISO 8601 string
+                'customer_phone': str(sale.customer_phone) if sale.customer_phone else None,
+                'sales_person_name': str(sale.sales_person_name) if sale.sales_person_name else None,
                 'total_amount': 0.0,
                 'items': [],
-                'reference_number': sale.reference_number
+                'reference_number': str(sale.reference_number) if hasattr(sale, 'reference_number') and sale.reference_number else None
             }
         transactions[transaction_id]['items'].append(sale_data)
-        transactions[transaction_id]['total_amount'] += sale.total_amount
+        transactions[transaction_id]['total_amount'] += float(sale.total_amount) # Ensure addition is with float
 
     sorted_transactions = sorted(list(transactions.values()), 
-                                 key=lambda x: datetime.strptime(x['sale_date'], '%Y-%m-%d %H:%M:%S'), 
+                                 key=lambda x: datetime.fromisoformat(x['sale_date']), # Use fromisoformat for sorting
                                  reverse=True)
     
     # Calculate total for currently displayed sales
     total_displayed_sales = sum(t['total_amount'] for t in sorted_transactions)
-
-    return render_template('sales_list.html', transactions=sorted_transactions, user_role=session.get('role'), business_type=session.get('business_type'), search_query=search_query, total_displayed_sales=total_displayed_sales, current_year=datetime.now().year)
+    for transaction in transactions:
+        if 'items' in transaction:
+            for item in transaction['items']:
+                # Convert string dates to datetime objects
+                if 'expiry_date' in item:
+                    if isinstance(item['expiry_date'], str):
+                        try:
+                            # Convert string to datetime object
+                            item['expiry_date'] = datetime.strptime(
+                                item['expiry_date'], 
+                                '%Y-%m-%d'  # Match your date format
+                            )
+                        except (ValueError, TypeError):
+                            # Handle invalid/empty dates
+                            item['expiry_date'] = None
+                    # Ensure existing datetimes are timezone-naive
+                    elif isinstance(item['expiry_date'], datetime):
+                        # Remove timezone info if present
+                        if item['expiry_date'].tzinfo is not None:
+                            item['expiry_date'] = item['expiry_date'].replace(tzinfo=None)
+    
+    return render_template('sales_list.html', 
+                           transactions=sorted_transactions, 
+                           user_role=session.get('role'), 
+                           business_type=session.get('business_type'), 
+                           search_query=search_query, 
+                           total_displayed_sales=total_displayed_sales, 
+                           current_year=datetime.now().year) # Pass current_year
 
 
 @app.route('/sales/add', methods=['GET', 'POST'])
+@login_required
 def add_sale():
+    # DEBUG: Print at the very beginning of the route
+    print(f"\n--- DEBUG: Entering add_sale route ---")
+    print(f"DEBUG: Session username: {session.get('username')}")
+    print(f"DEBUG: Session role: {session.get('role')}")
+    print(f"DEBUG: Session business_id: {session.get('business_id')}")
+
     # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to add sales records or no business selected.', 'danger')
+        print(f"DEBUG: Access denied for user {session.get('username')}, role {session.get('role')}, business_id {session.get('business_id')}")
         return redirect(url_for('dashboard'))
     
     business_id = get_current_business_id()
     business_type = get_current_business_type()
 
-    # Determine which item types are relevant for the current business type
+    print(f"DEBUG: Current business_id: {business_id}")
+    print(f"DEBUG: Current business_type: {business_type}")
+
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
     elif business_type in ['Supermarket', 'Provision Store']:
-        relevant_item_types = ['Provision Store'] # Assuming 'Provision Store' covers general goods for these
-    # Add more mappings if you have other business types and their corresponding item types
+        relevant_item_types = ['Provision Store']
 
-    available_inventory_items = InventoryItem.query.filter(
+    search_query = request.args.get('search', '').strip()
+
+    available_inventory_items_query = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
         InventoryItem.is_active == True,
-        InventoryItem.item_type.in_(relevant_item_types) # Use .in_() for a list of types
-    ).all()
-    serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
+        InventoryItem.item_type.in_(relevant_item_types)
+    )
+
+    if search_query:
+        available_inventory_items_query = available_inventory_items_query.filter(
+            InventoryItem.product_name.ilike(f'%{search_query}%') |
+            InventoryItem.category.ilike(f'%{search_query}%') |
+            InventoryItem.batch_number.ilike(f'%{search_query}%')
+        )
     
-    # Get pharmacy info for receipts
-    pharmacy_info = session.get('business_info', {})
+    available_inventory_items = available_inventory_items_query.all()
+    
+    # DEBUG: Check types before serialization
+    print(f"DEBUG: Type of available_inventory_items (before serialization): {type(available_inventory_items)}")
+    for i, item in enumerate(available_inventory_items):
+        print(f"DEBUG:   Type of item {i} in available_inventory_items: {type(item)}")
+        # If it's an SQLAlchemy model instance, check some attributes
+        if hasattr(item, '__tablename__'):
+            print(f"DEBUG:     Item {i} is a SQLAlchemy model: {item.__tablename__}")
+            # Try to access a simple attribute to see if it causes issues
+            try:
+                print(f"DEBUG:     Item {i} product_name: {item.product_name}")
+            except Exception as e:
+                print(f"DEBUG:     Error accessing product_name for item {i}: {e}")
+
+    # Ensure serialized_inventory_items is clean
+    serialized_inventory_items = []
+    try:
+        serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
+        print(f"DEBUG: Successfully serialized inventory items.")
+    except Exception as e:
+        print(f"ERROR: Exception during serialization of available_inventory_items: {e}")
+        # If serialization fails here, we return an empty list or a safe default
+        serialized_inventory_items = []
+
+
+    # --- Defensive cleaning of pharmacy_info ---
+    raw_pharmacy_info = session.get('business_info', {})
+    if isinstance(raw_pharmacy_info, dict):
+        pharmacy_info = {
+            'name': str(raw_pharmacy_info.get('name', 'N/A')),
+            'address': str(raw_pharmacy_info.get('address', 'N/A')),
+            'location': str(raw_pharmacy_info.get('location', 'N/A')),
+            'phone': str(raw_pharmacy_info.get('phone', 'N/A')),
+            'email': str(raw_pharmacy_info.get('email', 'N/A')),
+            'contact': str(raw_pharmacy_info.get('contact', 'N/A'))
+        }
+    else:
+        business_details = Business.query.filter_by(id=business_id).first()
+        if business_details:
+            pharmacy_info = {
+                'name': str(business_details.name),
+                'address': str(business_details.address),
+                'location': str(business_details.location),
+                'phone': str(business_details.contact),
+                'email': str(business_details.email) if hasattr(business_details, 'email') and business_details.email is not None else 'N/A',
+                'contact': str(business_details.contact)
+            }
+        else:
+            pharmacy_info = {
+                'name': "Your Enterprise Name",
+                'address': "Your Pharmacy Address",
+                'location': "Your Pharmacy Location",
+                'phone': "Your Pharmacy Contact",
+                'email': 'info@example.com',
+                'contact': "Your Pharmacy Contact"
+            }
+    print(f"DEBUG: Pharmacy info prepared. Type: {type(pharmacy_info)}")
+
+
+    # --- Helper function to ensure cart items are JSON serializable ---
+    def clean_cart_items_for_template(raw_cart_items):
+        cleaned_items = []
+        if isinstance(raw_cart_items, list):
+            for item_data in raw_cart_items:
+                if isinstance(item_data, dict):
+                    cleaned_item = {
+                        'product_id': str(item_data.get('product_id', '')),
+                        'product_name': str(item_data.get('product_name', '')),
+                        'quantity_sold': float(item_data.get('quantity_sold', 0.0)),
+                        'sale_unit_type': str(item_data.get('sale_unit_type', '')),
+                        'price_at_time_per_unit_sold': float(item_data.get('price_at_time_per_unit_sold', 0.0)),
+                        'item_total_amount': float(item_data.get('item_total_amount', 0.0))
+                    }
+                    cleaned_items.append(cleaned_item)
+        return cleaned_items
+    # --- End Helper Function ---
+
+    # Initialize variables for the template context
+    sale_for_template_items = [] # Ensure this is explicitly an empty list
+    customer_phone_for_template = ''
+    sales_person_name_for_template = session.get('username', 'N/A') # Use this consistently
+    print_ready = request.args.get('print_ready', 'false').lower() == 'true'
+    last_transaction_details = session.pop('last_transaction_details', [])
+    last_transaction_grand_total = session.pop('last_transaction_grand_total', 0.0)
+    last_transaction_id = session.pop('last_transaction_id', '')
+    last_transaction_customer_phone = session.pop('last_transaction_customer_phone', '')
+    last_transaction_sales_person = session.pop('last_transaction_sales_person', '')
+    last_transaction_date = session.pop('last_transaction_date', '')
+    
+    # NEW: Get auto_print flag from session
+    auto_print = session.pop('auto_print', False)
+
 
     if request.method == 'POST':
-        customer_phone = request.form.get('customer_phone', '').strip()
-        transaction_id = str(uuid.uuid4()) # Generate a unique transaction ID for this basket sale
-        sales_person_name = session.get('username', 'N/A')
-        sale_date = datetime.now()
-
-        cart_items_json = request.form.get('cart_items_json')
-        if not cart_items_json:
-            flash('No items in the cart to record a sale.', 'danger')
-            return redirect(url_for('add_sale'))
-
-        cart_items = json.loads(cart_items_json)
+        customer_phone_for_template = request.form.get('customer_phone', '').strip()
         
+        cart_items_json = request.form.get('cart_items_json')
+        
+        cart_items = []
+        if cart_items_json:
+            try:
+                loaded_cart_items = json.loads(cart_items_json)
+                cart_items = clean_cart_items_for_template(loaded_cart_items)
+            except json.JSONDecodeError:
+                flash('Error processing cart data. Please try again.', 'danger')
+        
+        # Always set sale_for_template_items based on the processed cart_items for POST errors
+        sale_for_template_items = cart_items
+
+        if not cart_items:
+            flash('No items in the cart to record a sale.', 'danger')
+            # DEBUG: Print types before rendering on error
+            print(f"\n--- DEBUG (POST Error, No Items) ---")
+            print(f"Type of sale_for_template_items: {type(sale_for_template_items)}")
+            for i, item in enumerate(sale_for_template_items):
+                print(f"  Type of sale_for_template_items[{i}]: {type(item)}")
+                if isinstance(item, dict):
+                    for key, value in item.items():
+                        print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                else:
+                    print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
+            print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
+            for i, item in enumerate(serialized_inventory_items):
+                print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
+                if isinstance(item, dict):
+                    for key, value in item.items():
+                        print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                else:
+                    print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
+            print(f"Type of pharmacy_info: {type(pharmacy_info)}")
+            if isinstance(pharmacy_info, dict):
+                for key, value in pharmacy_info.items():
+                    print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+            else:
+                print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
+            print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
+            print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
+            print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
+            print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
+            print(f"--- END DEBUG ---")
+
+            try:
+                return render_template('add_edit_sale.html',
+                                    title='Add Sale Record',
+                                    inventory_items=serialized_inventory_items,
+                                    sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                                    user_role=session.get('role'),
+                                    pharmacy_info=pharmacy_info,
+                                    print_ready=False,
+                                    current_year=datetime.now().year,
+                                    search_query=search_query,
+                                    business_type=business_type)
+            except Exception as e:
+                print(f"ERROR: Exception caught during render_template (POST, No Items): {e}")
+                raise # Re-raise to see full traceback
+
+
         total_grand_amount = 0.0
         recorded_sale_details = []
 
         # Validate stock before processing any sales
         for item_data in cart_items:
             product_id = item_data['product_id']
-            quantity_sold = float(item_data['quantity_sold'])
+            quantity_sold = item_data['quantity_sold']
             product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
             if not product:
                 flash(f'Product with ID {product_id} not found.', 'danger')
-                # Re-render with existing cart items
-                return render_template('add_edit_sale.html',
-                                       title='Add Sale Record',
-                                       inventory_items=serialized_inventory_items,
-                                       sale={'customer_phone': customer_phone, 'sales_person_name': sales_person_name, 'items': cart_items},
-                                       user_role=session.get('role'),
-                                       pharmacy_info=pharmacy_info,
-                                       print_ready=False,
-                                       current_year=datetime.now().year)
+                print(f"\n--- DEBUG (POST Error, Product Not Found) ---")
+                print(f"Type of sale_for_template_items: {type(sale_for_template_items)}")
+                for i, item in enumerate(sale_for_template_items):
+                    print(f"  Type of sale_for_template_items[{i}]: {type(item)}")
+                    if isinstance(item, dict):
+                        for key, value in item.items():
+                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                    else:
+                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
+                print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
+                for i, item in enumerate(serialized_inventory_items):
+                    print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
+                    if isinstance(item, dict):
+                        for key, value in item.items():
+                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                    else:
+                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
+                print(f"Type of pharmacy_info: {type(pharmacy_info)}")
+                if isinstance(pharmacy_info, dict):
+                    for key, value in pharmacy_info.items():
+                        print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                else:
+                    print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
+                print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
+                print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
+                print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
+                print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
+                print(f"--- END DEBUG ---")
+                try:
+                    return render_template('add_edit_sale.html',
+                                        title='Add Sale Record',
+                                        inventory_items=serialized_inventory_items,
+                                        sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                                        user_role=session.get('role'),
+                                        pharmacy_info=pharmacy_info,
+                                        print_ready=False,
+                                        current_year=datetime.now().year,
+                                        search_query=search_query,
+                                        business_type=business_type)
+                except Exception as e:
+                    print(f"ERROR: Exception caught during render_template (POST, Product Not Found): {e}")
+                    raise # Re-raise to see full traceback
 
-            # Adjust quantity based on unit type for stock check
+
             quantity_for_stock_check = quantity_sold
             if item_data['sale_unit_type'] == 'pack':
                 quantity_for_stock_check = quantity_sold * product.number_of_tabs
 
             if product.current_stock < quantity_for_stock_check:
                 flash(f'Insufficient stock for {product.product_name}. Available: {product.current_stock:.2f} units. Tried to sell: {quantity_for_stock_check:.2f} units.', 'danger')
-                # Re-render with existing cart items
-                return render_template('add_edit_sale.html',
-                                       title='Add Sale Record',
-                                       inventory_items=serialized_inventory_items,
-                                       sale={'customer_phone': customer_phone, 'sales_person_name': sales_person_name, 'items': cart_items},
-                                       user_role=session.get('role'),
-                                       pharmacy_info=pharmacy_info,
-                                       print_ready=False,
-                                       current_year=datetime.now().year)
+                print(f"\n--- DEBUG (POST Error, Insufficient Stock) ---")
+                print(f"Type of sale_for_template_items: {type(sale_for_template_items)}")
+                for i, item in enumerate(sale_for_template_items):
+                    print(f"  Type of sale_for_template_items[{i}]: {type(item)}")
+                    if isinstance(item, dict):
+                        for key, value in item.items():
+                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                    else:
+                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
+                print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
+                for i, item in enumerate(serialized_inventory_items):
+                    print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
+                    if isinstance(item, dict):
+                        for key, value in item.items():
+                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                    else:
+                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
+                print(f"Type of pharmacy_info: {type(pharmacy_info)}")
+                if isinstance(pharmacy_info, dict):
+                    for key, value in pharmacy_info.items():
+                        print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+                else:
+                    print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
+                print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
+                print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
+                print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
+                print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
+                print(f"--- END DEBUG ---")
+                try:
+                    return render_template('add_edit_sale.html',
+                                        title='Add Sale Record',
+                                        inventory_items=serialized_inventory_items,
+                                        sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                                        user_role=session.get('role'),
+                                        pharmacy_info=pharmacy_info,
+                                        print_ready=False,
+                                        current_year=datetime.now().year,
+                                        search_query=search_query,
+                                        business_type=business_type)
+                except Exception as e:
+                    print(f"ERROR: Exception caught during render_template (POST, Insufficient Stock): {e}")
+                    raise # Re-raise to see full traceback
+
 
         # If all stock checks pass, proceed with recording sales and deducting stock
+        transaction_id = str(uuid.uuid4()) # Generate transaction ID here, after all checks
+        sale_date = datetime.now() # Get sale date here
         for item_data in cart_items:
             product_id = item_data['product_id']
-            quantity_sold = float(item_data['quantity_sold'])
+            quantity_sold = item_data['quantity_sold']
             sale_unit_type = item_data['sale_unit_type']
-            price_at_time_per_unit_sold = float(item_data['price_at_time_per_unit_sold'])
-            item_total_amount = float(item_data['item_total_amount'])
+            price_at_time_per_unit_sold = item_data['price_at_time_per_unit_sold']
+            item_total_amount = item_data['item_total_amount']
 
             product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
             
-            # Deduct stock (already checked for sufficiency above)
             quantity_to_deduct = quantity_sold
             if sale_unit_type == 'pack':
                 quantity_to_deduct = quantity_sold * product.number_of_tabs
@@ -1864,14 +2170,14 @@ def add_sale():
                 business_id=business_id,
                 product_id=product.id,
                 product_name=product.product_name,
-                quantity_sold=quantity_sold, # Store quantity in the unit sold (e.g., 2 packs)
+                quantity_sold=quantity_sold,
                 sale_unit_type=sale_unit_type,
                 price_at_time_per_unit_sold=price_at_time_per_unit_sold,
                 total_amount=item_total_amount,
                 sale_date=sale_date,
-                customer_phone=customer_phone,
-                sales_person_name=sales_person_name,
-                transaction_id=transaction_id # Link all items in one basket to the same transaction ID
+                customer_phone=customer_phone_for_template,
+                sales_person_name=sales_person_name_for_template, # Use the consistently defined variable
+                transaction_id=transaction_id
             )
             db.session.add(new_sale)
             total_grand_amount += item_total_amount
@@ -1886,17 +2192,16 @@ def add_sale():
         db.session.commit()
         flash('Sale recorded successfully!', 'success')
 
-        # Store details in session for printing receipt
         session['last_transaction_details'] = recorded_sale_details
         session['last_transaction_grand_total'] = total_grand_amount
         session['last_transaction_id'] = transaction_id
-        session['last_transaction_customer_phone'] = customer_phone
-        session['last_transaction_sales_person'] = sales_person_name
+        session['last_transaction_customer_phone'] = customer_phone_for_template
+        session['last_transaction_sales_person'] = sales_person_name_for_template
         session['last_transaction_date'] = sale_date.strftime('%Y-%m-%d %H:%M:%S')
+        session['auto_print'] = True  # NEW: Set auto print flag
 
-        # SMS Sending Logic for Sales Records
-        send_sms = 'send_sms_receipt' in request.form # Check if the checkbox was checked
-        if send_sms and customer_phone:
+        send_sms = 'send_sms_receipt' in request.form
+        if send_sms and customer_phone_for_template:
             business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
             
             sms_message = (
@@ -1905,30 +2210,27 @@ def add_sale():
                 f"Date: {sale_date.strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"Total Amount: GH₵{total_grand_amount:.2f}\n"
                 f"Items: " + ", ".join([f"{item['product_name']} ({item['quantity_sold']} {item['sale_unit_type']})" for item in recorded_sale_details]) + "\n"
-                f"Sales Person: {sales_person_name}\n\n"
+                f"Sales Person: {sales_person_name_for_template}\n\n"
                 f"Thank you for your purchase!\n"
                 f"From: {business_name_for_sms}"
             )
             
-            print(f"Attempting to send SMS to {customer_phone} for sale transaction.")
-            print(f"SMS Payload: {sms_message}") # Print the actual message content
+            print(f"Attempting to send SMS to {customer_phone_for_template} for sale transaction.")
+            print(f"SMS Payload: {sms_message}")
 
             sms_payload = {
-                'action': 'send-sms',
-                'api_key': ARKESEL_API_KEY,
-                'to': customer_phone,
-                'from': ARKESEL_SENDER_ID,
-                'sms': sms_message
+                'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone_for_template,
+                'from': ARKESEL_SENDER_ID, 'sms': sms_message
             }
             
             try:
                 sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                sms_response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+                sms_response.raise_for_status()
                 sms_result = sms_response.json()
                 print(f"Arkesel SMS API Response: {sms_result}")
 
                 if sms_result.get('status') == 'success':
-                    flash(f'SMS receipt sent to customer {customer_phone} successfully!', 'success')
+                    flash(f'SMS receipt sent to customer {customer_phone_for_template} successfully!', 'success')
                 else:
                     error_message = sms_result.get('message', 'Unknown error from SMS provider.')
                     flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
@@ -1942,40 +2244,82 @@ def add_sale():
                 flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
             except json.JSONDecodeError:
                 flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
-        elif send_sms and not customer_phone:
+        elif send_sms and not customer_phone_for_template:
             flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
 
         return redirect(url_for('add_sale', print_ready='true'))
+    
     # GET request / Initial render
-    default_sale = {
-        'sales_person_name': session.get('username', 'N/A'),
-        'customer_phone': '',
-        'items': [] # Ensure 'items' is always an empty list for new sales
+    # If print_ready is true, we are showing a receipt, the form items should be empty.
+    if print_ready:
+        sale_for_template_items = []
+    # If not print_ready, it's either an initial GET or a GET after a non-print redirect.
+    # In these cases, 'items' should be an empty list for a fresh form.
+    else:
+        # Explicitly ensure this is a fresh, empty list on GET
+        sale_for_template_items = [] 
+
+    # Construct the final 'sale' dictionary for the template
+    sale_final_context = {
+        'sales_person_name': sales_person_name_for_template,
+        'customer_phone': customer_phone_for_template,
+        'items': sale_for_template_items # This should now consistently be an empty list
     }
-    print_ready = request.args.get('print_ready', 'false').lower() == 'true'
-    last_transaction_details = session.pop('last_transaction_details', [])
-    last_transaction_grand_total = session.pop('last_transaction_grand_total', 0.0)
-    last_transaction_id = session.pop('last_transaction_id', '')
-    last_transaction_customer_phone = session.pop('last_transaction_customer_phone', '')
-    last_transaction_sales_person = session.pop('last_transaction_sales_person', '')
-    last_transaction_date = session.pop('last_transaction_date', '')
 
-    return render_template('add_edit_sale.html', 
-                           title='Add Sale Record', 
-                           inventory_items=serialized_inventory_items, # Pass serialized items
-                           sale=default_sale, # Pass default_sale with empty items list
-                           user_role=session.get('role'),
-                           pharmacy_info=pharmacy_info,
-                           print_ready=print_ready,
-                           last_transaction_details=last_transaction_details,
-                           last_transaction_grand_total=last_transaction_grand_total,
-                           last_transaction_id=last_transaction_id,
-                           last_transaction_customer_phone=last_transaction_customer_phone,
-                           last_transaction_sales_person=last_transaction_sales_person,
-                           last_transaction_date=last_transaction_date,
-                           current_year=datetime.now().year)
+    # DEBUG: Print types before rendering on GET/Initial load
+    print(f"\n--- DEBUG (GET/Initial Load) - Before Render ---")
+    print(f"Type of sale_final_context['items']: {type(sale_final_context['items'])}, Value: {repr(sale_final_context['items'])}")
+    for i, item in enumerate(sale_final_context['items']):
+        print(f"  Type of sale_final_context['items'][{i}]: {type(item)}, Value: {repr(item)}")
+        if isinstance(item, dict):
+            for key, value in item.items():
+                print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+        else:
+            print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
 
+    print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
+    for i, item in enumerate(serialized_inventory_items):
+        print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
+        if isinstance(item, dict):
+            for key, value in item.items():
+                print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+        else:
+            print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
 
+    print(f"Type of pharmacy_info: {type(pharmacy_info)}")
+    if isinstance(pharmacy_info, dict):
+        for key, value in pharmacy_info.items():
+            print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
+    else:
+        print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
+
+    print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
+    print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
+    print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
+    print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
+    print(f"--- END DEBUG ---")
+
+    try:
+        return render_template('add_edit_sale.html', 
+                               title='Add Sale Record', 
+                               inventory_items=serialized_inventory_items,
+                               sale=sale_final_context, # Use the explicitly constructed sale_final_context
+                               user_role=session.get('role'),
+                               pharmacy_info=pharmacy_info,
+                               print_ready=print_ready,
+                               auto_print=auto_print,  # NEW: Pass auto_print flag to template
+                               last_transaction_details=last_transaction_details,
+                               last_transaction_grand_total=last_transaction_grand_total,
+                               last_transaction_id=last_transaction_id,
+                               last_transaction_customer_phone=last_transaction_customer_phone,
+                               last_transaction_sales_person=last_transaction_sales_person,
+                               last_transaction_date=last_transaction_date,
+                               current_year=datetime.now().year,
+                               search_query=search_query,
+                               business_type=business_type)
+    except Exception as e:
+        print(f"ERROR: Exception caught during final render_template (GET): {e}")
+        raise # Re-raise to see full traceback
 @app.route('/sales/edit_transaction/<transaction_id>', methods=['GET', 'POST'])
 def edit_sale_transaction(transaction_id): # Note the parameter name change
     # ACCESS CONTROL: Allows admin and sales roles
@@ -4021,7 +4365,12 @@ def cancel_rental_record(record_id):
     flash(f'Rental record for "{record_to_cancel.item_name_at_rent}" cancelled successfully! Stock returned.', 'success')
     return redirect(url_for('rental_records'))
 
-
+# NEW: Jinja2 filter to safely format a date or datetime object
+@app.template_filter('format_date')
+def format_date(value, format='%Y-%m-%d'):
+    if isinstance(value, (datetime, date)):
+        return value.strftime(format)
+    return "" # Return an empty string if the value is not a date object
 # --- Database Initialization (run once to create tables) ---
 # IMPORTANT: Once Alembic is set up and working, you should remove or comment out
 # db.create_all() from here, as Alembic will manage your schema migrations.

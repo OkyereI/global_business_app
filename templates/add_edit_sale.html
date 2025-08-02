@@ -1,76 +1,188 @@
 {% extends 'base.html' %}
 
+{% block head %}
+    {{ super() }}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .alert {
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+        }
+        .alert i {
+            margin-right: 0.5rem;
+        }
+        .alert-success { background-color: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .alert-danger { background-color: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .alert-warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
+        .alert-info { background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+        
+        .print-receipt-hidden {
+            display: none;
+        }
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #print-container, #print-container * {
+                visibility: visible;
+            }
+            #print-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            button, a, .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+{% endblock %}
+
 {% block content %}
-<div class="container mx-auto p-6 bg-white rounded-lg shadow-md">
-    <h2 class="text-3xl font-bold text-gray-800 mb-6">{{ title }}</h2>
 
+{# Receipt Section - Always in the DOM, but hidden. #}
+<div id="receipt-section-wrapper" class="print-receipt-hidden">
     {% if print_ready and last_transaction_details %}
-    <div id="receipt-section" class="bg-gray-50 p-6 rounded-lg shadow-inner mb-6 border border-gray-200">
-        <h3 class="text-2xl font-semibold text-gray-700 mb-4 text-center">Sales Receipt</h3>
-        <div class="text-sm text-gray-600 mb-4 text-center">
-            <p class="font-bold text-lg text-gray-800">{{ pharmacy_info.name }}</p>
-            <p>{{ pharmacy_info.address }}, {{ pharmacy_info.location }}</p>
-            <p>Contact: {{ pharmacy_info.contact }}</p>
-            <p class="mt-2">Transaction ID: <span class="font-mono text-blue-700">{{ last_transaction_id }}</span></p>
-            <p>Date: {{ last_transaction_date }}</p>
-            <p>Sales Person: {{ last_transaction_sales_person }}</p>
-            {% if last_transaction_customer_phone %}
-            <p>Customer Phone: {{ last_transaction_customer_phone }}</p>
-            {% endif %}
-        </div>
+        <div id="receipt-section" class="container mx-auto p-6 bg-gray-50 rounded-lg shadow-inner mb-6 border border-gray-200">
+            <h3 class="text-2xl font-semibold text-gray-700 mb-4 text-center">Sales Receipt</h3>
+            <div class="text-sm text-gray-600 mb-4 text-center">
+                <p class="font-bold text-lg text-gray-800">{{ pharmacy_info.name or 'Business Name' }}</p>
+                <p>{{ pharmacy_info.address or 'N/A' }}{% if pharmacy_info.location %}, {{ pharmacy_info.location }}{% endif %}</p>
+                <p>Contact: {{ pharmacy_info.contact or 'N/A' }}</p>
+                <p class="mt-2">Transaction ID: <span class="font-mono text-blue-700">{{ last_transaction_id[:8].upper() }}</span></p>
+                <p>Date: {{ last_transaction_date }}</p>
+                <p>Sales Person: {{ last_transaction_sales_person }}</p>
+                {% if last_transaction_customer_phone %}<p>Customer Phone: {{ last_transaction_customer_phone }}</p>{% endif %}
+            </div>
 
-        <table class="min-w-full bg-white rounded-lg overflow-hidden mb-4">
-            <thead class="bg-gray-100">
-                <tr>
-                    <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Product</th>
-                    <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Qty</th>
-                    <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Unit Price</th>
-                    <th class="py-2 px-4 text-right text-sm font-medium text-gray-600">Total</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in last_transaction_details %}
-                <tr class="border-b border-gray-200 last:border-b-0">
-                    <td class="py-2 px-4 text-sm text-gray-800">{{ item.product_name }}</td>
-                    <td class="py-2 px-4 text-sm text-gray-800">{{ item.quantity_sold }} {{ item.sale_unit_type }}</td>
-                    <td class="py-2 px-4 text-sm text-gray-800">GH₵{{ "%.2f" | format(item.price_at_time_per_unit_sold) }}</td>
-                    <td class="py-2 px-4 text-right text-sm text-gray-800">GH₵{{ "%.2f" | format(item.total_amount) }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            <tfoot class="bg-gray-100">
-                <tr>
-                    <td colspan="3" class="py-2 px-4 text-right text-base font-semibold text-gray-800">Grand Total:</td>
-                    <td class="py-2 px-4 text-right text-base font-bold text-gray-900">GH₵{{ "%.2f" | format(last_transaction_grand_total) }}</td>
-                </tr>
-            </tfoot>
-        </table>
+            <table class="min-w-full bg-white rounded-lg overflow-hidden mb-4">
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Product</th>
+                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Qty</th>
+                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Unit Type</th>
+                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Price/Unit</th>
+                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in last_transaction_details %}
+                    <tr class="border-b border-gray-200 last:border-b-0">
+                        <td class="py-2 px-4 text-sm text-gray-800">{{ item.product_name }}</td>
+                        <td class="py-2 px-4 text-sm text-gray-800">{{ "%.2f" | format(item.quantity_sold) }}</td>
+                        <td class="py-2 px-4 text-sm text-gray-800">{{ item.sale_unit_type }}</td>
+                        <td class="py-2 px-4 text-sm text-gray-800">GH₵{{ "%.2f" | format(item.price_at_time_per_unit_sold) }}</td>
+                        <td class="py-2 px-4 text-sm text-gray-800">GH₵{{ "%.2f" | format(item.total_amount) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-gray-100">
+                    <tr>
+                        <td colspan="4" class="py-2 px-4 text-right text-base font-semibold text-gray-800">Grand Total:</td>
+                        <td class="py-2 px-4 text-right text-base font-bold text-gray-900">GH₵{{ "%.2f" | format(last_transaction_grand_total) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div class="text-center mt-6 no-print">
+                <button onclick="printReceipt()" class="btn btn-primary bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md mr-4">
+                    <i class="fas fa-print mr-2"></i> Print Receipt
+                </button>
+                <a href="{{ url_for('add_sale') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
+                    <i class="fas fa-plus-circle mr-2"></i> New Sale
+                </a>
+                <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md ml-4">
+                    <i class="fas fa-list mr-2"></i> View All Sales
+                </a>
+            </div>
+        </div>
+    {% elif print_ready %}
+        <p class="text-center text-gray-600">No transaction details available for printing.</p>
         <div class="text-center mt-6">
-            <button onclick="window.print()" class="btn btn-primary bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md mr-4">
-                <i class="fas fa-print mr-2"></i> Print Receipt
-            </button>
             <a href="{{ url_for('add_sale') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
                 <i class="fas fa-plus-circle mr-2"></i> New Sale
             </a>
+            <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md ml-4">
+                <i class="fas fa-list mr-2"></i> View All Sales
+            </a>
         </div>
-    </div>
     {% endif %}
+</div>
 
-    <form method="POST" action="{{ url_for('add_sale') }}" class="space-y-6">
+
+{# Main Add Sale Form #}
+<div id="main-content" class="container mx-auto p-6 bg-white rounded-lg shadow-md">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">{{ title }}</h1>
+        <a href="{{ url_for('sales') }}" class="btn btn-secondary flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            Back to Sales
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mb-4">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
+                        {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                        {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                        {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                        {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                        {% endif %}
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <form id="saleForm" method="POST" class="space-y-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="form-group">
                 <label for="customer_phone" class="block text-sm font-medium text-gray-700 mb-1">Customer Phone (Optional)</label>
-                <input type="text" id="customer_phone" name="customer_phone" value="{{ sale.customer_phone | default('') }}"
+                <input type="text" id="customer_phone" name="customer_phone" value="{{ sale.get('customer_phone', '') }}"
                        class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 p-2">
             </div>
             <div class="form-group">
                 <label for="sales_person_name" class="block text-sm font-medium text-gray-700 mb-1">Sales Person</label>
-                <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.sales_person_name | default(session.username) }}"
+                <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.get('sales_person_name', session.username) }}"
                        class="form-input mt-1 block w-full rounded-md border-gray-300 bg-gray-100 cursor-not-allowed shadow-sm p-2" readonly>
             </div>
         </div>
 
         <h3 class="text-xl font-semibold text-gray-800 mb-4">Items to Sell</h3>
+
+        {# Search Bar for Products #}
+        <div class="card p-4 bg-gray-50 border border-gray-200 rounded-lg mb-6">
+            <h4 class="text-lg font-semibold text-gray-800 mb-3">Find Product</h4>
+            <div class="form-group mb-4">
+                <label for="item_search" class="block text-sm font-medium text-gray-700">Search Product</label>
+                <div class="flex">
+                    <input type="text" id="item_search" name="item_search" value="{{ search_query | default('') }}"
+                           placeholder="Search by product name, category, or batch number"
+                           class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm p-2">
+                    <button type="button" id="search_button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-md">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <div id="cart-items-container" class="space-y-4">
             <!-- Dynamic cart items will be added here -->
@@ -103,24 +215,39 @@
 </div>
 
 <script>
+    // Flask passes this data, ensure it's valid JSON
     const inventoryItems = {{ inventory_items | tojson }};
     const cartItemsContainer = document.getElementById('cart-items-container');
     const addAnotherItemBtn = document.getElementById('add-another-item-btn');
     const grandTotalSpan = document.getElementById('grand-total');
     const cartItemsJsonInput = document.getElementById('cart-items-json');
+    const itemSearchInput = document.getElementById('item_search');
+    const searchButton = document.getElementById('search_button');
+    const saleForm = document.getElementById('saleForm');
+    const mainContent = document.getElementById('main-content');
+    const receiptSectionWrapper = document.getElementById('receipt-section-wrapper');
 
     let cart = []; // Array to hold all items in the cart
 
-    // Function to calculate markup percentage for Pharmacy type
-    function calculateMarkupPercentage(purchasePrice, salePrice) {
-        if (purchasePrice > 0) {
-            return ((salePrice - purchasePrice) / purchasePrice) * 100;
+    // Flash message utility
+    function flashMessage(message, category) {
+        const alertContainer = document.querySelector('#main-content .mb-4');
+        if (alertContainer) {
+            const alertDiv = document.createElement('div');
+            alertDiv.classList.add('alert', `alert-${category}`, 'rounded-lg', 'p-4', 'mb-3', 'shadow-md');
+            let iconHtml = '';
+            if (category === 'success') iconHtml = '<i class="fas fa-check-circle"></i>';
+            else if (category === 'danger') iconHtml = '<i class="fas fa-times-circle"></i>';
+            else if (category === 'warning') iconHtml = '<i class="fas fa-exclamation-triangle"></i>';
+            else if (category === 'info') iconHtml = '<i class="fas fa-info-circle"></i>';
+            alertDiv.innerHTML = `${iconHtml} ${message}`;
+            alertContainer.prepend(alertDiv);
+            setTimeout(() => alertDiv.remove(), 5000);
         }
-        return 0;
     }
 
     // Function to create a new item row
-    function createItemRow(item = {}) {
+    function createItemRow(itemData = {}) {
         const row = document.createElement('div');
         row.className = 'item-row grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 bg-gray-50 p-4 rounded-md shadow-sm border border-gray-200 relative';
         row.innerHTML = `
@@ -132,7 +259,7 @@
                 <label class="block text-xs font-medium text-gray-600 mb-1">Unit Type</label>
                 <select class="unit-type-select form-input w-full p-2 rounded-md border-gray-300">
                     <option value="pack">Pack</option>
-                    <option value="tab">Tab</option>
+                    <option value="piece">{{ 'Piece' if business_type != 'Pharmacy' else 'Tab' }}</option>
                 </select>
             </div>
             <div class="form-group">
@@ -141,7 +268,7 @@
             </div>
             <div class="form-group">
                 <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH₵)</label>
-                <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300" value="0.00">
+                <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
             </div>
             <div class="form-group col-span-full md:col-span-1 flex items-end justify-between">
                 <div>
@@ -170,117 +297,109 @@
         productSelect.appendChild(defaultOption);
 
         inventoryItems.forEach(item => {
+            const currentStock = parseFloat(item.current_stock) || 0;
+            const salePrice = parseFloat(item.sale_price) || 0;
+            const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
+
             const option = document.createElement('option');
             option.value = item.id;
-            option.textContent = `${item.product_name} (Stock: ${item.current_stock})`;
+            option.textContent = `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per {{ 'tab' if business_type == 'Pharmacy' else 'piece' }}`;
+            option.dataset.productName = item.product_name;
+            option.dataset.salePrice = salePrice;
+            option.dataset.currentStock = currentStock;
+            option.dataset.numberOfTabs = parseFloat(item.number_of_tabs) || 1;
+            option.dataset.unitPricePerTab = unitPricePerTab;
+            option.dataset.isFixedPrice = item.is_fixed_price;
+            option.dataset.fixedSalePrice = parseFloat(item.fixed_sale_price) || 0;
             productSelect.appendChild(option);
         });
 
-        // Event Listeners
-        productSelect.addEventListener('change', () => {
-            const selectedProduct = inventoryItems.find(item => item.id === productSelect.value);
-            if (selectedProduct) {
-                // Set default unit type based on business type, then update prices
-                if ('{{ business_type }}' === 'Pharmacy') {
-                    unitTypeSelect.innerHTML = `
-                        <option value="pack">Pack</option>
-                        <option value="tab">Tab</option>
-                    `;
-                } else {
-                    unitTypeSelect.innerHTML = `
-                        <option value="pack">Pack</option>
-                        <option value="piece">Piece</option>
-                    `;
-                }
-                unitTypeSelect.value = selectedProduct.item_type === 'Pharmacy' ? 'pack' : 'pack'; // Default to pack/piece
-
-                updatePrices(selectedProduct, unitTypeSelect.value, unitPriceInput);
-            } else {
+        // Event Listeners for this row
+        const updateRowCalculations = () => {
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            if (!selectedOption || !selectedOption.value) {
                 unitPriceInput.value = '0.00';
+                itemTotalDisplay.value = '0.00';
+                updateGrandTotal();
+                return;
             }
-            calculateItemTotal(quantityInput, unitPriceInput, itemTotalDisplay);
-            updateGrandTotal();
-        });
 
-        unitTypeSelect.addEventListener('change', () => {
-            const selectedProduct = inventoryItems.find(item => item.id === productSelect.value);
-            if (selectedProduct) {
-                updatePrices(selectedProduct, unitTypeSelect.value, unitPriceInput);
+            const productId = selectedOption.value;
+            const product = inventoryItems.find(item => item.id === productId);
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const unitType = unitTypeSelect.value;
+
+            if (!product || isNaN(quantity) || quantity <= 0) {
+                unitPriceInput.value = '0.00';
+                itemTotalDisplay.value = '0.00';
+                updateGrandTotal();
+                return;
             }
-            calculateItemTotal(quantityInput, unitPriceInput, itemTotalDisplay);
-            updateGrandTotal();
-        });
 
-        quantityInput.addEventListener('input', () => {
-            // Client-side stock validation
-            const selectedProduct = inventoryItems.find(item => item.id === productSelect.value);
-            if (selectedProduct) {
-                const requestedQuantity = parseFloat(quantityInput.value);
-                let availableStock = selectedProduct.current_stock;
-                if (unitTypeSelect.value === 'tab' && selectedProduct.number_of_tabs > 0) {
-                    availableStock = selectedProduct.current_stock * selectedProduct.number_of_tabs;
+            let price = 0;
+            // Explicitly parse values to prevent NaN errors
+            const fixedSalePrice = parseFloat(product.fixed_sale_price) || 0;
+            const numberOfTabs = parseFloat(product.number_of_tabs) || 1;
+            const salePrice = parseFloat(product.sale_price) || 0;
+            const unitPricePerTab = parseFloat(product.unit_price_per_tab) || 0;
+
+            if (product.is_fixed_price) {
+                if (unitType === 'pack') {
+                    price = fixedSalePrice;
+                } else { // 'tab' or 'piece'
+                    price = fixedSalePrice / numberOfTabs;
                 }
-
-                if (requestedQuantity > availableStock) {
-                    alert(`Insufficient stock for ${selectedProduct.product_name}. Available: ${availableStock}.`);
-                    quantityInput.value = availableStock; // Cap at available stock
+            } else {
+                if (unitType === 'pack') {
+                    price = salePrice;
+                } else { // 'tab' or 'piece'
+                    price = unitPricePerTab;
                 }
             }
-            calculateItemTotal(quantityInput, unitPriceInput, itemTotalDisplay);
-            updateGrandTotal();
-        });
 
-        unitPriceInput.addEventListener('input', () => {
-            calculateItemTotal(quantityInput, unitPriceInput, itemTotalDisplay);
+            unitPriceInput.value = price.toFixed(2);
+            itemTotalDisplay.value = (price * quantity).toFixed(2);
+
+            // Client-side stock warning
+            let effectiveStock = parseFloat(product.current_stock) || 0;
+            let requestedEffectiveQuantity = quantity;
+
+            if (unitType === 'pack') {
+                requestedEffectiveQuantity = quantity * numberOfTabs;
+            }
+
+            if (requestedEffectiveQuantity > effectiveStock) {
+                quantityInput.classList.add('border-red-500');
+                flashMessage(`Insufficient stock for ${product.product_name}. Available: ${effectiveStock.toFixed(2)} units.`, 'warning');
+            } else {
+                quantityInput.classList.remove('border-red-500');
+            }
             updateGrandTotal();
-        });
+        };
+
+        productSelect.addEventListener('change', updateRowCalculations);
+        unitTypeSelect.addEventListener('change', updateRowCalculations);
+        quantityInput.addEventListener('input', updateRowCalculations);
 
         removeItemBtn.addEventListener('click', () => {
             row.remove();
             updateGrandTotal();
         });
 
-        // If item data is provided (for editing or pre-populating)
-        if (Object.keys(item).length > 0) {
-            productSelect.value = item.product_id;
-            // Trigger change to populate unit types and initial prices
-            const event = new Event('change');
-            productSelect.dispatchEvent(event);
+        // If itemData is provided for pre-population
+        if (Object.keys(itemData).length > 0) {
+            productSelect.value = itemData.product_id;
+            const changeEvent = new Event('change');
+            productSelect.dispatchEvent(changeEvent);
 
-            unitTypeSelect.value = item.sale_unit_type;
-            quantityInput.value = item.quantity_sold;
-            unitPriceInput.value = item.price_at_time_per_unit_sold;
-
-            // Recalculate and set item total
-            calculateItemTotal(quantityInput, unitPriceInput, itemTotalDisplay);
+            unitTypeSelect.value = itemData.sale_unit_type;
+            quantityInput.value = itemData.quantity_sold;
+            unitPriceInput.value = parseFloat(itemData.price_at_time_per_unit_sold).toFixed(2);
+            itemTotalDisplay.value = parseFloat(itemData.item_total_amount).toFixed(2);
+            updateGrandTotal();
         }
 
         return row;
-    }
-
-    function updatePrices(product, unitType, unitPriceInput) {
-        let price = 0;
-        if (product.is_fixed_price) {
-            if (unitType === 'tab' && product.number_of_tabs > 0) {
-                price = product.fixed_sale_price / product.number_of_tabs;
-            } else {
-                price = product.fixed_sale_price;
-            }
-        } else {
-            if (unitType === 'tab' && product.number_of_tabs > 0) {
-                price = product.unit_price_per_tab;
-            } else {
-                price = product.sale_price;
-            }
-        }
-        unitPriceInput.value = price.toFixed(2);
-    }
-
-    function calculateItemTotal(quantityInput, unitPriceInput, itemTotalDisplay) {
-        const quantity = parseFloat(quantityInput.value) || 0;
-        const unitPrice = parseFloat(unitPriceInput.value) || 0;
-        const itemTotal = quantity * unitPrice;
-        itemTotalDisplay.value = itemTotal.toFixed(2);
     }
 
     function updateGrandTotal() {
@@ -289,16 +408,24 @@
         cart = []; // Clear and rebuild cart array
 
         itemRows.forEach(row => {
-            const productId = row.querySelector('.product-select').value;
-            const quantity = parseFloat(row.querySelector('.quantity-input').value) || 0;
-            const unitPrice = parseFloat(row.querySelector('.unit-price-input').value) || 0;
-            const itemTotal = parseFloat(row.querySelector('.item-total-display').value) || 0;
-            const unitType = row.querySelector('.unit-type-select').value;
+            const productSelect = row.querySelector('.product-select');
+            const quantityInput = row.querySelector('.quantity-input');
+            const unitPriceInput = row.querySelector('.unit-price-input');
+            const itemTotalDisplay = row.querySelector('.item-total-display');
+            const unitTypeSelect = row.querySelector('.unit-type-select');
+
+            const productId = productSelect.value;
+            const productName = productSelect.options[productSelect.selectedIndex]?.dataset.productName;
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const unitPrice = parseFloat(unitPriceInput.value) || 0;
+            const itemTotal = parseFloat(itemTotalDisplay.value) || 0;
+            const unitType = unitTypeSelect.value;
 
             if (productId && quantity > 0 && unitPrice > 0) {
                 total += itemTotal;
                 cart.push({
                     product_id: productId,
+                    product_name: productName,
                     quantity_sold: quantity,
                     sale_unit_type: unitType,
                     price_at_time_per_unit_sold: unitPrice,
@@ -307,7 +434,7 @@
             }
         });
         grandTotalSpan.textContent = total.toFixed(2);
-        cartItemsJsonInput.value = JSON.stringify(cart); // Update hidden input for Flask
+        cartItemsJsonInput.value = JSON.stringify(cart);
     }
 
     addAnotherItemBtn.addEventListener('click', () => {
@@ -315,34 +442,76 @@
         updateGrandTotal();
     });
 
-    // Initial row when page loads
-    document.addEventListener('DOMContentLoaded', () => {
-        // If there are last transaction details (for receipt printing), don't add a new row immediately
-        // The receipt section is handled separately.
-        if (!document.getElementById('receipt-section')) {
-            cartItemsContainer.appendChild(createItemRow());
-        } else {
-            // If we are showing a receipt, we don't want to show the sales form by default.
-            // The user will click "New Sale" to get to the form.
-            document.querySelector('form').style.display = 'none';
-        }
-        updateGrandTotal();
+    // Search button click handler
+    searchButton.addEventListener('click', function() {
+        const currentSearchQuery = itemSearchInput.value.trim();
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('search', currentSearchQuery);
+        window.location.href = currentUrl.toString();
     });
 
-    // Handle initial items if editing an existing sale (though current Flask logic doesn't support multi-item edit directly)
-    // This part would be expanded if the 'edit_sale' route sent a list of items.
-    // For 'add_sale' with print_ready, the receipt logic handles display.
-    {% if last_transaction_details %}
-        // If we are showing a receipt, the form should be hidden initially
-        document.querySelector('form').style.display = 'none';
-    {% elif sale.items %}
-        // This block is for pre-populating items if the 'sale' object came with items (e.g., on form error re-render)
-        cartItemsContainer.innerHTML = ''; // Clear any default row
-        sale.items.forEach(item => {
-            cartItemsContainer.appendChild(createItemRow(item));
-        });
-        updateGrandTotal();
-    {% endif %}
+    // Allow pressing Enter in search bar to trigger search
+    itemSearchInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            searchButton.click();
+        }
+    });
 
+    // FIXED PRINT FUNCTION
+    function printReceipt() {
+        // Create a clone of the receipt section
+        const receiptClone = document.getElementById('receipt-section-wrapper').cloneNode(true);
+        receiptClone.id = 'print-clone';
+        
+        // Create a temporary print container
+        const printContainer = document.createElement('div');
+        printContainer.id = 'print-container';
+        printContainer.style.position = 'fixed';
+        printContainer.style.left = '0';
+        printContainer.style.top = '0';
+        printContainer.style.width = '100%';
+        printContainer.style.height = '100%';
+        printContainer.style.backgroundColor = 'white';
+        printContainer.style.zIndex = '9999';
+        printContainer.appendChild(receiptClone);
+        
+        // Hide buttons in print view
+        const buttons = printContainer.querySelectorAll('button, a');
+        buttons.forEach(btn => btn.style.display = 'none');
+        
+        // Add to document
+        document.body.appendChild(printContainer);
+        
+        // Print and clean up
+        window.print();
+        
+        // Remove after printing
+        setTimeout(() => {
+            document.body.removeChild(printContainer);
+        }, 500);
+    }
+
+    // Initial setup when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+        // Hide the main content and show the receipt if print_ready is true
+        {% if print_ready %}
+            mainContent.classList.add('print-receipt-hidden');
+            receiptSectionWrapper.classList.remove('print-receipt-hidden');
+        {% else %}
+            mainContent.classList.remove('print-receipt-hidden');
+            receiptSectionWrapper.classList.add('print-receipt-hidden');
+            const initialSaleItems = {{ sale.get('items', []) | tojson }};
+
+            if (initialSaleItems && initialSaleItems.length > 0) {
+                initialSaleItems.forEach(item => {
+                    cartItemsContainer.appendChild(createItemRow(item));
+                });
+            } else {
+                cartItemsContainer.appendChild(createItemRow());
+            }
+            updateGrandTotal();
+        {% endif %}
+    });
 </script>
 {% endblock %}

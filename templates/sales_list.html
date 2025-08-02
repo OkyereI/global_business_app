@@ -107,9 +107,9 @@
                                                 <li>
                                                     {{ item['product_name'] }} - {{ item['quantity_sold'] }} {{ item['sale_unit_type'] }} @ GH₵{{ "%.2f"|format(item['price_at_time_per_unit_sold']) }} per {{ item['sale_unit_type'] }} = GH₵{{ "%.2f"|format(item['total_amount']) }}
                                                     {% if item['expires_soon'] == 'Expired' %}
-                                                        <span class="text-red-500 ml-2">(Expired: {{ item['expiry_date'].strftime('%Y-%m-%d') }})</span>
+                                                        <span class="text-red-500 ml-2">(Expired: {{ item['expiry_date'] | format_date('%Y-%m-%d') }})</span>
                                                     {% elif item['expires_soon'] %}
-                                                        <span class="text-yellow-500 ml-2">(Expires Soon: {{ item['expiry_date'].strftime('%Y-%m-%d') }})</span>
+                                                        <span class="text-yellow-500 ml-2">(Expires Soon: {{ item['expiry_date'] | format_date('%Y-%m-%d') }})</span>
                                                     {% endif %}
                                                 </li>
                                             {% endfor %}
