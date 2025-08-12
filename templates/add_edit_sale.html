@@ -34,6 +34,7 @@
             display: none;
         }
 
+        /* Print-specific styles */
         @media print {
             body * {
                 visibility: hidden;
@@ -47,7 +48,7 @@
                 top: 0;
                 width: 100%;
             }
-            button, a, .no-print {
+            .no-print {
                 display: none !important;
             }
         }
@@ -458,38 +459,141 @@
         }
     });
 
-    // FIXED PRINT FUNCTION
+    // Print function that always works
     function printReceipt() {
-        // Create a clone of the receipt section
-        const receiptClone = document.getElementById('receipt-section-wrapper').cloneNode(true);
-        receiptClone.id = 'print-clone';
+        const receiptSection = document.getElementById('receipt-section');
+        if (!receiptSection) {
+            console.error("Receipt section not found");
+            return;
+        }
         
-        // Create a temporary print container
-        const printContainer = document.createElement('div');
-        printContainer.id = 'print-container';
-        printContainer.style.position = 'fixed';
-        printContainer.style.left = '0';
-        printContainer.style.top = '0';
-        printContainer.style.width = '100%';
-        printContainer.style.height = '100%';
-        printContainer.style.backgroundColor = 'white';
-        printContainer.style.zIndex = '9999';
-        printContainer.appendChild(receiptClone);
+        // Create a print-friendly HTML document
+        const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Print Receipt</title>
+            <meta charset="UTF-8">
+            <style>
+                body {
+                    font-family: 'Inter', sans-serif;
+                    background-color: white;
+                    padding: 20px;
+                    margin: 0;
+                }
+                .container {
+                    max-width: 600px;
+                    margin: 0 auto;
+                    background-color: #f9fafb;
+                    padding: 20px;
+                    border-radius: 8px;
+                    border: 1px solid #e5e7eb;
+                }
+                h3 {
+                    text-align: center;
+                    font-size: 1.5rem;
+                    font-weight: 600;
+                    color: #374151;
+                    margin-bottom: 1.5rem;
+                }
+                .text-center {
+                    text-align: center;
+                }
+                .text-sm {
+                    font-size: 0.875rem;
+                }
+                .text-gray-600 {
+                    color: #4b5563;
+                }
+                .font-bold {
+                    font-weight: 700;
+                }
+                .text-lg {
+                    font-size: 1.125rem;
+                }
+                .text-gray-800 {
+                    color: #1f2937;
+                }
+                .mt-2 {
+                    margin-top: 0.5rem;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 20px 0;
+                }
+                thead {
+                    background-color: #f3f4f6;
+                }
+                th {
+                    padding: 0.5rem 1rem;
+                    text-align: left;
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                    color: #4b5563;
+                }
+                td {
+                    padding: 0.5rem 1rem;
+                    border-bottom: 1px solid #e5e7eb;
+                    font-size: 0.875rem;
+                    color: #1f2937;
+                }
+                tfoot {
+                    background-color: #f3f4f6;
+                    font-weight: 600;
+                }
+                .no-print {
+                    display: none;
+                }
+                .font-mono {
+                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+                }
+                .text-blue-700 {
+                    color: #1d4ed8;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                ${receiptSection.innerHTML}
+            </div>
+            <script>
+                window.onload = function() {
+                    window.print();
+                }
+            <\/script>
+        </body>
+        </html>
+        `;
         
-        // Hide buttons in print view
-        const buttons = printContainer.querySelectorAll('button, a');
-        buttons.forEach(btn => btn.style.display = 'none');
+        // Create a blob and open it
+        const blob = new Blob([printContent], {type: 'text/html'});
+        const url = URL.createObjectURL(blob);
         
-        // Add to document
-        document.body.appendChild(printContainer);
+        // Create a hidden iframe for printing
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
         
-        // Print and clean up
-        window.print();
-        
-        // Remove after printing
-        setTimeout(() => {
-            document.body.removeChild(printContainer);
-        }, 500);
+        iframe.onload = function() {
+            // Print after content loads
+            setTimeout(() => {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+                
+                // Clean up after printing
+                setTimeout(() => {
+                    document.body.removeChild(iframe);
+                    URL.revokeObjectURL(url);
+                }, 1000);
+            }, 500);
+        };
     }
 
     // Initial setup when page loads
@@ -498,6 +602,9 @@
         {% if print_ready %}
             mainContent.classList.add('print-receipt-hidden');
             receiptSectionWrapper.classList.remove('print-receipt-hidden');
+            
+            // Auto-print after a short delay
+            setTimeout(printReceipt, 500);
         {% else %}
             mainContent.classList.remove('print-receipt-hidden');
             receiptSectionWrapper.classList.add('print-receipt-hidden');

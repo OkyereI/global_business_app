@@ -1,69 +1,161 @@
-<!-- templates/login.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Pharmaceutical Store</title>
-    <!-- Tailwind CSS CDN -->
+    <title>Login - Business Management System</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #e6f7ed; /* Lighter green background */
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
+        .login-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        .alert {
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+        }
+        .alert i {
+            margin-right: 0.5rem;
+        }
+        .alert-success { background-color: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .alert-danger { background-color: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .alert-warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
+        .alert-info { background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
     </style>
 </head>
-<body class="flex items-center justify-center min-h-screen">
-    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-4 border-green-500 transform transition duration-500 hover:scale-105">
-        <h2 class="text-3xl font-extrabold text-center text-green-700 mb-8">Login</h2>
+<body class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <div class="login-card rounded-xl shadow-2xl p-8">
+            <div class="text-center mb-8">
+                <i class="fas fa-store text-4xl text-indigo-600 mb-4"></i>
+                <h2 class="text-3xl font-bold text-gray-900">Business Management</h2>
+                <p class="mt-2 text-sm text-gray-600">Sign in to your account</p>
+            </div>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="mb-6">
-                    {% for category, message in messages %}
-                        <div class="p-4 mb-3 rounded-lg text-base
-                            {% if category == 'success' %} bg-green-100 text-green-700 border border-green-400
-                            {% elif category == 'danger' %} bg-red-100 text-red-700 border border-red-400
-                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700 border border-yellow-400
-                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
-                            {{ message | safe }} {# Added | safe filter here #}
-                        </div>
-                    {% endfor %}
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="mb-6">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} rounded-lg shadow-md">
+                                {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                                {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                                {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                                {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                                {% endif %}
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" class="space-y-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-user mr-2"></i>Username
+                    </label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username" 
+                        required 
+                        class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                        placeholder="Enter your username"
+                    >
                 </div>
-            {% endif %}
-        {% endwith %}
 
-        <form action="{{ url_for('login') }}" method="POST" class="space-y-6">
-            <div>
-                <label for="username" class="block text-sm font-semibold text-gray-700 mb-1">Username</label>
-                <input
-                    type="text"
-                    id="username"
-                    name="username"
-                    required
-                    class="mt-1 block w-full px-5 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-base placeholder-gray-400 transition duration-300 ease-in-out"
-                    placeholder="Enter your username"
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-lock mr-2"></i>Password
+                    </label>
+                    <div class="relative">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            required 
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-200"
+                            placeholder="Enter your password"
+                        >
+                        <button 
+                            type="button" 
+                            onclick="togglePassword()" 
+                            class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                        >
+                            <i id="password-toggle-icon" class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button 
+                    type="submit" 
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                 >
+                    <i class="fas fa-sign-in-alt mr-2"></i>Sign In
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    Need help? Contact your system administrator
+                </p>
             </div>
-            <div>
-                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    required
-                    class="mt-1 block w-full px-5 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 sm:text-base placeholder-gray-400 transition duration-300 ease-in-out"
-                    placeholder="Enter your password"
-                >
-            </div>
-            <button
-                type="submit"
-                class="w-full flex justify-center py-3 px-6 border border-transparent rounded-lg shadow-lg text-xl font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-300 ease-in-out transform hover:-translate-y-1"
-            >
-                Log In
-            </button>
-        </form>
+        </div>
+
+        <div class="text-center">
+            <p class="text-sm text-white/80">
+                © 2025 Business Management System. All rights reserved.
+            </p>
+        </div>
     </div>
+
+    <script>
+        function togglePassword() {
+            const passwordField = document.getElementById('password');
+            const toggleIcon = document.getElementById('password-toggle-icon');
+            
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                toggleIcon.className = 'fas fa-eye-slash';
+            } else {
+                passwordField.type = 'password';
+                toggleIcon.className = 'fas fa-eye';
+            }
+        }
+
+        // Auto-focus username field
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('username').focus();
+        });
+
+        // Handle form submission with loading state
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const submitButton = this.querySelector('button[type="submit"]');
+            const originalContent = submitButton.innerHTML;
+            
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing In...';
+            submitButton.disabled = true;
+            
+            // Re-enable button after 5 seconds in case of errors
+            setTimeout(() => {
+                submitButton.innerHTML = originalContent;
+                submitButton.disabled = false;
+            }, 5000);
+        });
+    </script>
 </body>
 </html>
