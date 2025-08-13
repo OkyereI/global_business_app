@@ -111,7 +111,7 @@ class InventoryItem(db.Model):
     is_fixed_price = db.Column(db.Boolean, default=False)
     fixed_sale_price = db.Column(db.Float, default=0.0)
     is_active = db.Column(db.Boolean, default=True, nullable=False) # New: For soft delete
-
+    barcode = db.Column(db.String(50), unique=True, nullable=True)  # Add this line
     __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
 
     def __repr__(self):

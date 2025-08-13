@@ -111,7 +111,7 @@ class InventoryItem(db.Model):
     is_fixed_price = db.Column(db.Boolean, default=False)
     fixed_sale_price = db.Column(db.Float, default=0.0)
     is_active = db.Column(db.Boolean, default=True, nullable=False) # New: For soft delete
-
+    barcode = db.Column(db.String(50), unique=True, nullable=True)  # Add this line
     __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
 
     def __repr__(self):
@@ -316,72 +316,96 @@ def get_current_business_type():
 
 # --- JSON Serialization Helper for InventoryItem and HirableItem ---
 def safe_convert(value, converter, default):
-    """Safe conversion with exception handling"""
+    """
+    Safely converts a value using a specified converter.
+    Returns default if value is None or conversion fails.
+    """
     try:
+        # Attempt conversion only if value is not None
         return converter(value) if value is not None else default
     except (TypeError, ValueError):
+        # Catch specific conversion errors and return default
         return default
 
 def serialize_inventory_item(item):
+    """
+    Serializes an InventoryItem object to a dictionary for JSON conversion.
+    Uses getattr for robust attribute access and safe_convert for type handling.
+    Includes comprehensive error logging for debugging.
+    """
     try:
-        # Handle dates with duck-typing and fallbacks
-        last_updated = item.last_updated.isoformat() if hasattr(item.last_updated, 'isoformat') else None
-        expiry_date = item.expiry_date.isoformat() if hasattr(item.expiry_date, 'isoformat') else None
+        # Use getattr() for robust attribute access.
+        # If an attribute is missing on the 'item' object, getattr returns None.
+        _id = getattr(item, 'id', None)
+        _product_name = getattr(item, 'product_name', None)
+        _category = getattr(item, 'category', None)
+        _purchase_price = getattr(item, 'purchase_price', None)
+        _sale_price = getattr(item, 'sale_price', None)
+        _current_stock = getattr(item, 'current_stock', None)
+        _last_updated = getattr(item, 'last_updated', None)
+        _batch_number = getattr(item, 'batch_number', None)
+        _number_of_tabs = getattr(item, 'number_of_tabs', None)
+        _unit_price_per_tab = getattr(item, 'unit_price_per_tab', None)
+        _item_type = getattr(item, 'item_type', None)
+        _expiry_date = getattr(item, 'expiry_date', None)
+        _is_fixed_price = getattr(item, 'is_fixed_price', None)
+        _fixed_sale_price = getattr(item, 'fixed_sale_price', None)
+        _is_active = getattr(item, 'is_active', None)
+        _barcode = getattr(item, 'barcode', None)
+
+        # Handle dates more defensively:
+        # Check if it's actually a date/datetime object before calling isoformat().
+        last_updated_iso = None
+        if isinstance(_last_updated, (datetime, date)):
+            last_updated_iso = _last_updated.isoformat()
+
+        expiry_date_iso = None
+        if isinstance(_expiry_date, (datetime, date)):
+            expiry_date_iso = _expiry_date.isoformat()
 
         return {
-            'id': safe_convert(item.id, str, ''),
-            'product_name': safe_convert(item.product_name, str, 'N/A'),
-            'category': safe_convert(item.category, str, 'N/A'),
-            'purchase_price': safe_convert(item.purchase_price, float, 0.0),
-            'sale_price': safe_convert(item.sale_price, float, 0.0),
-            'current_stock': safe_convert(item.current_stock, float, 0.0),
-            'last_updated': last_updated,
-            'batch_number': safe_convert(item.batch_number, str, 'N/A'),
-            'number_of_tabs': safe_convert(item.number_of_tabs, float, 1.0),
-            'unit_price_per_tab': safe_convert(item.unit_price_per_tab, float, 0.0),
-            'item_type': safe_convert(item.item_type, str, 'N/A'),
-            'expiry_date': expiry_date,
-            'is_fixed_price': safe_convert(item.is_fixed_price, bool, False),
-            'fixed_sale_price': safe_convert(item.fixed_sale_price, float, 0.0),
-            'is_active': safe_convert(item.is_active, bool, False)
+            'id': safe_convert(_id, str, ''),
+            'product_name': safe_convert(_product_name, str, 'N/A'),
+            'category': safe_convert(_category, str, 'N/A'),
+            'purchase_price': safe_convert(_purchase_price, float, 0.0),
+            'sale_price': safe_convert(_sale_price, float, 0.0),
+            'current_stock': safe_convert(_current_stock, float, 0.0),
+            'last_updated': last_updated_iso, # Use processed ISO string or None
+            'batch_number': safe_convert(_batch_number, str, 'N/A'),
+            'number_of_tabs': safe_convert(_number_of_tabs, float, 1.0),
+            'unit_price_per_tab': safe_convert(_unit_price_per_tab, float, 0.0),
+            'item_type': safe_convert(_item_type, str, 'N/A'),
+            'expiry_date': expiry_date_iso, # Use processed ISO string or None
+            'is_fixed_price': safe_convert(_is_fixed_price, bool, False),
+            'fixed_sale_price': safe_convert(_fixed_sale_price, float, 0.0),
+            'is_active': safe_convert(_is_active, bool, False),
+            'barcode': safe_convert(_barcode, str, '')
         }
     except Exception as e:
-        # Log full error details for debugging
-        print(f"CRITICAL: Serialization failed for {getattr(item, 'id', 'UNKNOWN')}: {str(e)}")
-        # Return minimal error-safe representation
+        # Log the specific exception type and message for powerful debugging
+        error_id = getattr(item, 'id', 'UNKNOWN_ID_ERROR')
+        error_product_name = getattr(item, 'product_name', 'UNKNOWN_PRODUCT_NAME_ERROR')
+        print(f"CRITICAL: Serialization failed for item '{error_product_name}' (ID: {error_id}). "
+              f"Exception Type: {e.__class__.__name__}, Message: {str(e)}")
+        # Return a minimal, error-safe dictionary that won't crash the JavaScript.
         return {
-            "id": getattr(item, "id", "error"),
-            "product_name": "Serialization Error",
+            "id": "serialization_error_" + str(error_id)[:8], # Unique ID for error items
+            "product_name": f"Serialization Error (ID: {str(error_id)[:8]})",
             "current_stock": 0.0,
             "sale_price": 0.0,
-            # Include other required fields with safe defaults
+            "unit_price_per_tab": 0.0,
+            "number_of_tabs": 1.0,
+            "is_fixed_price": False,
+            "fixed_sale_price": 0.0,
+            "expiry_date": None,
+            "barcode": "",
+            "item_type": "N/A",
+            "category": "N/A",
+            "purchase_price": 0.0,
+            "last_updated": None,
+            "batch_number": "N/A",
+            "is_active": False
         }
-def serialize_hirable_item(item):
-    """Converts a HirableItem SQLAlchemy object to a JSON-serializable dictionary."""
-    try:
-        return {
-            'id': str(item.id),
-            'item_name': str(item.item_name),
-            'description': str(item.description) if item.description is not None else '',
-            'daily_hire_price': float(item.daily_hire_price),
-            'current_stock': int(item.current_stock),
-            'last_updated': item.last_updated.isoformat() if isinstance(item.last_updated, (datetime, datetime.date)) else None,
-            'is_active': bool(item.is_active)
-        }
-    except Exception as e:
-        print(f"ERROR: Failed to serialize HirableItem with ID {item.id if hasattr(item, 'id') else 'Unknown'}: {e}")
-        return {
-            'id': str(item.id) if hasattr(item, 'id') else 'error_id',
-            'item_name': 'Serialization Error',
-            'description': 'Error',
-            'daily_hire_price': 0.0,
-            'current_stock': 0,
-            'last_updated': None,
-            'is_active': False
-        }
-
-
-
 def calculate_company_balance_details(company_id):
     """
     Calculates the balance, total debtors, and total creditors for a single company
@@ -1417,12 +1441,11 @@ def add_inventory_item():
         relevant_item_types = ['Hardware Material']
     elif business_type == 'Supermarket' or business_type == 'Provision Store':
         relevant_item_types = ['Provision Store'] # Assuming 'Provision Store' covers general goods for these
-    # Add more mappings if you have other business types and their corresponding item types
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
         InventoryItem.is_active == True,
-        InventoryItem.item_type.in_(relevant_item_types) # Use .in_() for a list of types
+        InventoryItem.item_type.in_(relevant_item_types)
     ).all()
     serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
     
@@ -1435,6 +1458,31 @@ def add_inventory_item():
         purchase_price = float(request.form['purchase_price'])
         current_stock = float(request.form['current_stock'])
         batch_number = request.form.get('batch_number', '').strip()
+        barcode = request.form.get('barcode', '').strip()  # NEW: Get barcode
+        
+        # NEW: Check if barcode is unique
+        if barcode:
+            existing_barcode = InventoryItem.query.filter_by(
+                business_id=business_id,
+                barcode=barcode
+            ).first()
+            if existing_barcode:
+                flash('Barcode already in use for another product', 'danger')
+                item_data_for_form_on_error = {
+                    'product_name': product_name, 'category': category,
+                    'purchase_price': purchase_price, 'current_stock': current_stock,
+                    'batch_number': batch_number, 'barcode': barcode,
+                    'number_of_tabs': int(request.form.get('number_of_tabs', 1)),
+                    'item_type': business_type,
+                    'expiry_date': request.form.get('expiry_date', ''),
+                    'is_fixed_price': 'is_fixed_price' in request.form,
+                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
+                }
+                if business_type == 'Pharmacy':
+                    item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
+                return render_template('add_edit_inventory.html', title='Add Inventory Item',
+                                       item=item_data_for_form_on_error, user_role=session.get('role'),
+                                       business_type=business_type, current_year=datetime.now().year)
         
         number_of_tabs = int(request.form.get('number_of_tabs', 1)) # Default to 1 for non-pharmacy
         expiry_date_str = request.form.get('expiry_date', '').strip()
@@ -1450,7 +1498,8 @@ def add_inventory_item():
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'number_of_tabs': number_of_tabs,
+                    'batch_number': batch_number, 'barcode': barcode,  # NEW: Include barcode
+                    'number_of_tabs': number_of_tabs,
                     'item_type': business_type,
                     'expiry_date': '', # Pass empty string to template for invalid date
                     'is_fixed_price': 'is_fixed_price' in request.form,
@@ -1472,7 +1521,8 @@ def add_inventory_item():
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'number_of_tabs': number_of_tabs,
+                'batch_number': batch_number, 'barcode': barcode,  # NEW: Include barcode
+                'number_of_tabs': number_of_tabs,
                 'item_type': business_type,
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
                 'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price
@@ -1488,7 +1538,8 @@ def add_inventory_item():
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'number_of_tabs': number_of_tabs,
+                'batch_number': batch_number, 'barcode': barcode,  # NEW: Include barcode
+                'number_of_tabs': number_of_tabs,
                 'item_type': business_type,
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
                 'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price
@@ -1524,6 +1575,7 @@ def add_inventory_item():
             sale_price=sale_price,
             current_stock=current_stock,
             batch_number=batch_number,
+            barcode=barcode,  # NEW: Add barcode
             number_of_tabs=number_of_tabs,
             unit_price_per_tab=unit_price_per_tab,
             item_type=business_type, # Set item_type based on business type
@@ -1558,13 +1610,11 @@ def edit_inventory_item(item_id):
         relevant_item_types = ['Hardware Material']
     elif business_type == 'Supermarket' or business_type == 'Provision Store':
         relevant_item_types = ['Provision Store'] # Assuming 'Provision Store' covers general goods for these
-    # Add more mappings if you have other business types and their corresponding item types
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
         InventoryItem.is_active == True,
-        InventoryItem.item_type.in_(relevant_item_types) # Use .in_() for a list of types
-    ).all()
+        InventoryItem.item_type.in_(relevant_item_types)).all()
     serialized_available_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
 
 
@@ -1574,6 +1624,34 @@ def edit_inventory_item(item_id):
         purchase_price = float(request.form['purchase_price'])
         current_stock = float(request.form['current_stock'])
         batch_number = request.form.get('batch_number', '').strip()
+        new_barcode = request.form.get('barcode', '').strip()  # NEW: Get barcode
+        
+        # NEW: Check if barcode is unique
+        if new_barcode and new_barcode != item_to_edit.barcode:
+            existing_barcode = InventoryItem.query.filter_by(
+                business_id=business_id,
+                barcode=new_barcode
+            ).first()
+            if existing_barcode:
+                flash('Barcode already in use for another product', 'danger')
+                item_data_for_form_on_error = {
+                    'id': item_to_edit.id,
+                    'product_name': product_name, 'category': category,
+                    'purchase_price': purchase_price, 'current_stock': current_stock,
+                    'batch_number': batch_number, 'barcode': new_barcode,
+                    'number_of_tabs': int(request.form.get('number_of_tabs', 1)),
+                    'item_type': business_type,
+                    'expiry_date': request.form.get('expiry_date', ''),
+                    'is_fixed_price': 'is_fixed_price' in request.form,
+                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0)),
+                    'is_active': 'is_active' in request.form
+                }
+                if business_type == 'Pharmacy':
+                    item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
+                return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}',
+                                       item=item_data_for_form_on_error, user_role=session.get('role'),
+                                       business_type=business_type, current_year=datetime.now().year)
+        
         number_of_tabs = int(request.form.get('number_of_tabs', 1))
         expiry_date_str = request.form.get('expiry_date', '').strip()
         
@@ -1589,12 +1667,13 @@ def edit_inventory_item(item_id):
                     'id': item_to_edit.id, # Keep ID for context
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'number_of_tabs': number_of_tabs,
+                    'batch_number': batch_number, 'barcode': new_barcode,  # NEW: Include barcode
+                    'number_of_tabs': number_of_tabs,
                     'item_type': business_type,
                     'expiry_date': '', # Pass empty string to template for invalid date
                     'is_fixed_price': 'is_fixed_price' in request.form,
                     'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0)),
-                    'is_active': 'is_active' in request.form if item_to_edit else True
+                    'is_active': 'is_active' in request.form
                 }
                 if business_type == 'Pharmacy':
                     item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
@@ -1613,11 +1692,12 @@ def edit_inventory_item(item_id):
                 'id': item_to_edit.id,
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'number_of_tabs': number_of_tabs,
+                'batch_number': batch_number, 'barcode': new_barcode,  # NEW: Include barcode
+                'number_of_tabs': number_of_tabs,
                 'item_type': business_type,
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
                 'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price,
-                'is_active': 'is_active' in request.form if item_to_edit else True
+                'is_active': 'is_active' in request.form
             }
             if business_type == 'Pharmacy':
                 item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
@@ -1631,11 +1711,12 @@ def edit_inventory_item(item_id):
                 'id': item_to_edit.id,
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'number_of_tabs': number_of_tabs,
+                'batch_number': batch_number, 'barcode': new_barcode,  # NEW: Include barcode
+                'number_of_tabs': number_of_tabs,
                 'item_type': business_type,
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
                 'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price,
-                'is_active': 'is_active' in request.form if item_to_edit else True
+                'is_active': 'is_active' in request.form
             }
             if business_type == 'Pharmacy':
                 item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
@@ -1647,6 +1728,7 @@ def edit_inventory_item(item_id):
         item_to_edit.current_stock = current_stock
         item_to_edit.last_updated = datetime.now()
         item_to_edit.batch_number = batch_number
+        item_to_edit.barcode = new_barcode  # NEW: Set barcode
         item_to_edit.number_of_tabs = number_of_tabs
         item_to_edit.expiry_date = expiry_date_obj # This is now a datetime.date object or None
         item_to_edit.is_fixed_price = is_fixed_price
@@ -1689,6 +1771,7 @@ def edit_inventory_item(item_id):
         'current_stock': item_to_edit.current_stock,
         'last_updated': item_to_edit.last_updated.isoformat(),
         'batch_number': item_to_edit.batch_number,
+        'barcode': item_to_edit.barcode,  # NEW: Include barcode
         'number_of_tabs': item_to_edit.number_of_tabs,
         'unit_price_per_tab': item_to_edit.unit_price_per_tab,
         'item_type': item_to_edit.item_type,
@@ -1697,9 +1780,7 @@ def edit_inventory_item(item_id):
         'is_active': item_to_edit.is_active
     }
 
-    # Format expiry_date for the HTML input value.
-    # item_to_edit.expiry_date should be a datetime.date object from SQLAlchemy's db.Column(db.Date).
-    # If it's None, the .strftime() will not be called, and an empty string will be used.
+    # Format expiry_date for the HTML input
     item_data_for_form['expiry_date'] = item_to_edit.expiry_date.strftime('%Y-%m-%d') if item_to_edit.expiry_date else ''
     
     # Calculate initial markup percentage for display if not fixed price
@@ -1711,7 +1792,6 @@ def edit_inventory_item(item_id):
 
 
     return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}', item=item_data_for_form, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
-
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory_item(item_id):
     # ACCESS CONTROL: Allows admin role
