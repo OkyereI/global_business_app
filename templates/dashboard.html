@@ -9,23 +9,6 @@
         <p>You are logged in as a <span class="font-semibold">{{ user_role.replace('_', ' ').title() }}</span> for the business: <span class="font-semibold">{{ business_name }} ({{ business_type }})</span>.</p>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="mb-4">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
-                        {% if category == 'success' %}<i class="fas fa-check-circle"></i>
-                        {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
-                        {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
-                        {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
-                        {% endif %}
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {# Quick Actions Card #}
         <div class="card p-6">
@@ -56,12 +39,11 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div class="bg-blue-50 p-4 rounded-md text-center shadow-sm">
                     <p class="text-sm font-medium text-blue-700">Total Sales Today:</p>
-                    {# CORRECTED: Changed total_sales_today to sales_today #}
-                    <p class="text-2xl font-bold text-blue-900">GH₵{{ "%.2f" | format(sales_today) }}</p>
+                    <p class="text-2xl font-bold text-blue-900">GH₵{{ "%.2f" | format(total_sales_today) }}</p>
                 </div>
                 <div class="bg-red-50 p-4 rounded-md text-center shadow-sm">
                     <p class="text-sm font-medium text-red-700">Low Stock Items:</p>
-                    <p class="text-2xl font-bold text-red-900">{{ low_stock_items|length }}</p> {# Added |length to display count #}
+                    <p class="text-2xl font-bold text-red-900">{{ low_stock_items }}</p>
                 </div>
             </div>
             <p class="text-sm text-gray-600 italic">Note: Actual data for these metrics would be fetched from your Flask backend (e.g., in the 'dashboard' route).</p>
@@ -71,9 +53,8 @@
     {# Sales by Sales Person (Today) Card #}
     <div class="card p-6 mb-8">
         <h3 class="text-xl font-semibold text-gray-800 mb-4">Sales by Sales Person (Today)</h3>
-        {# Assuming sales_by_person_today is passed from app.py, if not, use a different variable name #}
-        {% if sales_by_person %} {# Changed to sales_by_person as per usual flask backend variable name #}
-            {% for person, total_sales in sales_by_person %} {# Changed to sales_by_person #}
+        {% if sales_by_person_today %}
+            {% for person, total_sales in sales_by_person_today %}
                 <div class="flex justify-between items-center border-b border-gray-200 py-2 last:border-b-0">
                     <span class="text-lg text-gray-700">{{ person }}:</span>
                     <span class="text-lg font-bold text-gray-900">GH₵{{ "%.2f" | format(total_sales) }}</span>

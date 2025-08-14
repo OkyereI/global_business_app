@@ -102,59 +102,11 @@
         .action-buttons {
             display: flex;
             gap: 0.5rem;
-            flex-wrap: wrap; /* Allows wrapping on smaller screens */
-            justify-content: flex-end; /* Align right */
+            flex-wrap: wrap;
         }
         .action-buttons .btn {
             padding: 0.4rem 0.8rem;
             font-size: 0.875rem;
-        }
-
-        /* Styles for status badges and toggle/sms buttons */
-        .status-badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 9999px; /* Tailwind rounded-full */
-            font-size: 0.75rem; /* Tailwind text-xs */
-            font-weight: 600; /* Tailwind font-semibold */
-            display: inline-block;
-        }
-        .status-active {
-            background-color: #d1fae5; /* Tailwind bg-green-100 */
-            color: #065f46; /* Tailwind text-green-800 */
-        }
-        .status-inactive {
-            background-color: #fee2e2; /* Tailwind bg-red-100 */
-            color: #991b1b; /* Tailwind text-red-800 */
-        }
-        .btn-toggle {
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            transition: all 0.2s ease-in-out;
-            cursor: pointer;
-            border: none;
-            white-space: nowrap; /* Prevent button text from wrapping */
-        }
-        .btn-activate {
-            background-color: #28a745; /* Green */
-            color: #fff;
-        }
-        .btn-activate:hover {
-            background-color: #218838;
-        }
-        .btn-deactivate {
-            background-color: #dc3545; /* Red */
-            color: #fff;
-        }
-        .btn-deactivate:hover {
-            background-color: #c82333;
-        }
-        .btn-sms {
-            background-color: #007bff; /* Blue */
-            color: #fff;
-        }
-        .btn-sms:hover {
-            background-color: #0069d9;
         }
     </style>
 </head>
@@ -202,7 +154,7 @@
                 <p class="text-gray-600">This panel provides administrative controls over businesses and their data.</p>
                 {% if user_role == 'admin' %}
                 <p class="text-sm text-gray-500 mt-2">As an 'Admin', you have full control over your assigned business and limited access to super admin features.</p>
-                {% else %} {# Assuming 'super_admin' is the other case here #}
+                {% else %}
                 <p class="text-sm text-gray-500 mt-2">As a 'Super Admin', you have full control over all businesses and system settings.</p>
                 {% endif %}
             </div>
@@ -218,8 +170,7 @@
                         <th class="py-2 px-4 border-b">Type</th>
                         <th class="py-2 px-4 border-b">Location</th>
                         <th class="py-2 px-4 border-b">Contact</th>
-                        <th class="py-2 px-4 border-b">Status</th>
-                        <th class="py-2 px-4 border-b text-right">Actions</th> {# Align header right as well #}
+                        <th class="py-2 px-4 border-b">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -230,37 +181,13 @@
                         <td class="py-2 px-4 border-b">{{ business.location }}</td>
                         <td class="py-2 px-4 border-b">{{ business.contact }}</td>
                         <td class="py-2 px-4 border-b">
-                            <span class="status-badge {% if business.is_active %}status-active{% else %}status-inactive{% endif %}">
-                                {{ "Active" if business.is_active else "Inactive" }}
-                            </span>
-                        </td>
-                        <td class="py-2 px-4 border-b text-right"> {# Align actions right #}
                             <div class="action-buttons">
-                                {# CORRECTED: Explicitly define hidden input for csrf_token #}
-                                <form action="{{ url_for('toggle_business_active', business_id=business.id) }}" method="POST" class="inline-block" onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if business.is_active else 'activate' }} this business?');">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn-toggle {% if business.is_active %}btn-deactivate{% else %}btn-activate{% endif %}">
-                                        <i class="fas {% if business.is_active %}fa-ban{% else %}fa-check-circle{% endif %} mr-1"></i>
-                                        {{ "Deactivate" if business.is_active else "Activate" }}
-                                    </button>
-                                </form>
-
-                                {# CORRECTED: Explicitly define hidden input for csrf_token #}
-                                <form action="{{ url_for('send_payment_due_sms', business_id=business.id) }}" method="POST" class="inline-block" onsubmit="return confirm('Send a payment due SMS to {{ business.name }}?');">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn-sms">
-                                        <i class="fas fa-sms mr-1"></i> Send SMS
-                                    </button>
-                                </form>
-
-                                {# Existing buttons - make sure URLs match your app.py routes #}
                                 <a href="{{ url_for('view_business_details', business_id=business.id) }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 btn">
                                     <i class="fas fa-eye"></i> View
                                 </a>
                                 <a href="{{ url_for('edit_business', business_id=business.id) }}" class="bg-blue-500 hover:bg-blue-600 text-white btn">
                                     <i class="fas fa-edit"></i> Edit
                                 </a>
-                                {# IMPORTANT: For delete, consider using POST to be RESTful and secure #}
                                 <a href="{{ url_for('delete_business', business_id=business.id) }}" onclick="return confirm('Are you sure you want to delete {{ business.name }} and ALL its associated data? This action cannot be undone.');" class="bg-red-500 hover:bg-red-600 text-white btn">
                                     <i class="fas fa-trash"></i> Delete
                                 </a>

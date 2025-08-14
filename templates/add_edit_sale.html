@@ -5,8 +5,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Add barcode scanner library -->
-    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -34,51 +32,6 @@
         
         .print-receipt-hidden {
             display: none;
-        }
-
-        /* Barcode scanner styles */
-        #barcode-scanner-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            z-index: 1000;
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        #barcode-scanner {
-            width: 80%;
-            max-width: 600px;
-            height: 300px;
-            background: black;
-            border: 2px solid white;
-            margin-bottom: 20px;
-        }
-        .scanner-controls {
-            display: flex;
-            gap: 15px;
-        }
-        .scanner-btn {
-            padding: 10px 20px;
-            background: #3b82f6;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        .scanner-btn:hover {
-            background: #2563eb;
-        }
-        .scanner-btn.danger {
-            background: #ef4444;
-        }
-        .scanner-btn.danger:hover {
-            background: #dc2626;
         }
 
         /* Print-specific styles */
@@ -153,7 +106,7 @@
                 </button>
                 <a href="{{ url_for('add_sale') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
                     <i class="fas fa-plus-circle mr-2"></i> New Sale
-                </a >
+                </a>
                 <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md ml-4">
                     <i class="fas fa-list mr-2"></i> View All Sales
                 </a>
@@ -219,23 +172,7 @@
         {# Search Bar for Products #}
         <div class="card p-4 bg-gray-50 border border-gray-200 rounded-lg mb-6">
             <h4 class="text-lg font-semibold text-gray-800 mb-3">Find Product</h4>
-            
-            <!-- Barcode Scanner Controls -->
-            <div class="mb-4 flex flex-wrap gap-4">
-                <button type="button" id="open-scanner-btn" class="btn btn-primary bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
-                    <i class="fas fa-barcode mr-2"></i> Scan Barcode
-                </button>
-                
-                <div class="flex-1 flex">
-                    <input type="text" id="barcode-input" placeholder="Enter barcode manually"
-                           class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm p-2">
-                    <button type="button" id="add-by-barcode-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-md">
-                        <i class="fas fa-plus mr-2"></i> Add
-                    </button>
-                </div>
-            </div>
-            
-            <div class="form-group">
+            <div class="form-group mb-4">
                 <label for="item_search" class="block text-sm font-medium text-gray-700">Search Product</label>
                 <div class="flex">
                     <input type="text" id="item_search" name="item_search" value="{{ search_query | default('') }}"
@@ -278,24 +215,9 @@
     </form>
 </div>
 
-<!-- Barcode Scanner Modal -->
-<div id="barcode-scanner-container">
-    <div id="barcode-scanner"></div>
-    <div class="scanner-controls">
-        <button id="close-scanner-btn" class="scanner-btn danger">
-            <i class="fas fa-times mr-2"></i> Close Scanner
-        </button>
-        <button id="toggle-camera-btn" class="scanner-btn">
-            <i class="fas fa-sync-alt mr-2"></i> Switch Camera
-        </button>
-    </div>
-    <p class="text-white mt-4">Point the camera at a barcode to scan</p>
-</div>
-
 <script>
     // Flask passes this data, ensure it's valid JSON
     const inventoryItems = {{ inventory_items | tojson }};
-    const businessType = "{{ business_type }}";  // Added business type variable
     const cartItemsContainer = document.getElementById('cart-items-container');
     const addAnotherItemBtn = document.getElementById('add-another-item-btn');
     const grandTotalSpan = document.getElementById('grand-total');
@@ -306,18 +228,7 @@
     const mainContent = document.getElementById('main-content');
     const receiptSectionWrapper = document.getElementById('receipt-section-wrapper');
 
-    // Barcode elements
-    const barcodeInput = document.getElementById('barcode-input');
-    const addByBarcodeBtn = document.getElementById('add-by-barcode-btn');
-    const openScannerBtn = document.getElementById('open-scanner-btn');
-    const closeScannerBtn = document.getElementById('close-scanner-btn');
-    const toggleCameraBtn = document.getElementById('toggle-camera-btn');
-    const scannerContainer = document.getElementById('barcode-scanner-container');
-    const scannerElement = document.getElementById('barcode-scanner');
-
     let cart = []; // Array to hold all items in the cart
-    let currentCamera = 'environment'; // 'environment' for back camera, 'user' for front
-    let scannerActive = false;
 
     // Flash message utility
     function flashMessage(message, category) {
@@ -349,7 +260,7 @@
                 <label class="block text-xs font-medium text-gray-600 mb-1">Unit Type</label>
                 <select class="unit-type-select form-input w-full p-2 rounded-md border-gray-300">
                     <option value="pack">Pack</option>
-                    <option value="piece">${businessType === 'Pharmacy' ? 'Tab' : 'Piece'}</option>
+                    <option value="piece">{{ 'Piece' if business_type != 'Pharmacy' else 'Tab' }}</option>
                 </select>
             </div>
             <div class="form-group">
@@ -378,7 +289,7 @@
         const itemTotalDisplay = row.querySelector('.item-total-display');
         const removeItemBtn = row.querySelector('.remove-item-btn');
 
-        // Populate product dropdown, FILTERING OUT SERIALIZATION ERRORS
+        // Populate product dropdown
         let defaultOption = document.createElement('option');
         defaultOption.value = '';
         defaultOption.textContent = 'Select a Product';
@@ -386,15 +297,14 @@
         defaultOption.selected = true;
         productSelect.appendChild(defaultOption);
 
-        inventoryItems.filter(item => !item.product_name.startsWith('Serialization Error')).forEach(item => {
+        inventoryItems.forEach(item => {
             const currentStock = parseFloat(item.current_stock) || 0;
             const salePrice = parseFloat(item.sale_price) || 0;
             const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
-            const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
 
             const option = document.createElement('option');
             option.value = item.id;
-            option.textContent = `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`;
+            option.textContent = `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per {{ 'tab' if business_type == 'Pharmacy' else 'piece' }}`;
             option.dataset.productName = item.product_name;
             option.dataset.salePrice = salePrice;
             option.dataset.currentStock = currentStock;
@@ -402,7 +312,6 @@
             option.dataset.unitPricePerTab = unitPricePerTab;
             option.dataset.isFixedPrice = item.is_fixed_price;
             option.dataset.fixedSalePrice = parseFloat(item.fixed_sale_price) || 0;
-            option.dataset.barcode = item.barcode || '';
             productSelect.appendChild(option);
         });
 
@@ -417,7 +326,7 @@
             }
 
             const productId = selectedOption.value;
-            const product = inventoryItems.find(item => item.id == productId);  // Use loose comparison
+            const product = inventoryItems.find(item => item.id === productId);
             const quantity = parseFloat(quantityInput.value) || 0;
             const unitType = unitTypeSelect.value;
 
@@ -687,122 +596,6 @@
         };
     }
 
-    // ===================== BARCODE FUNCTIONALITY =====================
-    
-    // Add product by barcode
-    function addProductByBarcode(barcode) {
-        // Find the product by barcode
-        const product = inventoryItems.find(item => item.barcode === barcode);
-        
-        if (!product) {
-            flashMessage(`No product found with barcode: ${barcode}`, 'warning');
-            return;
-        }
-        
-        // Create a new cart row
-        const newRow = createItemRow();
-        cartItemsContainer.appendChild(newRow);
-        
-        // Find the select element in the new row
-        const productSelect = newRow.querySelector('.product-select');
-        productSelect.value = product.id; // Set the product based on scanned barcode
-        
-        // Trigger change event to update other fields (unit price, etc.)
-        const changeEvent = new Event('change');
-        productSelect.dispatchEvent(changeEvent);
-        
-        // Optionally, set quantity to 1 if it's a new item added by barcode
-        const quantityInput = newRow.querySelector('.quantity-input');
-        if (quantityInput.value === "0") { // Only if initial value is 0
-            quantityInput.value = 1;
-            quantityInput.dispatchEvent(new Event('input')); // Trigger input event to update totals
-        }
-
-        // Close scanner after successful scan
-        closeBarcodeScanner();
-        barcodeInput.value = ''; // Clear barcode input
-        barcodeInput.focus(); // Keep focus on barcode input for next scan/manual entry
-        flashMessage(`Product "${product.product_name}" added by barcode.`, 'success');
-    }
-
-    addByBarcodeBtn.addEventListener('click', () => {
-        const barcode = barcodeInput.value.trim();
-        if (barcode) {
-            addProductByBarcode(barcode);
-        } else {
-            flashMessage('Please enter a barcode or use the scanner.', 'info');
-        }
-    });
-
-    barcodeInput.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter') {
-            event.preventDefault(); // Prevent form submission
-            addByBarcodeBtn.click(); // Trigger the add button
-        }
-    });
-
-    // QuaggaJS setup for barcode scanning
-    openScannerBtn.addEventListener('click', () => {
-        scannerContainer.style.display = 'flex';
-        scannerActive = true;
-        Quagga.init({
-            inputStream : {
-                name : "Live",
-                type : "LiveStream",
-                target: scannerElement,    // Or '#barcode-scanner' (CSS selector)
-                constraints: {
-                    facingMode: currentCamera // 'environment' (rear) or 'user' (front)
-                }
-            },
-            decoder : {
-                readers : ['ean_reader', 'code_128_reader', 'upc_reader'] // Specify barcode types
-            }
-        }, function(err) {
-            if (err) {
-                console.error("Quagga initialization error:", err);
-                flashMessage('Could not start scanner. Check camera permissions.', 'danger');
-                scannerContainer.style.display = 'none';
-                scannerActive = false;
-                return;
-            }
-            Quagga.start();
-        });
-
-        Quagga.onDetected(function(result) {
-            const code = result.codeResult.code;
-            console.log("Barcode detected:", code);
-            addProductByBarcode(code); // Add detected product to cart
-            // Quagga.stop(); // Stop scanner after successful scan
-            // scannerActive = false;
-            // scannerContainer.style.display = 'none';
-        });
-    });
-
-    closeScannerBtn.addEventListener('click', () => {
-        closeBarcodeScanner();
-    });
-
-    toggleCameraBtn.addEventListener('click', () => {
-        if (scannerActive) {
-            Quagga.stop();
-            currentCamera = (currentCamera === 'environment') ? 'user' : 'environment';
-            openScannerBtn.click(); // Re-initialize with new camera
-        }
-    });
-
-    function closeBarcodeScanner() {
-        if (scannerActive) {
-            Quagga.stop();
-            scannerActive = false;
-            scannerContainer.style.display = 'none';
-        }
-    }
-    
-    // Clean up when page is closed (important for camera access)
-    window.addEventListener('beforeunload', closeBarcodeScanner);
-
-    // ===================== END BARCODE FUNCTIONALITY =====================
-
     // Initial setup when page loads
     document.addEventListener('DOMContentLoaded', () => {
         // Hide the main content and show the receipt if print_ready is true
@@ -810,14 +603,11 @@
             mainContent.classList.add('print-receipt-hidden');
             receiptSectionWrapper.classList.remove('print-receipt-hidden');
             
-            // Auto-print after a short delay if auto_print is true
-            {% if auto_print %}
-                setTimeout(printReceipt, 500);
-            {% endif %}
+            // Auto-print after a short delay
+            setTimeout(printReceipt, 500);
         {% else %}
             mainContent.classList.remove('print-receipt-hidden');
             receiptSectionWrapper.classList.add('print-receipt-hidden');
-            // Check if there are existing items in the sale (for editing or re-rendering after error)
             const initialSaleItems = {{ sale.get('items', []) | tojson }};
 
             if (initialSaleItems && initialSaleItems.length > 0) {
@@ -825,14 +615,10 @@
                     cartItemsContainer.appendChild(createItemRow(item));
                 });
             } else {
-                // If no initial items, add one empty row for a new sale
                 cartItemsContainer.appendChild(createItemRow());
             }
             updateGrandTotal();
         {% endif %}
-        
-        // Focus on barcode input for quick scanning
-        barcodeInput.focus();
     });
 </script>
 {% endblock %}
