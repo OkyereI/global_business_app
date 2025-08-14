@@ -7,6 +7,7 @@ Flask-SQLAlchemy
 Flask-Migrate
 Werkzeug
 pyinstaller
+Flask-WTF
 # Flask
 # Flask-SQLAlchemy
 # psycopg2-binary # Or psycopg2, depending on your system

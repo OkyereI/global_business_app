@@ -175,27 +175,54 @@ class Company(db.Model):
     email = db.Column(db.String(100))
     address = db.Column(db.String(255))
     balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit (from your business's perspective)
+    # Ensure 'last_updated' is defined here as it caused a migration issue before
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
 
     # Relationship to CompanyTransaction
     transactions = db.relationship('CompanyTransaction', backref='company', lazy=True, cascade="all, delete-orphan")
 
-    # REMOVE these lines if they are currently db.Column definitions:
-    # total_creditors = db.Column(db.Float, default=0.0)
-    # total_debtors = db.Column(db.Float, default=0.0)
+    # Relationships to Creditor and Debtor models with overlaps to resolve warnings
+    # These definitions should match what you have, ensuring 'Creditor' and 'Debtor'
+    # models correctly define their 'company_id' foreign keys.
 
-    # NEW: Relationships to Creditor and Debtor models
-    # This assumes your Creditor and Debtor models have 'company_id' foreign keys
-    creditors_list = db.relationship('Creditor', backref='company_creditor_rel', lazy=True, cascade="all, delete-orphan",overlaps="creditors_list,company_creditor_rel")
-    debtors_list = db.relationship('Debtor', backref='company_debtor_rel', lazy=True, cascade="all, delete-orphan",overlaps="debtors_list,company_debtor_rel")
+    # Primary relationships with descriptive backrefs
+    # If the warnings specifically mentioned 'creditor_records' and 'debtor_records'
+    # as the conflicting ones, and you don't have explicit definitions for them
+    # in your Company model, then the 'overlaps' should go on the relationships
+    # on the Creditor/Debtor side.
+    # However, if 'creditor_records' and 'debtors_records' *do* exist, you need to
+    # decide which ones are primary and apply overlaps accordingly.
+    # For now, I'm assuming 'creditors_list' and 'debtors_list' are your main ones
+    # from the Company side.
+
+    # If your SQLAlchemy warnings refer to specific relationship names like
+    # 'Company.creditor_records' and 'Company.debtors_records' (which are NOT in this snippet),
+    # you MUST add the overlaps parameter to *those* specific relationships.
+    # The snippet you sent does *not* contain the relationships that the warnings
+    # directly called out as needing the overlaps parameter.
+
+    # Re-adding `overlaps` to the `creditors_list` and `debtors_list` relationships
+    # ONLY IF these are actually conflicting with *other* relationships defined
+    # on the Company model (e.g., if you still have `creditor_records` defined elsewhere).
+    # If 'creditors_list' is the ONLY relationship to Creditor from Company, it might not
+    # need an 'overlaps' here. The warnings suggest *other* named relationships.
+
+    # Based on the warnings you shared:
+    # `Company.creditor_records` conflicts with `Company.creditors_list` AND `Creditor.company_creditor_rel`.
+    # This implies that `creditor_records` is a relationship that needs the `overlaps` parameter
+    # and should list `creditors_list` and `company_creditor_rel` within it.
+
+    # If you only have `creditors_list` and `debtors_list` defined on Company:
+    creditors_list = db.relationship('Creditor', backref='company_creditor_rel', lazy=True, cascade="all, delete-orphan")
+    debtors_list = db.relationship('Debtor', backref='company_debtor_rel', lazy=True, cascade="all, delete-orphan")
+
 
     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
 
-    # NEW: Properties to calculate total creditors and debtors
     @property
     def total_creditors_amount(self):
         # Sums the balance of all associated Creditor records
-        # Use func.sum for database-level aggregation for efficiency
-        # This will return None if no records, so default to 0.0
         return db.session.query(func.sum(Creditor.balance)).filter_by(
             company_id=self.id, business_id=self.business_id
         ).scalar() or 0.0
@@ -1280,7 +1307,7 @@ def super_admin_dashboard():
 @app.route('/super_admin/add_business', methods=['GET', 'POST'])
 def add_business():
     # Allow 'admin' role to add businesses
-    if session.get('role') not in ['super_admin', 'admin']:
+    if session.get('role') not in ['super_admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
         return redirect(url_for('login'))
     
