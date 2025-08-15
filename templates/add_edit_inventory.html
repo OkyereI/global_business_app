@@ -138,6 +138,22 @@
             border-radius: 8px;
             margin-bottom: 20px;
         }
+        
+        /* NEW: Styles for barcode input group */
+        .barcode-input-group {
+            position: relative;
+        }
+        .barcode-scanner-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            z-index: 10;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -236,6 +252,23 @@
                             <label for="batch_number">Batch Number (Optional)</label>
                             <input type="text" class="form-control" id="batch_number" name="batch_number" value="{{ item.batch_number if item else '' }}">
                         </div>
+                        
+                        <!-- NEW: Barcode field -->
+                        <div class="form-group">
+                            <label for="barcode">Barcode (Optional)</label>
+                            <div class="barcode-input-group">
+                                <input type="text" class="form-control" id="barcode" name="barcode" 
+                                       value="{{ item.barcode if item else '' }}"
+                                       placeholder="Scan or enter barcode">
+                                <button type="button" class="barcode-scanner-btn" title="Use barcode scanner">
+                                    <i class="fas fa-barcode"></i>
+                                </button>
+                            </div>
+                            <small class="form-text text-muted">
+                                Must be unique per product. Use a barcode scanner or enter manually.
+                            </small>
+                        </div>
+                        
                         <div class="form-group">
                             <label for="number_of_tabs">Number of Units/Pieces per Pack</label>
                             <input type="number" class="form-control" id="number_of_tabs" name="number_of_tabs" step="1" min="1" value="{{ item.number_of_tabs if item else '1' }}" required>
@@ -252,11 +285,6 @@
                         </div>
                         <div class="form-group">
                             <label for="expiry_date">Expiry Date (Optional)</label>
-                            {#
-                                IMPORTANT: The Flask route (app.py) now ensures item.expiry_date is a string
-                                in 'YYYY-MM-DD' format or an empty string before rendering this template.
-                                Therefore, we directly use the value without .strftime().
-                            #}
                             <input type="date" class="form-control" id="expiry_date" name="expiry_date" value="{{ item.expiry_date if item and item.expiry_date else '' }}">
                         </div>
                         <div class="form-group form-check">
@@ -323,6 +351,22 @@
                     $('#fixed_sale_price_group').hide();
                     $('#fixed_sale_price').prop('required', false);
                     $('#fixed_sale_price').val('0.00'); // Reset value when hidden
+                }
+            });
+            
+            // NEW: Focus on barcode field when scanner button is clicked
+            $('.barcode-scanner-btn').click(function() {
+                $(this).closest('.barcode-input-group').find('input').focus();
+            });
+            
+            // NEW: Simulate barcode scanner input (for testing)
+            // In a real implementation, you would connect to an actual scanner
+            $('#barcode').on('keydown', function(e) {
+                // Simulate barcode scanner behavior (auto-tab after scanning)
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    // Move focus to the next field
+                    $(this).closest('.form-group').next().find('input').focus();
                 }
             });
         });
