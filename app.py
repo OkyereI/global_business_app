@@ -621,7 +621,7 @@ def dashboard():
 @app.route('/super_admin_dashboard')
 def super_admin_dashboard():
     # Allow 'admin' role to view this dashboard
-    if session.get('role') not in ['super_admin', 'admin']:
+    if session.get('role') not in ['super_admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
         return redirect(url_for('login'))
     
@@ -631,7 +631,7 @@ def super_admin_dashboard():
 @app.route('/super_admin/add_business', methods=['GET', 'POST'])
 def add_business():
     # Allow 'admin' role to add businesses
-    if session.get('role') not in ['super_admin', 'admin']:
+    if session.get('role') not in ['super_admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
         return redirect(url_for('login'))
     
