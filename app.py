@@ -54,15 +54,16 @@ class Business(db.Model):
     location = db.Column(db.String(100))
     contact = db.Column(db.String(50))
     type = db.Column(db.String(50), default='Pharmacy', nullable=False) # 'Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'
-
-    # Relationships
+    is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW: Field to track business activity status
+    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now) # NEW: Add this line
+    # Relationships (rest of your relationships remain here)
     users = db.relationship('User', backref='business', lazy=True, cascade="all, delete-orphan")
     inventory_items = db.relationship('InventoryItem', backref='business', lazy=True, cascade="all, delete-orphan")
     sales_records = db.relationship('SaleRecord', backref='business', lazy=True, cascade="all, delete-orphan")
-    companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan") # New: for Hardware
-    future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan") # New: for Hardware
-    hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan") # NEW: for Hardware Hiring
-    rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan") # NEW: for Hardware Hiring
+    companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan")
+    future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan")
+    hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan")
+    rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<Business {self.name} ({self.type})>'
@@ -74,6 +75,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False) # Changed from 'password' to 'password_hash'
     role = db.Column(db.String(50), nullable=False)
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW LINE: Add this field
 
     __table_args__ = (db.UniqueConstraint('username', 'business_id', name='_username_business_uc'),)
 
@@ -159,9 +161,18 @@ class Company(db.Model):
 
     # NEW: Relationships to Creditor and Debtor models
     # This assumes your Creditor and Debtor models have 'company_id' foreign keys
-    creditors_list = db.relationship('Creditor', backref='company_creditor_rel', lazy=True, cascade="all, delete-orphan")
-    debtors_list = db.relationship('Debtor', backref='company_debtor_rel', lazy=True, cascade="all, delete-orphan")
-
+    creditors_list = db.relationship(
+                'Creditor',
+                back_populates='company_creditor_rel', # This should match the backref name on Creditor
+                lazy=True,
+                cascade="all, delete-orphan"
+            )
+    debtors_list = db.relationship(
+        'Debtor',
+        back_populates='company_debtor_rel', # This should match the backref name on Debtor
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
 
     # NEW: Properties to calculate total creditors and debtors
@@ -272,7 +283,11 @@ class Creditor(db.Model):
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
     # Relationship to Company (optional, but good for direct access)
-    company = db.relationship('Company', backref='creditor_records', lazy=True)
+    company_creditor_rel = db.relationship(
+                'Company',
+                back_populates='creditors_list', # This matches the relationship name on Company
+                lazy=True
+            )
 
     def __repr__(self):
         return f"<Creditor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
@@ -286,7 +301,11 @@ class Debtor(db.Model):
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
     # Relationship to Company (optional, but good for direct access)
-    company = db.relationship('Company', backref='debtor_records', lazy=True)
+    company_debtor_rel = db.relationship(
+                'Company',
+                back_populates='debtors_list', # This matches the relationship name on Company
+                lazy=True
+            )
 
     def __repr__(self):
         return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
