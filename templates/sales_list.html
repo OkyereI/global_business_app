@@ -1,138 +1,493 @@
-{% extends 'base.html' %}
-
-{% block content %}
-<div class="container mx-auto p-4">
-    <h1 class="text-3xl font-bold text-gray-800 mb-6">Sales Records</h1>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="mb-4">
-                {% for category, message in messages %}
-                    <div class="p-3 rounded-lg text-white {% if category == 'success' %}bg-green-500{% elif category == 'danger' %}bg-red-500{% elif category == 'warning' %}bg-yellow-500{% else %}bg-blue-500{% endif %}">
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
-    <div class="bg-white p-6 rounded-lg shadow-md mb-6 flex flex-col md:flex-row justify-between items-center">
-        <div class="flex flex-col md:flex-row items-center w-full md:w-auto mb-4 md:mb-0">
-            <form action="{{ url_for('sales') }}" method="GET" class="flex w-full md:w-auto">
-                <input type="text" name="search" placeholder="Search sales..."
-                       class="form-input mt-1 block w-full md:w-64 border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2 mr-2"
-                       value="{{ search_query if search_query else '' }}">
-                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
-                    Search
-                </button>
-            </form>
-        </div>
-        <a href="{{ url_for('add_sale') }}" class="w-full md:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-center transition duration-200">
-            <i class="fas fa-plus-circle mr-2"></i> Record New Sale
-        </a>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Sales Overview</h2>
-            <div class="flex justify-between items-center bg-gray-50 p-3 rounded-md">
-                <span class="text-gray-700 font-medium">Total Displayed Sales:</span>
-                <span class="text-green-600 font-bold text-lg">GH₵{{ "%.2f"|format(total_displayed_sales) }}</span>
-            </div>
-        </div>
-        {# You can add more overview cards here if needed, e.g., sales by month, top products #}
-    </div>
-
-    <div class="bg-white p-6 rounded-lg shadow-md">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Recent Sales Transactions</h2>
-        {% if transactions %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full bg-white">
-                    <thead>
-                        <tr class="w-full bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
-                            <th class="py-3 px-6 text-left">Transaction ID</th>
-                            <th class="py-3 px-6 text-left">Date</th>
-                            <th class="py-3 px-6 text-left">Customer Phone</th>
-                            <th class="py-3 px-6 text-left">Sales Person</th>
-                            <th class="py-3 px-6 text-left">Total Amount</th>
-                            <th class="py-3 px-6 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-gray-600 text-sm font-light">
-                        {% for transaction in transactions %}
-                            <tr class="border-b border-gray-200 hover:bg-gray-100">
-                                <td class="py-3 px-6 text-left whitespace-nowrap">
-                                    <div class="font-medium text-gray-800">{{ transaction.id[:8].upper() }}</div>
-                                </td>
-                                <td class="py-3 px-6 text-left">
-                                    {{ transaction.sale_date }}
-                                </td>
-                                <td class="py-3 px-6 text-left">
-                                    {{ transaction.customer_phone if transaction.customer_phone else 'N/A' }}
-                                </td>
-                                <td class="py-3 px-6 text-left">
-                                    {{ transaction.sales_person_name }}
-                                </td>
-                                <td class="py-3 px-6 text-left">
-                                    GH₵{{ "%.2f"|format(transaction.total_amount) }}
-                                </td>
-                                <td class="py-3 px-6 text-center">
-                                    <div class="flex item-center justify-center space-x-2">
-                                        <a href="#" onclick="toggleTransactionDetails('{{ transaction.id }}')" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
-                                            <i class="fas fa-eye"></i>
-                                        </a>
-                                        {% if user_role in ['admin', 'sales'] %}
-                                        {# Pass the transaction.id for editing the whole transaction #}
-                                        <a href="{{ url_for('edit_sale_transaction', transaction_id=transaction.id) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
-                                            <i class="fas fa-edit"></i>
-                                        </a>
-                                        {# Pass the transaction.id for deleting the whole transaction #}
-                                        <a href="{{ url_for('delete_sale_transaction', transaction_id=transaction.id) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110"
-                                           onclick="return confirm('Are you sure you want to delete this sale transaction (ID: {{ transaction.id[:8].upper() }})? This will return stock to inventory for all items in this transaction.');">
-                                            <i class="fas fa-trash"></i>
-                                        </a>
-                                        {% endif %}
-                                        <a href="{{ url_for('print_sale_receipt', transaction_id=transaction.id) }}" target="_blank" class="w-4 mr-2 transform hover:text-blue-500 hover:scale-110">
-                                            <i class="fas fa-print"></i>
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr id="details-{{ transaction.id }}" class="hidden bg-gray-50">
-                                <td colspan="6" class="p-4">
-                                    <div class="bg-gray-100 p-4 rounded-lg shadow-inner">
-                                        <h4 class="font-semibold mb-2 text-gray-700">Items in this Transaction:</h4>
-                                        <ul class="list-disc list-inside text-gray-600">
-                                            {% for item in transaction['items'] %} {# Use bracket notation here #}
-                                                <li>
-                                                    {{ item['product_name'] }} - {{ item['quantity_sold'] }} {{ item['sale_unit_type'] }} @ GH₵{{ "%.2f"|format(item['price_at_time_per_unit_sold']) }} per {{ item['sale_unit_type'] }} = GH₵{{ "%.2f"|format(item['total_amount']) }}
-                                                    {% if item['expires_soon'] == 'Expired' %}
-                                                        <span class="text-red-500 ml-2">(Expired: {{ item['expiry_date'] | format_date('%Y-%m-%d') }})</span>
-                                                    {% elif item['expires_soon'] %}
-                                                        <span class="text-yellow-500 ml-2">(Expires Soon: {{ item['expiry_date'] | format_date('%Y-%m-%d') }})</span>
-                                                    {% endif %}
-                                                </li>
-                                            {% endfor %}
-                                        </ul>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <p class="text-gray-600 text-center py-4">No sales records found.</p>
-        {% endif %}
-    </div>
-</div>
-
-<script>
-    function toggleTransactionDetails(transactionId) {
-        const detailsRow = document.getElementById('details-' + transactionId);
-        if (detailsRow) {
-            detailsRow.classList.toggle('hidden');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Records - {{ session.get('business_name', 'Business Dashboard') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        /* General body styling */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6; /* Equivalent to bg-gray-100 */
+            color: #333;
         }
-    }
-</script>
-{% endblock %}
+        .main-container {
+            max-width: 1200px; /* Explicitly set max-width */
+            margin: 0 auto; /* mx-auto */
+            padding: 2rem; /* py-8 */
+        }
+        .card {
+            background-color: #ffffff; /* bg-white */
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05); /* shadow-md */
+            padding: 2rem; /* p-8 */
+        }
+        .btn {
+            padding: 0.6rem 1.2rem; /* py-2 px-4 */
+            border-radius: 0.5rem; /* rounded-md */
+            font-weight: 500; /* font-medium */
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent; /* default button border */
+            cursor: pointer;
+            text-decoration: none; /* For links styled as buttons */
+            display: inline-flex; /* For icon alignment */
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary {
+            background-color: #10B981; /* bg-emerald-500 */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #059669; /* hover:bg-emerald-600 */
+        }
+        .btn-danger {
+            background-color: #EF4444; /* bg-red-500 */
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626; /* hover:bg-red-600 */
+        }
+        .btn-secondary {
+            background-color: #6B7280; /* bg-gray-500 */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4B5563; /* hover:bg-gray-600 */
+        }
+        .flash-messages-container {
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+        .flash-message {
+            padding: 1rem; /* p-4 */
+            border-radius: 0.5rem; /* rounded-lg */
+            margin-bottom: 1rem; /* mb-4 */
+            font-weight: 500; /* font-medium */
+            display: flex; /* flex */
+            align-items: center; /* items-center */
+            border: 1px solid transparent; /* default border */
+        }
+        .flash-success {
+            background-color: #D1FAE5; /* bg-green-100 */
+            color: #065F46; /* text-green-800 */
+            border-color: #34D399; /* border-green-400 */
+        }
+        .flash-danger {
+            background-color: #FEE2E2; /* bg-red-100 */
+            color: #991B1B; /* text-red-800 */
+            border-color: #F87171; /* border-red-400 */
+        }
+        .flash-warning {
+            background-color: #FFFBEB; /* bg-yellow-100 */
+            color: #92400E; /* text-yellow-800 */
+            border-color: #FCD34D; /* border-yellow-400 */
+        }
+        .flash-info {
+            background-color: #DBEAFE; /* bg-blue-100 */
+            color: #1E40AF; /* text-blue-800 */
+            border-color: #60A5FA; /* border-blue-400 */
+        }
+        .flash-message i {
+            margin-right: 0.75rem; /* mr-3 */
+        }
+        .header-section {
+            display: flex; /* flex */
+            justify-content: space-between; /* justify-between */
+            align-items: center; /* items-center */
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+        .page-title {
+            font-size: 1.875rem; /* text-3xl */
+            font-weight: 700; /* font-bold */
+            color: #1f2937; /* text-gray-800 */
+        }
+        .action-buttons-group {
+            display: flex; /* flex */
+            gap: 0.75rem; /* space-x-3 */
+        }
+        .search-card-content {
+            display: flex; /* flex */
+            flex-direction: column; /* flex-col */
+            gap: 1rem; /* space-y-4 */
+            margin-bottom: 1rem; /* mb-4 */
+        }
+        @media (min-width: 768px) { /* md: breakpoint */
+            .search-card-content {
+                flex-direction: row; /* md:flex-row */
+                gap: 1rem; /* md:space-x-4, assuming 1rem gap is equivalent */
+            }
+        }
+        .search-input {
+            flex-grow: 1; /* flex-grow */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+            -webkit-appearance: none; /* appearance-none */
+            -moz-appearance: none; /* appearance-none */
+            appearance: none; /* appearance-none */
+            border: 1px solid #d1d5db; /* border */
+            border-radius: 0.5rem; /* rounded-lg */
+            width: 100%; /* w-full */
+            padding: 0.5rem 0.75rem; /* py-2 px-3 */
+            color: #374151; /* text-gray-700 */
+            line-height: 1.25; /* leading-tight */
+            outline: none; /* focus:outline-none */
+            transition: all 0.2s ease-in-out;
+        }
+        .search-input:focus {
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.5); /* focus:shadow-outline / focus:ring-green-500 */
+            border-color: #10B981; /* focus:border-green-500 */
+        }
+        .search-input::placeholder {
+            color: #9ca3af; /* placeholder-gray-400 */
+        }
+        .total-sales-display {
+            text-align: right; /* text-right */
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 600; /* font-semibold */
+            color: #374151; /* text-gray-700 */
+        }
+        /* Table styles */
+        .table-container {
+            overflow-x: auto; /* overflow-x-auto */
+        }
+        table {
+            width: 100%; /* w-full */
+            border-collapse: collapse; /* border-collapse */
+            background-color: #ffffff; /* bg-white */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05); /* shadow-md */
+        }
+        thead {
+            background-color: #e2e8f0; /* bg-gray-200 */
+        }
+        th, td {
+            padding: 12px 15px; /* py-3 px-4 */
+            text-align: left; /* text-left */
+            border-bottom: 1px solid #e2e8f0; /* border-b border-gray-200 */
+        }
+        th {
+            font-weight: 600; /* font-semibold */
+            color: #4a5568; /* text-gray-600 */
+            text-transform: uppercase; /* uppercase */
+            font-size: 0.75rem; /* text-xs */
+        }
+        th:first-child {
+            border-top-left-radius: 0.5rem; /* rounded-tl-lg */
+        }
+        th:last-child {
+            border-top-right-radius: 0.5rem; /* rounded-tr-lg */
+        }
+        tbody tr:hover {
+            background-color: #f0f4f7; /* hover:bg-gray-50 */
+        }
+        .action-buttons {
+            display: flex; /* flex */
+            gap: 0.5rem; /* space-x-2 */
+            white-space: nowrap; /* whitespace-nowrap */
+        }
+        .action-buttons .btn {
+            padding: 6px 10px; /* py-1.5 px-2.5 */
+            font-size: 0.875rem; /* text-sm */
+            border-radius: 0.375rem; /* rounded-sm */
+            transition: all 0.15s ease-in-out;
+        }
+        .action-buttons .edit-btn {
+            background-color: #3B82F6; /* bg-blue-500 */
+            color: white;
+        }
+        .action-buttons .edit-btn:hover {
+            background-color: #2563EB; /* hover:bg-blue-600 */
+        }
+        .action-buttons .delete-btn {
+            background-color: #EF4444; /* bg-red-500 */
+            color: white;
+        }
+        .action-buttons .delete-btn:hover {
+            background-color: #DC2626; /* hover:bg-red-600 */
+        }
+        .item-list {
+            list-style-type: disc; /* list-disc */
+            list-style-position: inside; /* list-inside */
+            font-size: 0.875rem; /* text-sm */
+            color: #555; /* text-gray-700, or a specific darker grey */
+        }
+        .item-list li {
+            margin-bottom: 4px; /* small margin between list items */
+        }
+        .no-records-message {
+            text-align: center; /* text-center */
+            padding-top: 1rem; /* py-4 */
+            padding-bottom: 1rem;
+            color: #6b7280; /* text-gray-500 */
+        }
+        .back-to-dashboard-footer {
+            display: flex; /* flex */
+            justify-content: center; /* justify-center */
+            margin-top: 2rem; /* mt-8 */
+        }
+        .back-to-dashboard-footer .btn {
+            display: flex;
+            align-items: center;
+        }
+        .back-to-dashboard-footer .btn i {
+            margin-right: 0.5rem; /* mr-2 */
+        }
+
+        /* Sales Overview Card specific styles */
+        .sales-overview-card-content {
+            background-color: #f9fafb; /* bg-gray-50 */
+            padding: 0.75rem; /* p-3 */
+            border-radius: 0.375rem; /* rounded-md */
+            display: flex; /* flex */
+            justify-content: space-between; /* justify-between */
+            align-items: center; /* items-center */
+        }
+        .sales-overview-card-label {
+            color: #374151; /* text-gray-700 */
+            font-weight: 500; /* font-medium */
+        }
+        .sales-overview-card-value {
+            color: #059669; /* text-green-600 */
+            font-weight: 700; /* font-bold */
+            font-size: 1.125rem; /* text-lg */
+        }
+
+        /* Search Form specific styles (overriding general .form-input) */
+        .search-form-input {
+            margin-top: 0.25rem; /* mt-1 */
+            display: block; /* block */
+            width: 100%; /* w-full */
+            max-width: 16rem; /* md:w-64 */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.375rem; /* rounded-md */
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+            padding: 0.5rem; /* p-2 */
+            margin-right: 0.5rem; /* mr-2 */
+            color: #374151; /* text-gray-700 */
+            line-height: 1.25; /* leading-tight */
+            outline: none; /* focus:outline-none */
+            transition: all 0.2s ease-in-out;
+        }
+        .search-form-input:focus {
+            border-color: #93c5fd; /* focus:border-blue-300 */
+            box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.5); /* focus:ring focus:ring-blue-200 focus:ring-opacity-50 */
+        }
+        .search-form-input::placeholder {
+            color: #9ca3af; /* placeholder-gray-400 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="main-container py-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6 flash-messages-container">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex justify-between items-center mb-6 header-section">
+            <h1 class="text-3xl font-bold text-gray-800 page-title">Sales Records</h1>
+            <div class="flex space-x-3 action-buttons-group">
+                <a href="{{ url_for('add_sale') }}" class="btn btn-primary">
+                    <i class="fas fa-plus-circle mr-2"></i> Record New Sale
+                </a>
+                <a href="{{ url_for('add_return') }}" class="btn btn-danger">
+                    <i class="fas fa-undo mr-2"></i> Process Return
+                </a>
+            </div>
+        </div>
+
+        <div class="card mb-6">
+            <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 mb-4 search-card-content">
+                <form action="{{ url_for('sales') }}" method="GET" class="flex w-full md:w-auto">
+                    <input type="text" name="search" placeholder="Search sales (product, customer, person, trans ID)"
+                           class="flex-grow shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline search-input search-form-input"
+                           value="{{ search_query if search_query else '' }}">
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200 btn">
+                        Search
+                    </button>
+                    <button type="button" id="clear_button" class="btn btn-secondary ml-2">
+                        <i class="fas fa-times-circle mr-2"></i> Clear
+                    </button>
+                </form>
+            </div>
+            <div class="text-right text-lg font-semibold text-gray-700 total-sales-display">
+                Total Displayed Sales: <span id="total_displayed_sales">GH₵0.00</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow-md p-6 card">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4 card-heading-2">Sales Overview</h2>
+                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-md sales-overview-card-content">
+                    <span class="text-gray-700 font-medium sales-overview-card-label">Total Displayed Sales:</span>
+                    <span class="text-green-600 font-bold text-lg sales-overview-card-value">GH₵{{ "%.2f"|format(total_displayed_sales) }}</span>
+                </div>
+            </div>
+            {# You can add more overview cards here if needed, e.g., sales by month, top products #}
+        </div>
+
+        <div class="card overflow-x-auto table-container">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 card-heading-2">Recent Sales Transactions</h2>
+            {% if transactions %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-md">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="rounded-tl-lg">Transaction ID</th>
+                                <th>Date</th>
+                                <th>Customer Phone</th>
+                                <th>Sales Person</th>
+                                <th>Total Amount</th>
+                                <th class="rounded-tr-lg text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sales_table_body">
+                            {% for transaction in transactions %}
+                                <tr class="border-b border-gray-200 hover:bg-gray-100" data-search-terms="{{ transaction.id|lower }} {{ transaction.customer_phone|lower }} {{ transaction.sales_person_name|lower }} {% for item in transaction.items() %}{{ item.product_name|lower }} {% endfor %}">
+                                    <td class="py-3 px-6 text-left whitespace-nowrap">
+                                        <div class="font-medium text-gray-800">{{ transaction.id[:8].upper() }}</div>
+                                    </td>
+                                    <td class="py-3 px-6 text-left">
+                                        {{ transaction.sale_date }}
+                                    </td>
+                                    <td class="py-3 px-6 text-left">
+                                        {{ transaction.customer_phone if transaction.customer_phone else 'N/A' }}
+                                    </td>
+                                    <td class="py-3 px-6 text-left">
+                                        {{ transaction.sales_person_name }}
+                                    </td>
+                                    <td class="py-3 px-6 text-left">
+                                        GH₵{{ "%.2f"|format(transaction.total_amount) }}
+                                    </td>
+                                    <td class="py-3 px-6 text-center">
+                                        <div class="flex item-center justify-center space-x-2 action-buttons">
+                                            <a href="#" onclick="toggleTransactionDetails('{{ transaction.id }}')" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% if user_role in ['admin', 'sales'] %}
+                                            {# Pass the transaction.id for editing the whole transaction #}
+                                            <a href="{{ url_for('edit_sale_transaction', transaction_id=transaction.id) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            {# Pass the transaction.id for deleting the whole transaction #}
+                                            <a href="{{ url_for('delete_sale_transaction', transaction_id=transaction.id) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110"
+                                               onclick="return confirm('Are you sure you want to delete this sale transaction (ID: {{ transaction.id[:8].upper() }})? This will return stock to inventory for all items in this transaction.');">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                            {% endif %}
+                                            <a href="{{ url_for('print_sale_receipt', transaction_id=transaction.id) }}" target="_blank" class="w-4 mr-2 transform hover:text-blue-500 hover:scale-110">
+                                                <i class="fas fa-print"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr id="details-{{ transaction.id }}" class="hidden bg-gray-50">
+                                    <td colspan="6" class="p-4">
+                                        <div class="bg-gray-100 p-4 rounded-lg shadow-inner">
+                                            <h4 class="font-semibold mb-2 text-gray-700">Items in this Transaction:</h4>
+                                            <ul class="list-disc list-inside text-gray-600 item-list">
+                                                {% for item in transaction['items'] %} {# Use bracket notation here #}
+                                                    <li>
+                                                        {{ item['product_name'] }} - {{ "%.2f"|format(item['quantity_sold']) }} {{ item['sale_unit_type'] }} @ GH₵{{ "%.2f"|format(item['price_at_time_per_unit_sold']) }} per {{ item['sale_unit_type'] }} = GH₵{{ "%.2f"|format(item['total_amount']) }}
+                                                        {% if item['expires_soon'] == 'Expired' %}
+                                                            <span class="text-red-500 ml-2">(Expired: {{ item['expiry_date'] | format_date('%Y-%m-%d') }})</span>
+                                                        {% elif item['expires_soon'] %}
+                                                            <span class="text-yellow-500 ml-2">(Expires Soon: {{ item['expiry_date'] | format_date('%Y-%m-%d') }})</span>
+                                                        {% endif %}
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-gray-600 text-center py-4 no-records-message">No sales records found.</p>
+            {% endif %}
+        </div>
+
+        <div class="flex justify-center mt-8 back-to-dashboard-footer">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('search_input');
+            const searchButton = document.getElementById('search_button');
+            const clearButton = document.getElementById('clear_button');
+            const salesTableBody = document.getElementById('sales_table_body');
+            const totalDisplayedSalesSpan = document.getElementById('total_displayed_sales');
+
+            // Function to filter sales records
+            function filterSalesRecords() {
+                const searchTerm = searchInput.value.toLowerCase().trim();
+                let totalSales = 0;
+
+                Array.from(salesTableBody.children).forEach(row => {
+                    const searchTerms = row.dataset.searchTerms;
+                    // Ensure we are getting the correct cell for total amount.
+                    // The HTML structure shows total amount in the 6th <td> (index 5)
+                    const totalAmountCell = row.children[5];
+                    if (totalAmountCell) {
+                        const totalAmountText = totalAmountCell.textContent;
+                        const totalAmount = parseFloat(totalAmountText.replace('GH₵', '')) || 0;
+
+                        // Check if the row contains the search term or if search term is empty
+                        // and ensure the row is not a details row
+                        if (!row.id.startsWith('details-') && (searchTerms.includes(searchTerm) || searchTerm === '')) {
+                            row.style.display = '';
+                            totalSales += totalAmount;
+                        } else {
+                            row.style.display = 'none';
+                        }
+                    } else {
+                        // If it's a details row, hide it always unless explicitly shown by toggle
+                        if (row.id.startsWith('details-')) {
+                            row.style.display = 'none';
+                        }
+                    }
+                });
+                totalDisplayedSalesSpan.textContent = `GH₵${totalSales.toFixed(2)}`;
+            }
+
+            // Event Listeners
+            searchButton.addEventListener('click', filterSalesRecords);
+            searchInput.addEventListener('keyup', function(event) {
+                if (event.key === 'Enter') {
+                    filterSalesRecords();
+                }
+            });
+            clearButton.addEventListener('click', function() {
+                searchInput.value = '';
+                filterSalesRecords(); // Show all records again
+            });
+
+            // Initial calculation of total displayed sales on page load
+            filterSalesRecords();
+        });
+
+        function toggleTransactionDetails(transactionId) {
+            const detailsRow = document.getElementById('details-' + transactionId);
+            if (detailsRow) {
+                detailsRow.classList.toggle('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -4,20 +4,55 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }} - {{ session.get('business_name', 'Business Dashboard') }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <style>
+        /* Base styles from Tailwind's preflight and your custom styles */
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f4f7f6;
             color: #333;
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
         }
+
+        /* Replicating Tailwind's utility classes with standard CSS */
+        .min-h-screen { min-height: 100vh; }
         .container {
             max-width: 600px;
             margin: 0 auto;
             padding: 2rem;
         }
+        .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+        .mb-6 { margin-bottom: 1.5rem; }
+        .mb-4 { margin-bottom: 1rem; }
+        .mb-2 { margin-bottom: 0.5rem; }
+        .mb-6 { margin-bottom: 1.5rem; }
+        .px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+        .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+        .mr-2 { margin-right: 0.5rem; }
+
+        /* Flexbox and layout styles */
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .block { display: block; }
+        .w-full { width: 100%; }
+
+        /* Typography */
+        .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+        .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+        .text-gray-800 { color: #1f2937; }
+        .text-gray-700 { color: #374151; }
+        .text-gray-600 { color: #4b5563; }
+        .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+        .font-bold { font-weight: 700; }
+        .font-semibold { font-weight: 600; }
+        .font-medium { font-weight: 500; }
+        .leading-tight { line-height: 1.25; }
+
+        /* Card and button styles */
         .card {
             background-color: #ffffff;
             border-radius: 0.75rem;
@@ -29,6 +64,11 @@
             border-radius: 0.5rem;
             font-weight: 500;
             transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
         }
         .btn-primary {
             background-color: #10B981; /* Emerald 500 */
@@ -44,6 +84,16 @@
         .btn-secondary:hover {
             background-color: #4B5563; /* Gray 600 */
         }
+
+        /* Form elements */
+        .shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+        .appearance-none { -webkit-appearance: none; -moz-appearance: none; appearance: none; }
+        .border { border-width: 1px; border-style: solid; border-color: #d1d5db; }
+        .rounded { border-radius: 0.25rem; }
+        .focus\:outline-none:focus { outline: 2px solid transparent; outline-offset: 2px; }
+        .focus\:shadow-outline:focus { box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5); }
+
+        /* Flash message styles */
         .flash-message {
             padding: 1rem;
             border-radius: 0.5rem;
@@ -52,29 +102,23 @@
             display: flex;
             align-items: center;
         }
+        .flash-message i { margin-right: 0.75rem; }
         .flash-success {
-            background-color: #D1FAE5; /* Green 100 */
-            color: #065F46; /* Green 800 */
-            border: 1px solid #34D399; /* Green 400 */
+            background-color: #D1FAE5; color: #065F46; border: 1px solid #34D399;
         }
         .flash-danger {
-            background-color: #FEE2E2; /* Red 100 */
-            color: #991B1B; /* Red 800 */
-            border: 1px solid #F87171; /* Red 400 */
+            background-color: #FEE2E2; color: #991B1B; border: 1px solid #F87171;
         }
         .flash-warning {
-            background-color: #FFFBEB; /* Yellow 100 */
-            color: #92400E; /* Yellow 800 */
-            border: 1px solid #FCD34D; /* Yellow 400 */
+            background-color: #FFFBEB; color: #92400E; border: 1px solid #FCD34D;
         }
         .flash-info {
-            background-color: #DBEAFE; /* Blue 100 */
-            color: #1E40AF; /* Blue 800 */
-            border: 1px solid #60A5FA; /* Blue 400 */
+            background-color: #DBEAFE; color: #1E40AF; border: 1px solid #60A5FA;
         }
-        .flash-message i {
-            margin-right: 0.75rem;
-        }
+
+        /* SVG icon styles */
+        .w-5 { width: 1.25rem; }
+        .h-5 { height: 1.25rem; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -84,7 +128,8 @@
                 <div class="mb-6">
                     {% for category, message in messages %}
                         <div class="flash-message flash-{{ category }}">
-                            <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                            {# No Font Awesome, so we'll use a simple text or a different icon solution #}
+                            {% if category == 'success' %}&#10004;{% elif category == 'danger' %}&#10006;{% elif category == 'warning' %}!{% else %}i{% endif %}
                             {{ message }}
                         </div>
                     {% endfor %}
@@ -102,6 +147,7 @@
 
         <div class="card">
             <form action="" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-4">
                     <label for="username" class="block text-gray-700 text-sm font-semibold mb-2">Username:</label>
                     <input type="text" id="username" name="username" value="{{ user.username if user else '' }}"
@@ -118,7 +164,6 @@
                     <label for="role" class="block text-gray-700 text-sm font-semibold mb-2">Role:</label>
                     <select id="role" name="role"
                             class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
-                        {# Only allow 'admin' to add/edit 'admin' roles #}
                         {% if user_role == 'admin' %}
                             <option value="admin" {% if user and user.role == 'admin' %} selected {% endif %}>Admin</option>
                         {% endif %}

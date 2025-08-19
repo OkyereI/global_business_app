@@ -3,390 +3,357 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory List - {{ session.get('business_name', 'Business') }}</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <title>Manage Business Users - {{ session.get('business_name', 'Business Dashboard') }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f4f7f6;
-            color: #333;
-        }
-        .wrapper {
-            display: flex;
-            min-height: 100vh;
+            font-family: "Inter", sans-serif;
+            background-color: #f3f4f6; /* Equivalent to bg-gray-100 */
+            color: #333; /* Default text color */
         }
         .sidebar {
-            min-width: 250px;
-            max-width: 250px;
-            background: #2c3e50;
-            color: #fff;
-            transition: all 0.3s;
-            padding: 20px;
+            width: 250px; /* Equivalent to w-64 */
+            background-color: #1a202c; /* Equivalent to bg-gray-900 */
+            color: #ffffff; /* Equivalent to text-white */
+            padding: 1.5rem; /* Equivalent to p-6 */
+            height: 100vh; /* Equivalent to h-screen */
+            position: fixed; /* Equivalent to fixed */
+            top: 0; /* Equivalent to top-0 */
+            left: 0; /* Equivalent to left-0 */
+            overflow-y: auto; /* Equivalent to overflow-y-auto */
         }
-        .sidebar.active {
-            margin-left: -250px;
+        .main-content {
+            margin-left: 250px; /* Equivalent to ml-64 */
+            padding: 1.5rem; /* Equivalent to p-6 */
         }
-        .sidebar .sidebar-header {
-            padding-bottom: 20px;
-            border-bottom: 1px solid #47748b;
+        .sidebar a {
+            display: flex; /* Equivalent to flex */
+            align-items: center; /* Equivalent to items-center */
+            padding: 0.75rem 1rem; /* Equivalent to p-3 with slightly more horizontal padding */
+            border-radius: 0.5rem; /* Equivalent to rounded-lg */
+            margin-bottom: 0.75rem; /* Equivalent to mb-3 */
+            color: #ffffff; /* Equivalent to text-white */
+            text-decoration: none;
+            transition: background-color 0.2s; /* Equivalent to transition duration-200 */
+        }
+        .sidebar a i {
+            margin-right: 0.75rem; /* Equivalent to mr-3 */
+            width: 20px; /* Specific width for icons */
             text-align: center;
         }
-        .sidebar ul.components {
-            padding: 20px 0;
-            border-bottom: 1px solid #47748b;
+        .sidebar a:hover {
+            background-color: #2d3748; /* Equivalent to hover:bg-gray-700 */
         }
-        .sidebar ul li a {
-            padding: 10px;
-            font-size: 1.1em;
-            display: block;
-            color: #fff;
-            text-decoration: none;
+        .sidebar a.active {
+            background-color: #4a5568; /* Equivalent to active:bg-gray-600 */
+            font-weight: bold; /* Equivalent to font-bold */
         }
-        .sidebar ul li a:hover {
-            color: #2c3e50;
-            background: #fff;
-            border-radius: 5px;
-        }
-        .sidebar ul li.active > a, .sidebar ul li a[aria-expanded="true"] {
-            color: #fff;
-            background: #34495e;
-            border-radius: 5px;
-        }
-        .navbar {
-            padding: 15px 10px;
-            background: #fff;
-            border-bottom: 1px solid #dee2e6;
-        }
-        .content {
-            width: 100%;
-            padding: 20px;
-            min-height: 100vh;
-            transition: all 0.3s;
-        }
-        #sidebarCollapse {
-            background: #34495e;
-            border-color: #34495e;
-            color: #fff;
-        }
-        #sidebarCollapse:hover {
-            background: #2c3e50;
-            border-color: #2c3e50;
-        }
-        .card {
-            margin-bottom: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .card-header {
-            background-color: #34495e;
-            color: #fff;
-            border-radius: 8px 8px 0 0;
-            padding: 15px;
-            font-size: 1.2em;
+        /* Flash message styles (copied from your original base.html / common patterns) */
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            border: 1px solid transparent; /* Ensure a default border */
+        }
+        .flash-success {
+            background-color: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+        .flash-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-color: #f5c6cb;
+        }
+        .flash-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border-color: #ffeeba;
+        }
+        .flash-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border-color: #bee5eb;
+        }
+        .flash-message i {
+            margin-right: 0.75rem;
+        }
+
+        /* Heading 1 style */
+        h1 {
+            font-size: 1.875rem; /* text-3xl */
+            font-weight: 700; /* font-bold */
+            margin-bottom: 1.5rem; /* mb-6 */
+            color: #1f2937; /* text-gray-800 */
+        }
+        /* Heading 2 style for sidebar title */
+        .sidebar-title {
+            font-size: 1.5rem; /* text-2xl */
+            font-weight: 700; /* font-bold */
+            margin-bottom: 1.5rem; /* mb-6 */
+            text-align: center; /* text-center */
+        }
+        /* Add New User button */
+        .add-user-btn-container {
+            margin-bottom: 1.5rem; /* mb-6 */
+            text-align: right; /* text-right */
+        }
+        .add-user-btn {
+            background-color: #2563eb; /* bg-blue-600 */
+            color: #ffffff; /* text-white */
+            font-weight: 700; /* font-bold */
+            padding: 0.5rem 1rem; /* py-2 px-4 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+            transition: background-color 0.2s ease; /* transition duration-200 */
+            text-decoration: none; /* Remove underline from link */
+            display: inline-flex; /* for icon alignment */
+            align-items: center;
+            justify-content: center; /* for text/icon centering if needed */
+        }
+        .add-user-btn:hover {
+            background-color: #1d4ed8; /* hover:bg-blue-700 */
+        }
+        .add-user-btn i {
+            margin-right: 0.5rem; /* mr-2 */
+        }
+        /* Table styles */
+        .table-container-card {
+            background-color: #ffffff; /* bg-white */
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05); /* shadow-md */
         }
         .table-responsive {
-            margin-top: 20px;
+            overflow-x: auto; /* overflow-x-auto */
         }
-        .table th, .table td {
-            vertical-align: middle;
+        .table-full-width {
+            min-width: 100%; /* min-w-full */
+            border-collapse: collapse; /* border-collapse */
+            background-color: #ffffff; /* bg-white */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
         }
-        .table thead th {
-            background-color: #f8f9fa;
-            color: #495057;
+        thead tr {
+            background-color: #f3f4f6; /* bg-gray-100 */
+            border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
         }
-        .btn-primary {
-            background-color: #28a745;
-            border-color: #28a745;
-            border-radius: 5px;
+        th {
+            padding: 0.75rem 1rem; /* py-3 px-4 */
+            text-align: left; /* text-left */
+            font-size: 0.875rem; /* text-sm */
+            font-weight: 600; /* font-semibold */
+            color: #4b5563; /* text-gray-600 */
         }
-        .btn-primary:hover {
-            background-color: #218838;
-            border-color: #1e7e34;
+        tbody tr {
+            border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
         }
-        .btn-info {
-            background-color: #17a2b8;
-            border-color: #17a2b8;
-            border-radius: 5px;
+        tbody tr:hover {
+            background-color: #f9fafb; /* hover:bg-gray-50 */
         }
-        .btn-info:hover {
-            background-color: #138496;
-            border-color: #117a8b;
+        td {
+            padding: 0.75rem 1rem; /* py-3 px-4 */
+            color: #374151; /* text-gray-700 */
         }
-        .btn-danger {
-            background-color: #dc3545;
-            border-color: #dc3545;
-            border-radius: 5px;
+        .whitespace-nowrap {
+            white-space: nowrap;
         }
-        .btn-danger:hover {
-            background-color: #c82333;
-            border-color: #bd2130;
+        .action-link {
+            color: #2563eb; /* text-blue-600 */
+            text-decoration: none;
+            margin-right: 0.75rem; /* mr-3 */
         }
-        .btn-warning {
-            background-color: #ffc107;
-            border-color: #ffc107;
-            color: #212529;
-            border-radius: 5px;
+        .action-link:hover {
+            color: #1e40af; /* hover:text-blue-900 */
         }
-        .btn-warning:hover {
-            background-color: #e0a800;
-            border-color: #d39e00;
+        .action-link.delete {
+            color: #dc2626; /* text-red-600 */
         }
-        .alert {
-            border-radius: 5px;
+        .action-link.delete:hover {
+            color: #7f1d1d; /* hover:text-red-900 */
         }
-        .modal-content {
-            border-radius: 8px;
+        .disabled-action {
+            color: #9ca3af; /* text-gray-400 */
+            cursor: not-allowed;
+            display: inline-block; /* to ensure margin-right works if used */
         }
-        .modal-header {
-            background-color: #34495e;
-            color: #fff;
-            border-radius: 8px 8px 0 0;
+        /* No users found text */
+        p.text-gray-600 {
+            color: #4b5563;
         }
-        .modal-footer button {
-            border-radius: 5px;
+        /* Access Denied section */
+        .access-denied-card {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            color: #374151; /* text-gray-700 */
         }
-        .form-control {
-            border-radius: 5px;
+        .access-denied-card .text-lg {
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 600; /* font-semibold */
         }
-        .badge-warning {
-            background-color: #ffc107;
-            color: #212529;
+        .access-denied-card .text-sm {
+            font-size: 0.875rem; /* text-sm */
         }
-        .badge-danger {
-            background-color: #dc3545;
-            color: #fff;
+        .access-denied-card .mt-2 {
+            margin-top: 0.5rem; /* mt-2 */
         }
-        .import-section {
-            background-color: #e9ecef;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                padding-bottom: 0;
+            }
+            .main-content {
+                margin-left: 0;
+                padding-top: 1rem;
+            }
+            .sidebar-title {
+                text-align: center;
+                margin-bottom: 1rem;
+            }
+            .sidebar-nav {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 0.5rem;
+            }
+            .sidebar a {
+                flex-grow: 1;
+                text-align: center;
+                justify-content: center;
+                margin-bottom: 0.5rem;
+                padding: 0.5rem;
+            }
+            .sidebar a i {
+                margin-right: 0;
+                margin-bottom: 0.25rem;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <nav id="sidebar" class="sidebar">
-            <div class="sidebar-header">
-                <h3>{{ session.get('business_name', 'Admin Panel') }}</h3>
-                <p>({{ session.get('role', 'Guest').replace('_', ' ').title() }})</p>
-            </div>
-            <ul class="list-unstyled components">
-                <li>
-                    <a href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a>
-                </li>
-                {% if user_role in ['admin', 'viewer_admin'] %}
-                <li class="active">
-                    <a href="{{ url_for('inventory') }}"><i class="fas fa-boxes"></i> Inventory</a>
-                </li>
-                {% endif %}
-                {% if user_role in ['admin', 'sales', 'viewer_admin'] %}
-                <li>
-                    <a href="{{ url_for('sales') }}"><i class="fas fa-chart-line"></i> Sales</a>
-                </li>
-                {% endif %}
-                {% if user_role in ['admin', 'viewer_admin'] %}
-                <li>
-                    <a href="{{ url_for('reports') }}"><i class="fas fa-file-alt"></i> Reports</a>
-                </li>
-                {% endif %}
-                {% if business_type == 'Hardware' and user_role in ['admin', 'sales', 'viewer_admin'] %}
-                <li>
-                    <a href="{{ url_for('companies') }}"><i class="fas fa-building"></i> Companies</a>
-                </li>
-                <li>
-                    <a href="{{ url_for('future_orders') }}"><i class="fas fa-calendar-alt"></i> Future Orders</a>
-                </li>
-                {% endif %}
-                {% if user_role in ['admin', 'viewer_admin'] %}
-                <li>
-                    <a href="{{ url_for('manage_business_users') }}"><i class="fas fa-users-cog"></i> Manage Users</a>
-                </li>
-                {% endif %}
-                <li>
-                    <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
-                </li>
-            </ul>
-        </nav>
-
-        <div id="content" class="content">
-            <nav class="navbar navbar-expand-lg navbar-light bg-light">
-                <button type="button" id="sidebarCollapse" class="btn btn-info">
-                    <i class="fas fa-align-left"></i>
-                    <span>Toggle Sidebar</span>
-                </button>
-                <div class="ml-auto">
-                    <span class="navbar-text">
-                        Logged in as: <strong>{{ session.get('username') }}</strong>
-                    </span>
-                </div>
-            </nav>
-
-            <h2 class="mb-4">Inventory List for {{ session.get('business_name', 'Business') }}</h2>
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-
-            <div class="d-flex justify-content-between mb-3">
-                <div>
-                    {% if user_role == 'admin' %}
-                    <a href="{{ url_for('add_inventory') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Add New Item</a>
-                    <a href="{{ url_for('download_inventory_csv', business_id=session['business_id']) }}" class="btn btn-info"><i class="fas fa-download"></i> Download Inventory CSV</a>
-                    {% if session.get('business_id') %} {# Added conditional rendering #}
-                    <button type="button" class="btn btn-warning" data-toggle="modal" data-target="#uploadCsvModal"><i class="fas fa-upload"></i> Upload Inventory CSV</button>
-                    {% endif %} {# End of conditional rendering #}
-                    {% endif %}
-                </div>
-            </div>
-            <div class="mb-4"> <form action="{{ url_for('inventory') }}" method="GET" class="form-inline">
-                    <input class="form-control mr-sm-2" type="search" placeholder="Search product" aria-label="Search" name="search" value="{{ search_query if search_query else '' }}">
-                    <button class="btn btn-outline-success my-2 my-sm-0" type="submit"><i class="fas fa-search"></i> Search</button>
-                </form>
-            </div>
-
-            {% if user_role == 'admin' and other_businesses %}
-            <div class="import-section">
-                <h4>Import Products from Other Businesses (Same Type)</h4>
-                <form action="{{ url_for('import_products_from_other_businesses') }}" method="POST">
-                    <div class="form-group row">
-                        <label for="source_business_id" class="col-sm-3 col-form-label">Select Business:</label>
-                        <div class="col-sm-6">
-                            <select class="form-control" id="source_business_id" name="source_business_id" required>
-                                <option value="">-- Select a Business --</option>
-                                {% for business in other_businesses %}
-                                    <option value="{{ business.id }}">{{ business.name }} ({{ business.location }})</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-sm-3">
-                            <button type="submit" class="btn btn-info btn-block"><i class="fas fa-file-import"></i> Import Selected</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
+    <div class="sidebar">
+        <h2 class="text-2xl font-bold mb-6 text-center sidebar-title">{{ session.get('business_name', 'Business') }}</h2>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
+            </a>
+            {% if user_role in ['admin', 'sales', 'viewer'] %}
+            <a href="{{ url_for('inventory') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-boxes mr-3"></i> Inventory
+            </a>
+            <a href="{{ url_for('sales') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-chart-line mr-3"></i> Sales
+            </a>
             {% endif %}
+            {% if session.get('business_type') == 'Hardware' %}
+            <a href="{{ url_for('hirable_items') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tools mr-3"></i> Hirable Items
+            </a>
+            <a href="{{ url_for('rental_records') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-calendar-alt mr-3"></i> Rental Records
+            </a>
+            <a href="{{ url_for('companies') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-building mr-3"></i> Companies
+            </a>
+            <a href="{{ url_for('future_orders') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-clock mr-3"></i> Future Orders
+            </a>
+            {% endif %}
+            {% if user_role == 'admin' %}
+            <a href="{{ url_for('manage_business_users') }}" class="active flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-users mr-3"></i> Manage Users
+            </a>
+            {% endif %}
+            {% if user_role in ['super_admin', 'admin'] %}
+            <a href="{{ url_for('super_admin_dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-user-shield mr-3"></i> Admin Panel
+            </a>
+            {% endif %}
+            <a href="{{ url_for('reports') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-file-alt mr-3"></i> Reports
+            </a>
+            <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-sign-out-alt mr-3"></i> Logout
+            </a>
+        </nav>
+    </div>
 
-            <div class="table-responsive">
-                <table class="table table-striped table-hover">
+    <div class="main-content">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800">Manage Business Users</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }} mb-4">
+                        <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if user_role == 'admin' %}
+        <div class="mb-6 text-right add-user-btn-container">
+            <a href="{{ url_for('add_business_user') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200 add-user-btn">
+                <i class="fas fa-user-plus mr-2"></i> Add New User
+            </a>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md table-container-card">
+            {% if users %}
+            <div class="overflow-x-auto table-responsive">
+                <table class="min-w-full bg-white rounded-lg shadow-sm table-full-width">
                     <thead>
-                        <tr>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>Purchase Price (GH₵)</th>
-                            <th>Sale Price (GH₵)</th>
-                            <th>Current Stock (Packs)</th>
-                            <th>Units/Pack</th>
-                            <th>Unit Price (GH₵)</th>
-                            <th>Item Type</th>
-                            <th>Expiry Date</th>
-                            <th>Status</th>
-                            {% if user_role == 'admin' %}
-                            <th>Actions</th>
-                            {% endif %}
+                        <tr class="bg-gray-100 border-b border-gray-200">
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Username</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Role</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item in inventory_items %}
-                        <tr {% if item.expires_soon == 'Expired' %}class="table-danger"{% elif item.expires_soon %}class="table-warning"{% endif %}>
-                            <td>{{ item.product_name }}</td>
-                            <td>{{ item.category }}</td>
-                            <td>{{ "%.2f"|format(item.purchase_price) }}</td>
-                            <td>
-                                {% if item.is_fixed_price %}
-                                    <span class="badge badge-success">Fixed: {{ "%.2f"|format(item.fixed_sale_price) }}</span>
+                        {% for user in users %}
+                        <tr class="border-b border-gray-200 hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-700">{{ user.username }}</td>
+                            <td class="py-3 px-4 text-gray-700">{{ user.role.replace('_', ' ').title() }}</td>
+                            <td class="py-3 px-4 text-gray-700 whitespace-nowrap">
+                                <a href="{{ url_for('edit_business_user', username=user.username) }}" class="text-blue-600 hover:text-blue-900 mr-3 action-link" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                {% if user.role != 'admin' or user.username != session['username'] %}
+                                <a href="{{ url_for('delete_business_user', username=user.username) }}" class="text-red-600 hover:text-red-900 action-link delete" title="Delete">
+                                    <i class="fas fa-trash-alt"></i>
+                                </a>
                                 {% else %}
-                                    {{ "%.2f"|format(item.sale_price) }}
+                                <span class="text-gray-400 cursor-not-allowed disabled-action" title="Cannot delete admin user or yourself">
+                                    <i class="fas fa-trash-alt"></i>
+                                </span>
                                 {% endif %}
                             </td>
-                            <td>{{ "%.2f"|format(item.current_stock) }}</td>
-                            <td>{{ item.number_of_tabs }}</td>
-                            <td>{{ "%.2f"|format(item.unit_price_per_tab) }}</td>
-                            <td>{{ item.item_type }}</td>
-                            <td>
-                                {% if item.expiry_date %}
-                                    {{ item.expiry_date.strftime('%Y-%m-%d') }}
-                                    {% if item.expires_soon == 'Expired' %}
-                                        <span class="badge badge-danger">Expired</span>
-                                    {% elif item.expires_soon %}
-                                        <span class="badge badge-warning">Expires Soon</span>
-                                    {% endif %}
-                                {% else %}
-                                    N/A
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if item.is_active %}
-                                    <span class="badge badge-success">Active</span>
-                                {% else %}
-                                    <span class="badge badge-secondary">Inactive</span>
-                                {% endif %}
-                            </td>
-                            {% if user_role == 'admin' %}
-                            <td>
-                                <a href="{{ url_for('edit_inventory', item_id=item.id) }}" class="btn btn-sm btn-warning"><i class="fas fa-edit"></i> Edit</a>
-                                <a href="{{ url_for('delete_inventory', item_id=item.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete/deactivate this item? This action cannot be undone if there are no sales records, otherwise it will be marked as inactive.');"><i class="fas fa-trash"></i> Delete/Deactivate</a>
-                            </td>
-                            {% endif %}
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="11">No inventory items found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+            {% else %}
+            <p class="text-gray-600">No users found for this business. Add new users to get started!</p>
+            {% endif %}
         </div>
-    </div>
-
-    {% if session.get('business_id') %} {# Added conditional rendering #}
-    <div class="modal fade" id="uploadCsvModal" tabindex="-1" role="dialog" aria-labelledby="uploadCsvModalLabel" aria-hidden="true">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="uploadCsvModalLabel">Upload Inventory CSV</h5>
-                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <form action="{{ url_for('upload_inventory_csv_super_admin', business_id=session['business_id']) }}" method="POST" enctype="multipart/form-data">
-                    <div class="modal-body">
-                        <div class="form-group">
-                            <label for="csv_file">Select CSV File:</label>
-                            <input type="file" class="form-control-file" id="csv_file" name="csv_file" accept=".csv" required>
-                            <small class="form-text text-muted mt-2">
-                                Please ensure your CSV file has the following columns: `product_name`, `category`, `purchase_price`, `current_stock`, `batch_number` (optional), `number_of_tabs` (units/pack), `item_type` (e.g., 'Pharmacy', 'Hardware Material', 'Provision Store', 'Supermarket'), `expiry_date` (YYYY-MM-DD, optional), `is_fixed_price` (True/False), `fixed_sale_price` (if fixed price). Existing items will be updated, new items will be added.
-                            </small>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                        <button type="submit" class="btn btn-primary">Upload CSV</button>
-                    </div>
-                </form>
+        {% else %}
+            <div class="bg-white p-6 rounded-lg shadow-md text-center text-gray-700 access-denied-card">
+                <p class="text-lg font-semibold">Access Denied</p>
+                <p class="text-sm mt-2">This page is only accessible to Admin users.</p>
+                <p class="text-sm mt-2">Please ensure you are logged in with appropriate permissions.</p>
             </div>
-        </div>
+        {% endif %}
     </div>
-    {% endif %} {# End of conditional rendering #}
-
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-    <script>
-        $(document).ready(function () {
-            $('#sidebarCollapse').on('click', function () {
-                $('#sidebar').toggleClass('active');
-            });
-        });
-    </script>
 </body>
 </html>

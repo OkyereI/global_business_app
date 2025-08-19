@@ -232,6 +232,9 @@
                 </div>
                 <div class="card-body">
                     <form method="POST">
+                        {# CSRF TOKEN ADDED HERE #}
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                         <div class="form-group">
                             <label for="product_name">Product Name</label>
                             <input type="text" class="form-control" id="product_name" name="product_name" value="{{ item.product_name if item else '' }}" required>
@@ -312,6 +315,8 @@
             <div class="import-section mt-4">
                 <h4>Import Products from Other Businesses (Same Type)</h4>
                 <form action="{{ url_for('import_products_from_other_businesses') }}" method="POST">
+                    {# CSRF TOKEN ADDED HERE #}
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group row">
                         <label for="source_business_id" class="col-sm-3 col-form-label">Select Business:</label>
                         <div class="col-sm-6">
