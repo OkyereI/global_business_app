@@ -1,81 +1,321 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mx-auto p-6 bg-white rounded-lg shadow-md">
-    <h2 class="text-3xl font-bold text-gray-800 mb-6">Dashboard</h2>
+<div class="container py-4 bg-white rounded shadow">
+    <h2 class="h3 font-weight-bold text-dark mb-4">Dashboard</h2>
 
-    <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded-md" role="alert">
-        <p class="font-bold">Welcome, {{ username }}!</p>
-        <p>You are logged in as a <span class="font-semibold">{{ user_role.replace('_', ' ').title() }}</span> for the business: <span class="font-semibold">{{ business_name }} ({{ business_type }})</span>.</p>
+    <div class="alert alert-info border-left border-info p-3 mb-4 rounded" role="alert">
+        <p class="font-weight-bold">Welcome, {{ username }}!</p>
+        <p>You are logged in as a <span class="font-weight-semibold">{{ user_role.replace('_', ' ').title() }}</span> for the business: <span class="font-weight-semibold">{{ business_name }} ({{ business_type }})</span>.</p>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mb-4">
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }} rounded p-3 mb-3 shadow-sm">
+                        {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                        {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                        {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                        {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                        {% endif %}
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="row mb-4">
         {# Quick Actions Card #}
-        <div class="card p-6">
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Quick Actions</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {% if user_role in ['admin', 'sales'] %}
-                <a href="{{ url_for('add_sale') }}" class="btn btn-primary bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
-                    <i class="fas fa-cash-register mr-2"></i> Record New Sale
-                </a>
-                {% endif %}
-                <a href="{{ url_for('inventory') }}" class="btn btn-secondary bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
-                    <i class="fas fa-boxes mr-2"></i> View Inventory
-                </a>
-                <a href="{{ url_for('reports') }}" class="btn btn-secondary bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
-                    <i class="fas fa-chart-line mr-2"></i> View Reports
-                </a>
-                {% if user_role == 'admin' %}
-                <a href="{{ url_for('manage_business_users') }}" class="btn btn-secondary bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded-md shadow-md flex items-center justify-center">
-                    <i class="fas fa-users mr-2"></i> Manage Users
-                </a>
-                {% endif %}
+        <div class="col-lg-6 mb-4">
+            <div class="card p-3">
+                <h3 class="h5 font-weight-semibold text-dark mb-3">Quick Actions</h3>
+                <div class="row no-gutters">
+                    {% if user_role in ['admin', 'sales'] %}
+                    <div class="col-sm-6 p-2">
+                        <a href="{{ url_for('add_sale') }}" class="btn btn-primary d-flex align-items-center justify-content-center p-3">
+                            <i class="fas fa-cash-register mr-2"></i> Record New Sale
+                        </a>
+                    </div>
+                    {% endif %}
+                    <div class="col-sm-6 p-2">
+                        <a href="{{ url_for('inventory') }}" class="btn btn-secondary d-flex align-items-center justify-content-center p-3">
+                            <i class="fas fa-boxes mr-2"></i> View Inventory
+                        </a>
+                    </div>
+                    <div class="col-sm-6 p-2">
+                        <a href="{{ url_for('reports') }}" class="btn btn-secondary d-flex align-items-center justify-content-center p-3">
+                            <i class="fas fa-chart-line mr-2"></i> View Reports
+                        </a>
+                    </div>
+                    {% if user_role == 'admin' %}
+                    <div class="col-sm-6 p-2">
+                        <a href="{{ url_for('manage_business_users') }}" class="btn btn-secondary d-flex align-items-center justify-content-center p-3">
+                            <i class="fas fa-users mr-2"></i> Manage Users
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
 
         {# Business Overview Card #}
-        <div class="card p-6">
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Business Overview</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div class="bg-blue-50 p-4 rounded-md text-center shadow-sm">
-                    <p class="text-sm font-medium text-blue-700">Total Sales Today:</p>
-                    <p class="text-2xl font-bold text-blue-900">GH₵{{ "%.2f" | format(total_sales_today) }}</p>
+        <div class="col-lg-6 mb-4">
+            <div class="card p-3">
+                <h3 class="h5 font-weight-semibold text-dark mb-3">Business Overview</h3>
+                <div class="row no-gutters">
+                    <div class="col-sm-6 p-2">
+                        <div class="p-3 rounded shadow-sm text-center bg-light">
+                            <p class="small font-weight-medium text-info">Total Products:</p>
+                            <p class="h4 font-weight-bold text-primary">{{ total_products }}</p>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 p-2">
+                        <div class="p-3 rounded shadow-sm text-center bg-light">
+                            <p class="small font-weight-medium text-info">Total Users:</p>
+                            <p class="h4 font-weight-bold text-primary">{{ total_users }}</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="bg-red-50 p-4 rounded-md text-center shadow-sm">
-                    <p class="text-sm font-medium text-red-700">Low Stock Items:</p>
-                    <p class="text-2xl font-bold text-red-900">{{ low_stock_items }}</p>
+                <hr class="my-3">
+                <h6 class="font-weight-semibold text-dark mb-2">Sales Metrics:</h6>
+                <div class="row no-gutters mb-3">
+                    <div class="col-sm-6 p-2">
+                        <div class="p-3 rounded shadow-sm text-center bg-light">
+                            <p class="small font-weight-medium text-success">Sales Today:</p>
+                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_today) }}</p>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 p-2">
+                        <div class="p-3 rounded shadow-sm text-center bg-light">
+                            <p class="small font-weight-medium text-success">Sales This Week:</p>
+                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_this_week) }}</p>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 p-2">
+                        <div class="p-3 rounded shadow-sm text-center bg-light">
+                            <p class="small font-weight-medium text-success">Sales This Month:</p>
+                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_this_month) }}</p>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 p-2">
+                        <div class="p-3 rounded shadow-sm text-center bg-light">
+                            <p class="small font-weight-medium text-success">Sales This Year:</p>
+                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_this_year) }}</p>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <p class="text-sm text-gray-600 italic">Note: Actual data for these metrics would be fetched from your Flask backend (e.g., in the 'dashboard' route).</p>
         </div>
     </div>
 
-    {# Sales by Sales Person (Today) Card #}
-    <div class="card p-6 mb-8">
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Sales by Sales Person (Today)</h3>
-        {% if sales_by_person_today %}
-            {% for person, total_sales in sales_by_person_today %}
-                <div class="flex justify-between items-center border-b border-gray-200 py-2 last:border-b-0">
-                    <span class="text-lg text-gray-700">{{ person }}:</span>
-                    <span class="text-lg font-bold text-gray-900">GH₵{{ "%.2f" | format(total_sales) }}</span>
-                </div>
-            {% endfor %}
-        {% else %}
-            <p class="text-gray-600">No sales recorded by sales persons today.</p>
+    {# Synchronization Card - Visible only to Admins #}
+    {% if user_role == 'admin' %}
+    <div class="card p-3 mb-4">
+        <h3 class="h5 font-weight-semibold text-dark mb-3">Data Synchronization</h3>
+        <div class="d-flex align-items-center mb-3">
+            <i class="fas fa-sync-alt mr-2"></i>
+            <span id="syncStatusText" class="font-weight-bold">Checking status...</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+            <span id="lastSyncTime" class="text-muted small">Last Sync: N/A</span>
+            <button id="triggerSyncBtn" class="btn btn-info btn-sm">
+                <i class="fas fa-arrows-alt-h mr-1"></i> Sync Now
+            </button>
+        </div>
+        <div id="syncMessage" class="mt-2" style="display: none;"></div>
+    </div>
+    {% endif %}
+
+    {# Low Stock and Expiring Items #}
+    <div class="row mb-4">
+        <div class="col-lg-6 mb-4">
+            <div class="card p-3">
+                <h3 class="h5 font-weight-semibold text-dark mb-3">Low Stock Alerts (Below 10 units)</h3>
+                {% if low_stock_items %}
+                    <ul class="list-group list-group-flush">
+                        {% for item in low_stock_items %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ item.product_name }}
+                                <span class="badge badge-warning badge-pill">{{ "%.2f" | format(item.current_stock) }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted">No low stock items found. All good! 👍</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if business_type in ['Pharmacy', 'Supermarket', 'Provision Store'] %}
+        <div class="col-lg-6 mb-4">
+            <div class="card p-3">
+                <h3 class="h5 font-weight-semibold text-dark mb-3">Expiring Items (Next 30 Days)</h3>
+                {% if expiring_items %}
+                    <ul class="list-group list-group-flush">
+                        {% for item in expiring_items %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ item.product_name }}
+                                <span class="badge badge-danger badge-pill">{{ item.expiry_date.strftime('%Y-%m-%d') }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted">No items expiring soon. All clear! ✨</p>
+                {% endif %}
+            </div>
+        </div>
         {% endif %}
     </div>
 
+    {# Sales by Sales Person (Today) Card #}
+    <div class="card p-3 mb-4">
+        <h3 class="h5 font-weight-semibold text-dark mb-3">Sales by Sales Person (Today)</h3>
+        {% if sales_by_person_today %}
+            <ul class="list-group list-group-flush">
+            {% for person, total_sales in sales_by_person_today %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span class="h6 text-dark">{{ person }}:</span>
+                    <span class="h6 font-weight-bold text-dark">GH₵{{ "%.2f" | format(total_sales) }}</span>
+                </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No sales recorded by sales persons today.</p>
+        {% endif %}
+    </div>
+
+    {# Hardware Specific Metrics (if applicable) #}
+    {% if business_type == 'Hardware' %}
+    <div class="card p-3 mb-4">
+        <h3 class="h5 font-weight-semibold text-dark mb-3">Hardware Business Metrics</h3>
+        <div class="row no-gutters">
+            <div class="col-sm-4 p-2">
+                <div class="p-3 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-primary">Total Hirable Items:</p>
+                    <p class="h5 font-weight-bold text-primary">{{ business_dashboard_data.total_hirable_items | default(0) }}</p>
+                </div>
+            </div>
+            <div class="col-sm-4 p-2">
+                <div class="p-3 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-warning">Items Currently Rented:</p>
+                    <p class="h5 font-weight-bold text-warning">{{ business_dashboard_data.rented_items | default(0) }}</p>
+                </div>
+            </div>
+            <div class="col-sm-4 p-2">
+                <div class="p-3 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-danger">Overdue Rentals:</p>
+                    <p class="h5 font-weight-bold text-danger">{{ business_dashboard_data.overdue_rentals | default(0) }}</p>
+                </div>
+            </div>
+            <div class="col-sm-6 p-2">
+                <div class="p-3 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-info">Total Companies:</p>
+                    <p class="h5 font-weight-bold text-info">{{ business_dashboard_data.total_companies | default(0) }}</p>
+                </div>
+            </div>
+            <div class="col-sm-6 p-2">
+                <div class="p-3 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-info">Pending Future Orders:</p>
+                    <p class="h5 font-weight-bold text-info">{{ business_dashboard_data.total_future_orders | default(0) }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {# Recent Activity Card (Placeholder for now) #}
-    <div class="card p-6">
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Recent Activity</h3>
-        <p class="text-gray-600 mb-4">This section would display a list of recent sales, rentals, or inventory updates.</p>
-        <ul class="list-disc list-inside text-gray-700 space-y-2">
-            <li>Sale: Product X, GH₵50.00 (10 mins ago)</li>
-            <li>Inventory Update: Item Y stock adjusted (yesterday)</li>
-            <li>Rental: Tool Z rented by John Doe (2 hours ago)</li>
-            {# You would dynamically populate this list from your backend #}
+    <div class="card p-3">
+        <h3 class="h5 font-weight-semibold text-dark mb-3">Recent Activity</h3>
+        <p class="text-muted mb-3">This section would display a list of recent sales, rentals, or inventory updates.</p>
+        <ul class="list-unstyled text-dark">
+            <li class="mb-2">Sale: Product X, GH₵50.00 (10 mins ago)</li>
+            <li class="mb-2">Inventory Update: Item Y stock adjusted (yesterday)</li>
+            <li class="mb-2">Rental: Tool Z rented by John Doe (2 hours ago)</li>
+            {# You would dynamically populate this list from your backend if 'recent_activity' data is passed #}
         </ul>
     </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }} {# Keep any scripts from base.html #}
+    <script>
+    $(document).ready(function() {
+        // Function to fetch and display sync status
+        function fetchSyncStatus() {
+            $.ajax({
+                url: "{{ url_for('sync_status') }}",
+                type: 'GET',
+                success: function(response) {
+                    $('#syncStatusText').text('Status: ' + response.status);
+                    $('#lastSyncTime').text('Last Sync: ' + (response.last_sync !== '1970-01-01T00:00:00Z' ? new Date(response.last_sync).toLocaleString() : 'Never'));
+                },
+                error: function(xhr) {
+                    console.error("Error fetching sync status:", xhr.responseText);
+                    $('#syncStatusText').text('Status: Error fetching sync status');
+                    var errorMessage = xhr.responseJSON ? xhr.responseJSON.message : "Could not fetch sync status.";
+                    displayFlashMessage('danger', '<i class="fas fa-times-circle"></i> ' + errorMessage);
+                }
+            });
+        }
+
+        // Function to display dynamic flash messages on the page
+        function displayFlashMessage(category, message) {
+            // Remove any existing dynamic flash messages to avoid clutter
+            $('.dynamic-flash-message').remove();
+
+            var flashHtml = `
+                <div class="flash-message flash-${category} rounded p-3 mb-3 shadow-sm dynamic-flash-message">
+                    ${message}
+                </div>
+            `;
+            // Add at the top of the content container, after the welcome alert
+            $('.container.py-4').find('.alert.alert-info').after(flashHtml); 
+            
+            // Optionally, make it disappear after some time
+            setTimeout(function() {
+                $('.dynamic-flash-message').fadeOut('slow', function() {
+                    $(this).remove();
+                });
+            }, 5000); // Remove after 5 seconds
+        }
+
+        // Trigger sync button click handler
+        $('#triggerSyncBtn').on('click', function() {
+            $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Syncing...');
+            $('#syncMessage').hide().removeClass('alert alert-success alert-danger').empty();
+
+            $.ajax({
+                url: "{{ url_for('trigger_sync') }}",
+                type: 'POST',
+                headers: {
+                    'X-CSRFToken': $('meta[name="csrf-token"]').attr('content') // Include CSRF token
+                },
+                success: function(response) {
+                    displayFlashMessage('success', '<i class="fas fa-check-circle"></i> ' + response.message);
+                    fetchSyncStatus(); // Update status after successful sync
+                },
+                error: function(xhr) {
+                    console.error("Error triggering sync:", xhr.responseText);
+                    var errorMessage = xhr.responseJSON ? xhr.responseJSON.message : "An unknown error occurred during sync.";
+                    displayFlashMessage('danger', '<i class="fas fa-times-circle"></i> ' + errorMessage);
+                },
+                complete: function() {
+                    $('#triggerSyncBtn').prop('disabled', false).html('<i class="fas fa-arrows-alt-h mr-1"></i> Sync Now');
+                }
+            });
+        });
+
+        // Initial fetch of sync status when page loads, only if sync card is present
+        if ($('#syncStatusText').length) { // Check if the sync status element exists
+            fetchSyncStatus();
+        }
+
+        // You might also want to set up an interval to periodically fetch status
+        // setInterval(fetchSyncStatus, 60000); // Every 60 seconds (1 minute)
+    });
+    </script>
 {% endblock %}

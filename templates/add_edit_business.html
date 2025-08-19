@@ -1,4 +1,3 @@
-<!-- templates/add_edit_business.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,6 +30,9 @@
         {% endwith %}
 
         <form action="" method="POST" class="space-y-4">
+            {# IMPORTANT: Add the CSRF token here #}
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
             <div>
                 <label for="business_name" class="block text-sm font-medium text-gray-700">Business Name</label>
                 <input
@@ -117,20 +119,18 @@
                     type="text"
                     id="initial_admin_username"
                     name="initial_admin_username"
-                    value="{{ business.initial_admin_username if business else '' }}"
+                    value="{{ admin_user.username if admin_user else '' }}" {# Corrected to admin_user #}
                     required
                     class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 cursor-not-allowed sm:text-sm"
                     readonly
                 >
             </div>
             <div>
-                <label for="initial_admin_password" class="block text-sm font-medium text-gray-700">Admin Password</label>
+                <label for="initial_admin_password" class="block text-sm font-medium text-gray-700">Admin Password (Leave blank to keep current)</label>
                 <input
                     type="password"
                     id="initial_admin_password"
                     name="initial_admin_password"
-                    value="{{ business.initial_admin_password if business else '' }}"
-                    required
                     class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 >
             </div>

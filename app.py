@@ -1,6 +1,6 @@
 # app.py - Enhanced Flask Application with PostgreSQL Database and Hardware Business Features
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, Response
+from flask import Flask, render_template, request, redirect, url_for, flash, session, Response,jsonify,abort
 from flask_sqlalchemy import SQLAlchemy
 import os
 import uuid
@@ -13,7 +13,8 @@ import csv # Import csv module for CSV export
 from flask_migrate import Migrate # Import Flask-Migrate
 from werkzeug.security import generate_password_hash, check_password_hash # Import for password hashing
 from sqlalchemy import func,cast # Import func for aggregate functions
-
+from flask_wtf.csrf import CSRFProtect # Add this line
+import sys
 
 # --- Flask-Login setup (if you are using it, otherwise remove these lines) ---
 # For simplicity, I'll define a basic login_required if Flask-Login is not explicitly used.
@@ -26,21 +27,111 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+def get_user_role():
+    return session.get('role')
+
+def get_business_id():
+    return session.get('business_id')
+
+def get_business_type():
+    return session.get('business_type')
+
+# Basic login_required (if Flask-Login is not explicitly used)
+# def login_required(f):
+#     from functools import wraps
+#     @wraps(f)
+#     def decorated_function(*args, **kwargs):
+#         if 'username' not in session:
+#             flash('Please log in to access this page.', 'warning')
+#             return redirect(url_for('login'))
+#         return f(*args, **kwargs)
+#     return decorated_function
+
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if session.get('role') != 'admin':
+            flash('Access denied: Admins only.', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def super_admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if session.get('role') != 'super_admin':
+            flash('Access denied: Super Admin only.', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Permissions based on roles (can be extended)
+def permission_required(roles):
+    from functools import wraps
+    def wrapper(f): # 'f' is the function being decorated (e.g., dashboard, inventory)
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if session.get('role') not in roles:
+                flash(f'Access denied. Required roles: {", ".join(roles)}.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return wrapper
+
+
 
 
 # Load environment variables from .env file
 load_dotenv()
+# Create a variable to determine the correct path for templates
+if getattr(sys, 'frozen', False):
+    # Running as a PyInstaller-bundled executable
+    base_dir = sys._MEIPASS
+else:
+    # Running in a normal Python environment
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+
+# Construct the paths for templates and the database file
+template_dir = os.path.join(base_dir, 'templates')
+
+# The database file will be at the base directory after being bundled
+# The path is adjusted to find the database file in its new location
+db_path = os.path.join(base_dir, 'instance_data.db')
+
 
 app = Flask(__name__)
 
 # --- Database Configuration ---
 # Updated DATABASE_URL with the user-provided external PostgreSQL connection string
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-    'DATABASE_URL',
-    'postgresql://bisinessdb_user:QceRMwRe2FtjhPk8iMLCIKB3j3s4KmhI@dpg-d1olvgbuibrs73cum700-a.oregon-postgres.render.com/bisinessdb'
-)
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+DB_TYPE = os.getenv('DB_TYPE', 'postgresql') # Default to postgresql for server deployment
 
+if DB_TYPE == 'sqlite':
+    # Local SQLite database for desktop client
+    # This path should be within a writable directory in the bundled app context
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'instance_data.db')
+    print(f"Using SQLite database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    # Ensure instance path exists for SQLite
+    if not os.path.exists(app.instance_path):
+        os.makedirs(app.instance_path)
+else:
+    # Remote PostgreSQL database for server deployment
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+        'DATABASE_URL',
+            'postgresql://bisinessdb_user:QceRMwRe2FtjhPk8iMLCIKB3j3s4KmhI@dpg-d1olvgbuibrs73cum700-a.oregon-postgres.render.com/bisinessdb'
+
+    )
+    print(f"Using PostgreSQL database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'your_super_secret_key_here')
+
+# app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+#     'DATABASE_URL',
+#     'postgresql://bisinessdb_user:QceRMwRe2FtjhPk8iMLCIKB3j3s4KmhI@dpg-d1olvgbuibrs73cum700-a.oregon-postgres.render.com/bisinessdb'
+# )
+csrf = CSRFProtect(app) # Add this line to initialize CSRFProtect
 db = SQLAlchemy(app)
 migrate = Migrate(app, db) # Initialize Flask-Migrate
 
@@ -54,18 +145,20 @@ class Business(db.Model):
     location = db.Column(db.String(100))
     contact = db.Column(db.String(50))
     type = db.Column(db.String(50), default='Pharmacy', nullable=False) # 'Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'
-
-    # Relationships
+    is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW: Field to track business activity status
+    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now) # NEW: Add this line
+    # Relationships (rest of your relationships remain here)
     users = db.relationship('User', backref='business', lazy=True, cascade="all, delete-orphan")
     inventory_items = db.relationship('InventoryItem', backref='business', lazy=True, cascade="all, delete-orphan")
     sales_records = db.relationship('SaleRecord', backref='business', lazy=True, cascade="all, delete-orphan")
-    companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan") # New: for Hardware
-    future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan") # New: for Hardware
-    hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan") # NEW: for Hardware Hiring
-    rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan") # NEW: for Hardware Hiring
+    companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan")
+    future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan")
+    hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan")
+    rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f'<Business {self.name} ({self.type})>'
+
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -74,7 +167,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False) # Changed from 'password' to 'password_hash'
     role = db.Column(db.String(50), nullable=False)
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-
+    is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW LINE: Add this field
     __table_args__ = (db.UniqueConstraint('username', 'business_id', name='_username_business_uc'),)
 
     # Property to set password, automatically hashes it
@@ -113,7 +206,7 @@ class InventoryItem(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False) # New: For soft delete
     barcode = db.Column(db.String(50), unique=True, nullable=True)  # Add this line
     __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
-
+    markup_percentage_pharmacy = db.Column(db.Numeric(10, 2), default=0.00)
     def __repr__(self):
         return f'<InventoryItem {self.product_name} (Stock: {self.current_stock})>'
 
@@ -125,15 +218,18 @@ class SaleRecord(db.Model):
     product_id = db.Column(db.String(36), db.ForeignKey('inventory_items.id'), nullable=False)
     product_name = db.Column(db.String(255), nullable=False)
     quantity_sold = db.Column(db.Float, nullable=False)
-    sale_unit_type = db.Column(db.String(50))
+    sale_unit_type = db.Column(db.String(50)) # e.g., 'pack', 'tab', 'unit'
     price_at_time_per_unit_sold = db.Column(db.Float, nullable=False)
     total_amount = db.Column(db.Float, nullable=False)
     sale_date = db.Column(db.DateTime, nullable=False, default=datetime.now)
     customer_phone = db.Column(db.String(50))
     sales_person_name = db.Column(db.String(100))
-    reference_number = db.Column(db.String(100))
-    transaction_id = db.Column(db.String(36))
+    reference_number = db.Column(db.String(100)) # For external reference if needed
+    transaction_id = db.Column(db.String(36), nullable=False, default=lambda: str(uuid.uuid4())) # To group items in one sale
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW: Flag for sync
 
+    def __repr__(self):
+        return f'<SaleRecord {self.product_name} - {self.quantity_sold}>'
     def __repr__(self):
         return f'<SaleRecord {self.product_name} (Qty: {self.quantity_sold})>'
 
@@ -149,27 +245,64 @@ class Company(db.Model):
     email = db.Column(db.String(100))
     address = db.Column(db.String(255))
     balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit (from your business's perspective)
+    # Ensure 'last_updated' is defined here as it caused a migration issue before
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
 
     # Relationship to CompanyTransaction
     transactions = db.relationship('CompanyTransaction', backref='company', lazy=True, cascade="all, delete-orphan")
 
-    # REMOVE these lines if they are currently db.Column definitions:
-    # total_creditors = db.Column(db.Float, default=0.0)
-    # total_debtors = db.Column(db.Float, default=0.0)
+    # Relationships to Creditor and Debtor models with overlaps to resolve warnings
+    # These definitions should match what you have, ensuring 'Creditor' and 'Debtor'
+    # models correctly define their 'company_id' foreign keys.
 
-    # NEW: Relationships to Creditor and Debtor models
-    # This assumes your Creditor and Debtor models have 'company_id' foreign keys
-    creditors_list = db.relationship('Creditor', backref='company_creditor_rel', lazy=True, cascade="all, delete-orphan")
-    debtors_list = db.relationship('Debtor', backref='company_debtor_rel', lazy=True, cascade="all, delete-orphan")
+    # Primary relationships with descriptive backrefs
+    # If the warnings specifically mentioned 'creditor_records' and 'debtor_records'
+    # as the conflicting ones, and you don't have explicit definitions for them
+    # in your Company model, then the 'overlaps' should go on the relationships
+    # on the Creditor/Debtor side.
+    # However, if 'creditor_records' and 'debtors_records' *do* exist, you need to
+    # decide which ones are primary and apply overlaps accordingly.
+    # For now, I'm assuming 'creditors_list' and 'debtors_list' are your main ones
+    # from the Company side.
+
+    # If your SQLAlchemy warnings refer to specific relationship names like
+    # 'Company.creditor_records' and 'Company.debtors_records' (which are NOT in this snippet),
+    # you MUST add the overlaps parameter to *those* specific relationships.
+    # The snippet you sent does *not* contain the relationships that the warnings
+    # directly called out as needing the overlaps parameter.
+
+    # Re-adding `overlaps` to the `creditors_list` and `debtors_list` relationships
+    # ONLY IF these are actually conflicting with *other* relationships defined
+    # on the Company model (e.g., if you still have `creditor_records` defined elsewhere).
+    # If 'creditors_list' is the ONLY relationship to Creditor from Company, it might not
+    # need an 'overlaps' here. The warnings suggest *other* named relationships.
+
+    # Based on the warnings you shared:
+    # `Company.creditor_records` conflicts with `Company.creditors_list` AND `Creditor.company_creditor_rel`.
+    # This implies that `creditor_records` is a relationship that needs the `overlaps` parameter
+    # and should list `creditors_list` and `company_creditor_rel` within it.
+
+    # If you only have `creditors_list` and `debtors_list` defined on Company:
+    creditors_list = db.relationship(
+                'Creditor',
+                back_populates='company_creditor_rel', # This should match the backref name on Creditor
+                lazy=True,
+                cascade="all, delete-orphan"
+            )
+    debtors_list = db.relationship(
+        'Debtor',
+        back_populates='company_debtor_rel', # This should match the backref name on Debtor
+        lazy=True,
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
 
-    # NEW: Properties to calculate total creditors and debtors
     @property
     def total_creditors_amount(self):
+        
         # Sums the balance of all associated Creditor records
-        # Use func.sum for database-level aggregation for efficiency
-        # This will return None if no records, so default to 0.0
         return db.session.query(func.sum(Creditor.balance)).filter_by(
             company_id=self.id, business_id=self.business_id
         ).scalar() or 0.0
@@ -272,7 +405,11 @@ class Creditor(db.Model):
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
     # Relationship to Company (optional, but good for direct access)
-    company = db.relationship('Company', backref='creditor_records', lazy=True)
+    company_creditor_rel = db.relationship(
+                'Company',
+                back_populates='creditors_list', # This matches the relationship name on Company
+                lazy=True
+            )
 
     def __repr__(self):
         return f"<Creditor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
@@ -286,21 +423,27 @@ class Debtor(db.Model):
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
     # Relationship to Company (optional, but good for direct access)
-    company = db.relationship('Company', backref='debtor_records', lazy=True)
+    company_debtor_rel = db.relationship(
+                    'Company',
+                    back_populates='debtors_list', # This matches the relationship name on Company
+                    lazy=True
+                )
 
     def __repr__(self):
         return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
 
 # --- Flask app setup (secret_key, Arkesel, etc.) ---
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your_super_secret_key_here')
+csrf = CSRFProtect(app) # Add this line to initialize CSRFProtect
 ARKESEL_API_KEY = os.getenv('ARKESEL_API_KEY', 'b0FrYkNNVlZGSmdrendVT3hwUHk')
 ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'uniquebence')
 ARKESEL_SMS_URL = "https://sms.arkesel.com/sms/api" # Define Arkesel SMS URL
 ADMIN_PHONE_NUMBER = os.getenv('ADMIN_PHONE_NUMBER', '233543169389')
-ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME', 'My Pharmacy')
+ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME','Global Business')
 PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Accra, Ghana')
 PHARMACY_ADDRESS = os.getenv('PHARMACY_ADDRESS', '123 Main St, City')
 PHARMACY_CONTACT = os.getenv('PHARMACY_CONTACT', '+233543169389')
+
 
 # --- Helper function for current business ID ---
 def get_current_business_id():
@@ -451,9 +594,613 @@ def serialize_sale_record(sale):
     }
 
 
+# --- NEW: API Serialization Helpers ---
+def serialize_business(business):
+    """Converts a Business SQLAlchemy object to a JSON-serializable dictionary."""
+    return {
+        'id': str(business.id),
+        'name': str(business.name),
+        'address': str(business.address) if business.address else None,
+        'location': str(business.location) if business.location else None,
+        'contact': str(business.contact) if business.contact else None,
+        'type': str(business.type),
+        'is_active': bool(business.is_active),
+        'last_updated': business.last_updated.isoformat() if business.last_updated else None
+    }
+
+def serialize_inventory_item_api(item):
+    """Converts an InventoryItem SQLAlchemy object to a JSON-serializable dictionary for API."""
+    return {
+        'id': str(item.id),
+        'business_id': str(item.business_id),
+        'product_name': str(item.product_name),
+        'category': str(item.category),
+        'purchase_price': float(item.purchase_price),
+        'sale_price': float(item.sale_price),
+        'current_stock': float(item.current_stock),
+        'last_updated': item.last_updated.isoformat() if item.last_updated else None,
+        'batch_number': str(item.batch_number) if item.batch_number else None,
+        'number_of_tabs': int(item.number_of_tabs),
+        'unit_price_per_tab': float(item.unit_price_per_tab),
+        'item_type': str(item.item_type),
+        'expiry_date': item.expiry_date.isoformat() if item.expiry_date else None,
+        'is_fixed_price': bool(item.is_fixed_price),
+        'fixed_sale_price': float(item.fixed_sale_price),
+        'is_active': bool(item.is_active)
+    }
+
+def serialize_sale_record_api(sale):
+    """Converts a SaleRecord SQLAlchemy object to a JSON-serializable dictionary for API."""
+    return {
+        'id': str(sale.id),
+        'business_id': str(sale.business_id),
+        'product_id': str(sale.product_id),
+        'product_name': str(sale.product_name),
+        'quantity_sold': float(sale.quantity_sold),
+        'sale_unit_type': str(sale.sale_unit_type) if sale.sale_unit_type else None,
+        'price_at_time_per_unit_sold': float(sale.price_at_time_per_unit_sold),
+        'total_amount': float(sale.total_amount),
+        'sale_date': sale.sale_date.isoformat() if sale.sale_date else None,
+        'customer_phone': str(sale.customer_phone) if sale.customer_phone else None,
+        'sales_person_name': str(sale.sales_person_name) if sale.sales_person_name else None,
+        'reference_number': str(sale.reference_number) if hasattr(sale, 'reference_number') and sale.reference_number else None,
+        'transaction_id': str(sale.transaction_id) if sale.transaction_id else None
+    }
+
+def get_remote_flask_base_url():
+    """
+    Determines the base URL for the remote Flask API.
+    This URL should NOT have a trailing slash.
+    """
+    remote_url = os.getenv('FLASK_API_URL', 'http://localhost:5000')
+    # Ensure no trailing slash for consistent joining
+    if remote_url.endswith('/'):
+        remote_url = remote_url.rstrip('/')
+    return remote_url
+
+def get_last_synced_timestamp():
+    """Retrieves the last successful sync timestamp from a configuration or file."""
+    # In a desktop app, you'd save this to a local config file or SQLite table
+    # For now, let's use a simple file in the instance path for demonstration
+    sync_marker_path = os.path.join(app.instance_path, 'last_sync.txt')
+    if os.path.exists(sync_marker_path):
+        with open(sync_marker_path, 'r') as f:
+            return f.read().strip()
+    return '1970-01-01T00:00:00Z' # Epoch for initial sync
+
+def set_last_synced_timestamp(timestamp):
+    """Saves the last successful sync timestamp."""
+    sync_marker_path = os.path.join(app.instance_path, 'last_sync.txt')
+    with open(sync_marker_path, 'w') as f:
+        f.write(timestamp)
+
+# Helper function to check network connectivity
+def check_network_online(timeout=5):
+    """Checks if there's an active internet connection by trying to reach a reliable host."""
+    try:
+        requests.head("http://www.google.com", timeout=timeout)
+        return True
+    except requests.ConnectionError:
+        return False
+    except Exception as e:
+        print(f"Network check error: {e}")
+        return False
+
+# Function to pull data from remote (PostgreSQL) to local (SQLite)
+def pull_data_from_remote(remote_business_id, last_synced_at):
+    remote_url = get_remote_flask_base_url()
+    headers = {} # No special headers for now, relying on session for sync APIs in Flask
+
+    # 1. Pull Inventory
+    try:
+        inventory_response = requests.get(
+            f"{remote_url}/api/v1/inventory?business_id={remote_business_id}&last_synced_at={last_synced_at}",
+            headers=headers
+        )
+        inventory_response.raise_for_status()
+        new_inventory_items = inventory_response.json()
+        
+        with app.app_context(): # Ensure we are in app context for DB operations
+            for item_data in new_inventory_items:
+                # Upsert into local SQLite
+                item = InventoryItem.query.filter_by(id=item_data['id'], business_id=remote_business_id).first()
+                if item:
+                    # Update existing local item
+                    item.product_name = item_data['product_name']
+                    item.category = item_data['category']
+                    item.purchase_price = item_data['purchase_price']
+                    item.sale_price = item_data['sale_price']
+                    item.current_stock = item_data['current_stock']
+                    item.last_updated = datetime.fromisoformat(item_data['last_updated'])
+                    item.batch_number = item_data['batch_number']
+                    item.number_of_tabs = item_data['number_of_tabs']
+                    item.unit_price_per_tab = item_data['unit_price_per_tab']
+                    item.item_type = item_data['item_type']
+                    item.expiry_date = datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None
+                    item.is_fixed_price = item_data['is_fixed_price']
+                    item.fixed_sale_price = item_data['fixed_sale_price']
+                    item.is_active = item_data['is_active']
+                else:
+                    # Insert new local item
+                    db.session.add(InventoryItem(
+                        id=item_data['id'],
+                        business_id=remote_business_id,
+                        product_name=item_data['product_name'],
+                        category=item_data['category'],
+                        purchase_price=item_data['purchase_price'],
+                        sale_price=item_data['sale_price'],
+                        current_stock=item_data['current_stock'],
+                        last_updated=datetime.fromisoformat(item_data['last_updated']),
+                        batch_number=item_data['batch_number'],
+                        number_of_tabs=item_data['number_of_tabs'],
+                        unit_price_per_tab=item_data['unit_price_per_tab'],
+                        item_type=item_data['item_type'],
+                        expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+                        is_fixed_price=item_data['is_fixed_price'],
+                        fixed_sale_price=item_data['fixed_sale_price'],
+                        is_active=item_data['is_active']
+                    ))
+            db.session.commit()
+            print(f"Pulled {len(new_inventory_items)} inventory items from remote.")
+            return True, f"Pulled {len(new_inventory_items)} inventory items."
+    except requests.exceptions.RequestException as e:
+        print(f"Error pulling inventory: {e}")
+        return False, f"Error pulling inventory: {e}"
+    except Exception as e:
+        print(f"Unexpected error pulling inventory: {e}")
+        return False, f"Unexpected error pulling inventory: {e}"
+
+# Function to push data from local (SQLite) to remote (PostgreSQL)
+def push_data_to_remote(remote_business_id):
+    remote_url = get_remote_flask_base_url()
+    headers = {'Content-Type': 'application/json'} # API expects JSON
+    
+    # 1. Push pending Sales Records (those not yet marked as synced in local DB)
+    with app.app_context(): # Ensure we are in app context for DB operations
+        pending_sales = SaleRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
+        if pending_sales:
+            sales_data = [serialize_sale_record_api(s) for s in pending_sales]
+            try:
+                sales_response = requests.post(f"{remote_url}/api/v1/sales", json=sales_data, headers=headers)
+                sales_response.raise_for_status()
+                response_json = sales_response.json()
+                if response_json.get('message') == 'Sales records synchronized successfully.':
+                    for sale in pending_sales:
+                        sale.synced_to_remote = True # Mark as synced locally
+                    db.session.commit()
+                    print(f"Pushed {len(pending_sales)} sales to remote. Response: {response_json}")
+                    return True, f"Pushed {len(pending_sales)} sales."
+                else:
+                    print(f"Error pushing sales (remote message): {response_json.get('message')}")
+                    return False, f"Error pushing sales: {response_json.get('message')}"
+            except requests.exceptions.RequestException as e:
+                print(f"Error pushing sales: {e}")
+                db.session.rollback() # Rollback if API call fails
+                return False, f"Error pushing sales: {e}"
+            except Exception as e:
+                print(f"Unexpected error pushing sales: {e}")
+                db.session.rollback()
+                return False, f"Unexpected error pushing sales: {e}"
+        else:
+            print("No pending sales to push.")
+            return True, "No pending sales to push."
+
+    # NOTE: If you enable local inventory modifications, you'd need a similar
+    # push logic for InventoryItem objects here, possibly using a `synced_to_remote` flag
+    # on InventoryItem as well. For now, we assume inventory is primarily pulled.
+
+# Main synchronization function
+def perform_sync(business_id):
+    if not check_network_online():
+        print("Offline: Cannot perform synchronization.")
+        return False, "Offline: Cannot perform synchronization."
+
+    print("Online: Starting synchronization...")
+    
+    # In a desktop app, you'd ideally have a way to securely log in once
+    # and maintain that session or token for API calls.
+    # For this example, we're assuming the desktop app has some way to authenticate
+    # or that the remote Flask app's APIs are accessible without full session login
+    # if using API keys (which is the recommended production approach).
+    # For now, we assume a session is somehow maintained or the remote API is open for sync.
+
+    last_synced_at = get_last_synced_timestamp()
+    print(f"Last synced at: {last_synced_at}")
+    
+    success_push, msg_push = push_data_to_remote(business_id)
+    if not success_push:
+        return False, f"Sync failed during push: {msg_push}"
+
+    success_pull, msg_pull = pull_data_from_remote(business_id, last_synced_at)
+    if not success_pull:
+        return False, f"Sync failed during pull: {msg_pull}"
+
+    current_timestamp = datetime.now().isoformat()
+    set_last_synced_timestamp(current_timestamp)
+    print(f"Synchronization successful at {current_timestamp}")
+    return True, "Synchronization successful!"
 
 
-# --- Authentication Routes ---
+# --- NEW: Desktop-Specific Routes for Sync Management ---
+# These routes would be called from the local UI (renderer.js)
+# to trigger sync actions via IPC.
+
+# Before: @app.route('/sync_status', methods=['GET'])
+# Before: @login_required
+@app.route('/sync_status', methods=['GET'])
+@permission_required(['admin']) # Change this line
+def sync_status():
+    """Returns the current sync status and last sync time."""
+    current_status = "Online" if check_network_online() else "Offline"
+    last_sync = get_last_synced_timestamp()
+    return jsonify({
+        'online': check_network_online(),
+        'status': current_status,
+        'last_sync': last_sync
+    })
+
+# ---
+
+# Before: @app.route('/trigger_sync', methods=['POST'])
+# Before: @login_required
+@app.route('/trigger_sync', methods=['POST'])
+@permission_required(['admin']) # Change this line
+def trigger_sync():
+    """Endpoint to manually trigger a sync from the desktop UI."""
+    business_id = get_current_business_id()
+    if not business_id:
+        return jsonify({'success': False, 'message': 'Business ID not found in session for sync.'}), 400
+
+    success, message = perform_sync(business_id)
+    if success:
+        return jsonify({'success': True, 'message': message})
+    else:
+        return jsonify({'success': False, 'message': message}), 500
+# --- Database Initialization (IMPORTANT for SQLite) ---
+# Ensure this block creates tables only if they don't exist for SQLite.
+# For local desktop app, you would run this once to create the local SQLite DB.
+with app.app_context():
+    if DB_TYPE == 'sqlite' and not os.path.exists(os.path.join(app.instance_path, 'instance_data.db')):
+        print("Creating SQLite database tables...")
+        db.create_all() # Create tables for local SQLite DB
+        # You might also want to do an initial pull here to populate the local DB
+        # if the user is online for the very first run.
+    # For PostgreSQL, you'd manage with Alembic, not db.create_all() here.
+
+# --- NEW: API Endpoints for Data Synchronization ---
+
+@app.route('/api/v1/businesses', methods=['GET'])
+@login_required # Temporary: Should be API-specific auth in production
+def api_get_businesses():
+    """
+    API endpoint to fetch a list of businesses.
+    Can be filtered by last_updated timestamp for incremental sync.
+    """
+    if session.get('role') != 'super_admin':
+        # For non-super admins, restrict to their own business if applicable
+        business_id = get_current_business_id()
+        if not business_id:
+            return jsonify({'message': 'Access denied: Business ID not in session for this user.'}), 403
+        businesses = Business.query.filter_by(id=business_id, is_active=True).all()
+    else:
+        # Super admin can see all active businesses
+        businesses = Business.query.filter_by(is_active=True).all()
+    
+    # Filter by last_synced_at if provided in query parameters
+    last_synced_at_str = request.args.get('last_synced_at')
+    if last_synced_at_str:
+        try:
+            last_synced_at = datetime.fromisoformat(last_synced_at_str)
+            businesses = [b for b in businesses if b.last_updated and b.last_updated > last_synced_at]
+        except ValueError:
+            return jsonify({'message': 'Invalid last_synced_at format. Use ISO 8601.'}), 400
+
+    return jsonify([serialize_business(b) for b in businesses])
+
+
+@app.route('/api/v1/inventory', methods=['GET'])
+@login_required # Temporary: Should be API-specific auth in production
+def api_get_inventory():
+    """
+    API endpoint to fetch inventory items for a business.
+    Requires business_id in query params. Can be filtered by last_updated.
+    """
+    business_id = request.args.get('business_id', get_current_business_id())
+    if not business_id:
+        return jsonify({'message': 'Business ID is required.'}), 400
+
+    if session.get('role') != 'super_admin' and business_id != get_current_business_id():
+        return jsonify({'message': 'Access denied: You can only view inventory for your assigned business.'}), 403
+
+    inventory_query = InventoryItem.query.filter_by(business_id=business_id, is_active=True)
+
+    # Filter by last_synced_at for incremental sync
+    last_synced_at_str = request.args.get('last_synced_at')
+    if last_synced_at_str:
+        try:
+            last_synced_at = datetime.fromisoformat(last_synced_at_str)
+            inventory_query = inventory_query.filter(InventoryItem.last_updated > last_synced_at)
+        except ValueError:
+            return jsonify({'message': 'Invalid last_synced_at format. Use ISO 8601.'}), 400
+    
+    inventory_items = inventory_query.all()
+    return jsonify([serialize_inventory_item_api(item) for item in inventory_items])
+
+
+@app.route('/api/v1/inventory', methods=['POST'])
+@login_required # Temporary: Should be API-specific auth in production
+def api_upsert_inventory():
+    """
+    API endpoint to create or update inventory items in batch.
+    Expected data: JSON list of inventory item objects.
+    """
+    business_id = get_current_business_id()
+    if not business_id:
+        return jsonify({'message': 'Business ID is required to add/update inventory.'}), 400
+
+    if session.get('role') not in ['admin', 'sales']: # Sales can also update stock if part of their workflow
+        return jsonify({'message': 'Access denied: Insufficient role to add/update inventory.'}), 403
+
+    items_data = request.get_json()
+    if not isinstance(items_data, list):
+        return jsonify({'message': 'Request body must be a JSON array of inventory items.'}), 400
+
+    updated_count = 0
+    added_count = 0
+    errors = []
+
+    for item_data in items_data:
+        try:
+            item_id = item_data.get('id')
+            product_name = item_data.get('product_name')
+            category = item_data.get('category')
+            purchase_price = float(item_data.get('purchase_price'))
+            sale_price = float(item_data.get('sale_price'))
+            current_stock = float(item_data.get('current_stock'))
+            batch_number = item_data.get('batch_number')
+            number_of_tabs = int(item_data.get('number_of_tabs', 1))
+            unit_price_per_tab = float(item_data.get('unit_price_per_tab', 0.0))
+            item_type = item_data.get('item_type')
+            expiry_date_str = item_data.get('expiry_date')
+            is_fixed_price = bool(item_data.get('is_fixed_price', False))
+            fixed_sale_price = float(item_data.get('fixed_sale_price', 0.0))
+            is_active = bool(item_data.get('is_active', True))
+
+            expiry_date_obj = datetime.fromisoformat(expiry_date_str).date() if expiry_date_str else None
+
+            item = None
+            if item_id:
+                item = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first()
+            
+            # If item_id was not provided or not found, try by product_name for existing items within the business
+            if not item:
+                item = InventoryItem.query.filter_by(product_name=product_name, business_id=business_id).first()
+
+            if item:
+                # Update existing item
+                item.product_name = product_name
+                item.category = category
+                item.purchase_price = purchase_price
+                item.sale_price = sale_price
+                item.current_stock = current_stock
+                item.batch_number = batch_number
+                item.number_of_tabs = number_of_tabs
+                item.unit_price_per_tab = unit_price_per_tab
+                item.item_type = item_type
+                item.expiry_date = expiry_date_obj
+                item.is_fixed_price = is_fixed_price
+                item.fixed_sale_price = fixed_sale_price
+                item.is_active = is_active
+                item.last_updated = datetime.now() # Update timestamp
+                db.session.add(item)
+                updated_count += 1
+            else:
+                # Create new item
+                new_item = InventoryItem(
+                    business_id=business_id,
+                    product_name=product_name,
+                    category=category,
+                    purchase_price=purchase_price,
+                    sale_price=sale_price,
+                    current_stock=current_stock,
+                    batch_number=batch_number,
+                    number_of_tabs=number_of_tabs,
+                    unit_price_per_tab=unit_price_per_tab,
+                    item_type=item_type,
+                    expiry_date=expiry_date_obj,
+                    is_fixed_price=is_fixed_price,
+                    fixed_sale_price=fixed_sale_price,
+                    is_active=is_active,
+                    last_updated=datetime.now() # Set timestamp for new item
+                )
+                db.session.add(new_item)
+                added_count += 1
+        except Exception as e:
+            errors.append(f"Error processing item '{item_data.get('product_name', 'N/A')}': {str(e)}")
+            db.session.rollback() # Rollback current transaction on error
+            return jsonify({'message': 'Error processing some items.', 'errors': errors}), 400
+
+    db.session.commit()
+    return jsonify({
+        'message': 'Inventory synchronization successful.',
+        'added_count': added_count,
+        'updated_count': updated_count,
+        'errors': errors
+    })
+
+
+@app.route('/api/v1/sales', methods=['POST'])
+@login_required # Temporary: Should be API-specific auth in production
+def api_record_sales():
+    """
+    API endpoint to record new sales in batch.
+    Expected data: JSON list of sales record objects.
+    """
+    business_id = get_current_business_id()
+    if not business_id:
+        return jsonify({'message': 'Business ID is required to record sales.'}), 400
+
+    if session.get('role') not in ['admin', 'sales']:
+        return jsonify({'message': 'Access denied: Insufficient role to record sales.'}), 403
+
+    sales_data = request.get_json()
+    if not isinstance(sales_data, list):
+        return jsonify({'message': 'Request body must be a JSON array of sales records.'}), 400
+
+    recorded_count = 0
+    errors = []
+
+    for sale_data in sales_data:
+        try:
+            # Assuming a new sale record is always created, no 'upsert' for sales for now.
+            # If the client provides an 'id', we use it, otherwise generate a new one.
+            sale_id = sale_data.get('id', str(uuid.uuid4()))
+            product_id = sale_data.get('product_id')
+            product_name = sale_data.get('product_name')
+            quantity_sold = float(sale_data.get('quantity_sold'))
+            sale_unit_type = sale_data.get('sale_unit_type')
+            price_at_time_per_unit_sold = float(sale_data.get('price_at_time_per_unit_sold'))
+            total_amount = float(sale_data.get('total_amount'))
+            sale_date_str = sale_data.get('sale_date')
+            customer_phone = sale_data.get('customer_phone')
+            sales_person_name = sale_data.get('sales_person_name')
+            reference_number = sale_data.get('reference_number')
+            transaction_id = sale_data.get('transaction_id')
+
+            sale_date_obj = datetime.fromisoformat(sale_date_str) if sale_date_str else datetime.now()
+
+            # Optional: Deduct stock if sales are pushed from offline app (already deducted locally)
+            # This logic depends on whether offline app fully handles stock or just records sales.
+            # For robustness, we might re-verify/deduct here or log discrepancies.
+            # For now, we assume stock was handled locally and just record the sale.
+            
+            # Check if this exact sale record (by ID and transaction_id) already exists to prevent duplicates on sync
+            existing_sale = SaleRecord.query.filter_by(id=sale_id, business_id=business_id, transaction_id=transaction_id).first()
+            if existing_sale:
+                errors.append(f"Sale record with ID '{sale_id}' and transaction ID '{transaction_id}' already exists. Skipping.")
+                continue # Skip adding duplicate
+
+            new_sale = SaleRecord(
+                id=sale_id, # Use provided ID for idempotency
+                business_id=business_id,
+                product_id=product_id,
+                product_name=product_name,
+                quantity_sold=quantity_sold,
+                sale_unit_type=sale_unit_type,
+                price_at_time_per_unit_sold=price_at_time_per_unit_sold,
+                total_amount=total_amount,
+                sale_date=sale_date_obj,
+                customer_phone=customer_phone,
+                sales_person_name=sales_person_name,
+                reference_number=reference_number,
+                transaction_id=transaction_id
+            )
+            db.session.add(new_sale)
+            recorded_count += 1
+        except Exception as e:
+            errors.append(f"Error processing sale for product '{sale_data.get('product_name', 'N/A')}': {str(e)}")
+            db.session.rollback() # Rollback current transaction on error
+            return jsonify({'message': 'Error processing some sales records.', 'errors': errors}), 400
+
+    db.session.commit()
+    return jsonify({
+        'message': 'Sales records synchronized successfully.',
+        'recorded_count': recorded_count,
+        'errors': errors
+    })
+# ... (existing imports and other code) ...
+
+@app.route('/api/get_product_by_barcode', methods=['POST'])
+@login_required
+def get_product_by_barcode():
+    """
+    API endpoint to fetch product details by barcode or product name.
+    Ensures robust search (case-insensitive, trimmed) and
+    correct, consistent data formatting for frontend consumption.
+    """
+    business_id = get_current_business_id()
+    print(f"DEBUG: get_product_by_barcode - business_id: {business_id}")
+    if not business_id:
+        return jsonify({'success': False, 'message': 'Business context not found.'}), 400
+
+    data = request.get_json()
+    query_string = data.get('barcode', '').strip() # Strip whitespace from input
+    print(f"DEBUG: get_product_by_barcode - Received query_string: '{query_string}'")
+
+    if not query_string:
+        return jsonify({'success': False, 'message': 'Barcode or product name not provided.'}), 400
+
+    # 1. Try searching by exact barcode first (case-insensitive and trimmed)
+    product = InventoryItem.query.filter(
+        InventoryItem.business_id == business_id,
+        func.lower(func.trim(InventoryItem.barcode)) == func.lower(query_string), # Trim and lower both sides
+        InventoryItem.is_active == True
+    ).first()
+    print(f"DEBUG: get_product_by_barcode - Product found by exact barcode: {product.product_name if product else 'None'}")
+
+    if not product:
+        # 2. If not found by exact barcode, try searching by product name
+        # (case-insensitive, partial match on product_name)
+        product = InventoryItem.query.filter(
+            InventoryItem.business_id == business_id,
+            InventoryItem.is_active == True,
+            func.lower(InventoryItem.product_name).ilike(f'%{query_string.lower()}%') # Case-insensitive partial match
+        ).first()
+        print(f"DEBUG: get_product_by_barcode - Product found by product name: {product.product_name if product else 'None'}")
+
+    if product:
+        # Check stock before returning
+        if product.current_stock <= 0:
+            print(f"DEBUG: Product '{product.product_name}' is out of stock.")
+            return jsonify({
+                'success': False,
+                'message': f"Product '{product.product_name}' is out of stock."
+            }), 400
+
+        # Prepare product data for JSON response, ensuring correct types and defaults
+        # This structure ensures all expected keys are always present for the frontend
+        product_data = {
+            'id': str(product.id), # Ensure ID is string for consistency with UUIDs
+            'product_name': product.product_name,
+            'current_stock': float(product.current_stock or 0.0), # Ensure float, default 0.0
+            'is_fixed_price': product.is_fixed_price,
+            'barcode': product.barcode,
+            'number_of_tabs': float(product.number_of_tabs or 1.0), # Ensure float, default 1.0
+            'unit_price_per_tab': float(product.unit_price_per_tab or 0.0), # Ensure float, default 0.0
+            'item_type': product.item_type,
+            'expiry_date': product.expiry_date.strftime('%Y-%m-%d') if product.expiry_date else None,
+            'batch_number': product.batch_number,
+            'purchase_price': float(product.purchase_price or 0.0),
+            'sale_price': float(product.sale_price or 0.0), # Always include regular sale price
+            'fixed_sale_price': float(product.fixed_sale_price or 0.0), # Always include fixed sale price
+            'markup_percentage_pharmacy': float(product.markup_percentage_pharmacy or 0.0) # Always include markup
+        }
+
+        print(f"DEBUG: Product found and returning: {product_data}")
+        return jsonify({'success': True, 'product': product_data})
+    else:
+        # If no product found by barcode or name, suggest similar products if any exist
+        similar_products = InventoryItem.query.filter(
+            InventoryItem.business_id == business_id,
+            InventoryItem.is_active == True,
+            func.lower(InventoryItem.product_name).ilike(f'%{query_string.lower()}%')
+        ).limit(5).all()
+
+        if similar_products:
+            suggestions = [p.product_name for p in similar_products]
+            message = f'Product not found. Did you mean: {", ".join(suggestions)}?'
+            print(f"DEBUG: Product not found, suggesting: {message}")
+            return jsonify({
+                'success': False,
+                'message': message
+            }), 404
+        
+        message = 'Product not found for this barcode or name.'
+        print(f"DEBUG: Product not found: {message}")
+        return jsonify({
+            'success': False,
+            'message': message
+        }), 404
 
 @app.route('/')
 def index():
@@ -471,42 +1218,40 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        # Note: The 'is_active=True' check here is for the USER, not the business.
+        # We need to check the business's active status separately.
+        user = User.query.filter_by(username=username).first() # User.is_active is handled by login_required generally.
 
-        # Super Admin Login (still uses plain text password from env for simplicity, but could be hashed too)
-        if username == os.getenv('SUPER_ADMIN_USERNAME', 'superadmin') and \
-           password == os.getenv('SUPER_ADMIN_PASSWORD', 'superpassword'):
-            session.clear()
-            session['username'] = username
-            session['role'] = 'super_admin'
-            flash(f'Welcome, Super Admin!', 'success')
-            return redirect(url_for('super_admin_dashboard'))
+        if user and user.verify_password(password): # Using verify_password as per your model
+            business = Business.query.get(user.business_id)
+            # NEW: Check if the associated business is active
+            if not business or not business.is_active:
+                flash('Your business account is currently inactive. Please contact support.', 'danger')
+                return render_template('login.html', current_year=datetime.now().year)
 
-        # Regular User Login (now uses password hashing)
-        user_in_db = User.query.filter_by(username=username).first() # Filter by username only
-
-        if user_in_db and user_in_db.verify_password(password): # Use verify_password
-            business = Business.query.get(user_in_db.business_id)
-            if business:
-                session.clear()
-                session['username'] = username
-                session['role'] = user_in_db.role
-                session['business_id'] = business.id
-                session['business_name'] = business.name
-                session['business_type'] = business.type # Store business type in session
-                session['business_info'] = {
-                    'name': business.name,
-                    'address': business.address,
-                    'location': business.location,
-                    'contact': business.contact
-                }
-                flash(f'Welcome, {username} ({session["role"].replace("_", " ").title()}) to {session["business_name"]}!', 'success')
-                return redirect(url_for('dashboard'))
-            else:
-                flash('Associated business not found for this user.', 'danger')
+            session['username'] = user.username
+            session['role'] = user.role
+            session['business_id'] = user.business_id
+            
+            # Fetch business info and store in session
+            session['business_type'] = business.type # Changed from business.business_type to business.type
+            session['business_info'] = {
+                'name': business.name,
+                'address': business.address,
+                'location': business.location,
+                'contact': business.contact,
+                # 'email' field seems to be missing in your Business model. If you add it, uncomment below:
+                # 'email': business.email
+                'business_type': business.type # Ensure consistency with type
+            }
+            
+            flash('Login successful!', 'success')
+            if session.get('role') == 'super_admin':
+                return redirect(url_for('super_admin_dashboard'))
+            return redirect(url_for('dashboard'))
         else:
-            flash('Invalid username or password. Please try again.', 'danger')
-    return render_template('login.html')
-
+            flash('Invalid username or password.', 'danger')
+    return render_template('login.html', current_year=datetime.now().year)
 @app.route('/logout')
 def logout():
     session.pop('username', None)
@@ -564,60 +1309,136 @@ def business_selection():
 # --- Placeholder routes for demonstration ---
 # In a real application, these would be fully implemented.
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    if 'username' not in session:
-        flash('Please log in to access this page.', 'warning')
-        return redirect(url_for('login'))
-    if session.get('role') == 'super_admin':
-        return redirect(url_for('super_admin_dashboard'))
-    if 'business_id' not in session:
-        return redirect(url_for('business_selection'))
-
     business_id = get_current_business_id()
-    today = date.today()
+    if not business_id:
+        flash('No business selected. Please select a business or register one.', 'warning')
+        return redirect(url_for('login'))
 
-    # Total Sales Today
-    total_sales_today = db.session.query(func.sum(SaleRecord.total_amount)).filter(
+    current_business = Business.query.get(business_id)
+    # Check if the current business is active
+    if not current_business or not getattr(current_business, 'is_active', True):
+        flash('Your business account is currently inactive. Please contact support.', 'danger')
+        session.clear() # Clear session to force re-login/business selection
+        return redirect(url_for('login'))
+
+    business_type = get_current_business_type()
+
+    # Common data for all business types
+    # Ensure 'is_active' attribute exists before filtering
+    total_products_query = InventoryItem.query.filter_by(business_id=business_id)
+    if hasattr(InventoryItem, 'is_active'):
+        total_products_query = total_products_query.filter_by(is_active=True)
+    total_products = total_products_query.count()
+
+    total_users_query = User.query.filter_by(business_id=business_id)
+    if hasattr(User, 'is_active'):
+        total_users_query = total_users_query.filter_by(is_active=True)
+    total_users = total_users_query.count()
+
+    # Sales data for all business types
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday()) # Monday
+    start_of_month = today.replace(day=1)
+    start_of_year = today.replace(month=1, day=1)
+
+    sales_today = db.session.query(func.sum(SaleRecord.total_amount)).filter(
         SaleRecord.business_id == business_id,
         cast(SaleRecord.sale_date, db.Date) == today
     ).scalar() or 0.0
 
-    # Low Stock Items (Assuming InventoryItem model exists)
-    low_stock_threshold = 5 # Define your low stock threshold
-    low_stock_items = InventoryItem.query.filter(
+    sales_this_week = db.session.query(func.sum(SaleRecord.total_amount)).filter(
+        SaleRecord.business_id == business_id,
+        cast(SaleRecord.sale_date, db.Date) >= start_of_week
+    ).scalar() or 0.0
+
+    sales_this_month = db.session.query(func.sum(SaleRecord.total_amount)).filter(
+        SaleRecord.business_id == business_id,
+        cast(SaleRecord.sale_date, db.Date) >= start_of_month
+    ).scalar() or 0.0
+
+    sales_this_year = db.session.query(func.sum(SaleRecord.total_amount)).filter(
+        SaleRecord.business_id == business_id,
+        cast(SaleRecord.sale_date, db.Date) >= start_of_year
+    ).scalar() or 0.0
+    
+    # Low stock alerts
+    low_stock_threshold = 10 # Example threshold
+    low_stock_items_query = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
-        InventoryItem.current_stock <= low_stock_threshold,
-        InventoryItem.is_active == True
-    ).count()
+        InventoryItem.current_stock <= low_stock_threshold
+    )
+    if hasattr(InventoryItem, 'is_active'):
+        low_stock_items_query = low_stock_items_query.filter(InventoryItem.is_active == True)
+    low_stock_items = low_stock_items_query.order_by(InventoryItem.current_stock).all()
 
-    # Total Inventory Items (Assuming InventoryItem model exists)
-    total_inventory_items = InventoryItem.query.filter_by(
-        business_id=business_id,
-        is_active=True
-    ).count()
 
-    # Sales by Sales Person Today
+    # Expiring items
+    expiring_items = []
+    if business_type in ['Pharmacy', 'Supermarket', 'Provision Store']:
+        expiry_threshold_days = 30 # Items expiring within 30 days
+        expiry_date_threshold = today + timedelta(days=expiry_threshold_days)
+        expiring_items_query = InventoryItem.query.filter(
+            InventoryItem.business_id == business_id,
+            InventoryItem.expiry_date.isnot(None),
+            InventoryItem.expiry_date <= expiry_date_threshold
+        )
+        if hasattr(InventoryItem, 'is_active'):
+            expiring_items_query = expiring_items_query.filter(InventoryItem.is_active == True)
+        expiring_items = expiring_items_query.order_by(InventoryItem.expiry_date).all()
+
+    # Sales by Sales Person for Today
     sales_by_person_today = db.session.query(
-        SaleRecord.sales_person_name,
+        User.username,
         func.sum(SaleRecord.total_amount)
-    ).filter(
+    ).join(User, SaleRecord.sales_person_name == User.username).filter(
         SaleRecord.business_id == business_id,
         cast(SaleRecord.sale_date, db.Date) == today
-    ).group_by(SaleRecord.sales_person_name).order_by(func.sum(SaleRecord.total_amount).desc()).all()
+    ).group_by(User.username).all()
+
+    # Business-specific dashboard data for Hardware
+    business_dashboard_data = {}
+    if business_type == 'Hardware':
+        total_hirable_items_query = HirableItem.query.filter_by(business_id=business_id)
+        if hasattr(HirableItem, 'is_active'):
+            total_hirable_items_query = total_hirable_items_query.filter_by(is_active=True)
+        total_hirable_items = total_hirable_items_query.count()
+
+        rented_items = RentalRecord.query.filter_by(business_id=business_id, status='Rented').count()
+        overdue_rentals = RentalRecord.query.filter(
+            RentalRecord.business_id == business_id,
+            RentalRecord.status == 'Rented',
+            RentalRecord.end_date < today
+        ).count()
+        business_dashboard_data = {
+            'total_hirable_items': total_hirable_items,
+            'rented_items': rented_items,
+            'overdue_rentals': overdue_rentals
+        }
+        # Also include for Hardware specific report section (Future Orders and Companies counts)
+        total_companies = Company.query.filter_by(business_id=business_id).count()
+        total_future_orders = FutureOrder.query.filter_by(business_id=business_id, status='Pending').count()
+        business_dashboard_data['total_companies'] = total_companies
+        business_dashboard_data['total_future_orders'] = total_future_orders
 
 
     return render_template('dashboard.html',
-                           title='Dashboard',
-                           username=session['username'],
+                           username=session.get('username'),
                            user_role=session.get('role'),
                            business_name=session.get('business_name'),
-                           business_type=session.get('business_type'),
-                           total_sales_today=total_sales_today,
+                           business_type=business_type,
+                           total_products=total_products,
+                           total_users=total_users,
+                           sales_today=sales_today,
+                           sales_this_week=sales_this_week,
+                           sales_this_month=sales_this_month,
+                           sales_this_year=sales_this_year,
                            low_stock_items=low_stock_items,
-                           total_inventory_items=total_inventory_items,
+                           expiring_items=expiring_items,
                            sales_by_person_today=sales_by_person_today,
+                           business_dashboard_data=business_dashboard_data,
                            current_year=datetime.now().year)
-
 @app.route('/super_admin_dashboard')
 def super_admin_dashboard():
     # Allow 'admin' role to view this dashboard
@@ -654,7 +1475,8 @@ def add_business():
         
         new_business = Business(
             name=business_name, address=business_address, location=business_location,
-            contact=business_contact, type=business_type # Save business type
+            contact=business_contact, type=business_type, # Save business type
+            is_active=True
         )
         db.session.add(new_business)
         db.session.commit()
@@ -671,7 +1493,7 @@ def add_business():
     
     return render_template('add_edit_business.html', title='Add New Business', business={}, business_types=['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'], current_year=datetime.now().year)
 
-@app.route('/super_admin/edit_business/<business_id>', methods=['GET', 'POST'])
+@app.route('/super_admin/edit_business/<string:business_id>', methods=['GET', 'POST'])
 def edit_business(business_id):
     # Allow 'admin' role to edit businesses
     if session.get('role') not in ['super_admin', 'admin']:
@@ -727,7 +1549,7 @@ def edit_business(business_id):
     return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit.name}', business=business_data_for_form, business_types=['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'], current_year=datetime.now().year)
 
 
-@app.route('/super_admin/view_business_details/<business_id>')
+@app.route('/super_admin/view_business_details/<string:business_id>')
 def view_business_details(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
@@ -739,7 +1561,7 @@ def view_business_details(business_id):
     return render_template('view_business_details.html', business=business, initial_admin=initial_admin, current_year=datetime.now().year)
 
 
-@app.route('/super_admin/delete_business/<business_id>')
+@app.route('/super_admin/delete_business/<string:business_id>')
 def delete_business(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
@@ -753,7 +1575,7 @@ def delete_business(business_id):
     flash(f'Business "{business_to_delete.name}" and all its associated data deleted successfully!', 'success')
     return redirect(url_for('super_admin_dashboard'))
 
-@app.route('/super_admin/download_inventory/<business_id>')
+@app.route('/super_admin/download_inventory/<string:business_id>')
 def download_inventory_csv(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
         flash('Access denied. Super Admin or Admin role required.', 'danger')
@@ -1423,6 +2245,8 @@ def upload_current_inventory_csv():
     return render_template('upload_current_inventory.html', business_name=business_name, user_role=session.get('role'), current_year=datetime.now().year)
 
 
+# app.py (your add_inventory_item route)
+
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def add_inventory_item():
     # ACCESS CONTROL: Allows admin role
@@ -1439,133 +2263,244 @@ def add_inventory_item():
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
-    elif business_type == 'Supermarket' or business_type == 'Provision Store':
-        relevant_item_types = ['Provision Store'] # Assuming 'Provision Store' covers general goods for these
+    elif business_type in ['Supermarket', 'Provision Store']:
+        relevant_item_types = ['Provision Store']
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
         InventoryItem.is_active == True,
         InventoryItem.item_type.in_(relevant_item_types)
     ).all()
-    serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
+    # Assuming serialize_inventory_item_api exists for consistent serialization with API needs
+    serialized_inventory_items = [serialize_inventory_item_api(item) for item in available_inventory_items]
     
-    # Get pharmacy info for receipts
-    pharmacy_info = session.get('business_info', {})
+    # Get pharmacy info for receipts (ensure it's clean for template rendering)
+    raw_pharmacy_info = session.get('business_info', {})
+    if isinstance(raw_pharmacy_info, dict):
+        pharmacy_info = {
+            'name': str(raw_pharmacy_info.get('name', 'N/A')),
+            'address': str(raw_pharmacy_info.get('address', 'N/A')),
+            'location': str(raw_pharmacy_info.get('location', 'N/A')),
+            'phone': str(raw_pharmacy_info.get('phone', 'N/A')),
+            'email': str(raw_pharmacy_info.get('email', 'N/A')),
+            'contact': str(raw_pharmacy_info.get('contact', 'N/A'))
+        }
+    else:
+        # Fallback if session['business_info'] is not a dict
+        business_details = Business.query.filter_by(id=business_id).first()
+        if business_details:
+            pharmacy_info = {
+                'name': str(business_details.name),
+                'address': str(business_details.address),
+                'location': str(business_details.location),
+                'phone': str(business_details.contact),
+                'email': str(business_details.email) if hasattr(business_details, 'email') and business_details.email is not None else 'N/A',
+                'contact': str(business_details.contact)
+            }
+        else:
+            pharmacy_info = {
+                'name': "Your Enterprise Name", 'address': "N/A", 'location': "N/A",
+                'phone': "N/A", 'email': "N/A", 'contact': "N/A"
+            }
+
+    # Fetch other businesses for the import section
+    other_businesses = []
+    if session.get('role') == 'admin':
+        # Filter businesses of the same type, excluding the current business
+        other_businesses_query = Business.query.filter(
+            Business.id != business_id,
+            Business.type == business_type # Only show businesses of the same type for import
+        )
+        other_businesses = other_businesses_query.all()
+
 
     if request.method == 'POST':
-        product_name = request.form['product_name'].strip()
-        category = request.form['category'].strip()
-        purchase_price = float(request.form['purchase_price'])
-        current_stock = float(request.form['current_stock'])
-        batch_number = request.form.get('batch_number', '').strip()
-        barcode = request.form.get('barcode', '').strip()  # NEW: Get barcode
+        product_name = request.form.get('product_name', '').strip()
+        category = request.form.get('category', '').strip()
         
-        # NEW: Check if barcode is unique
+        # Safely get numerical inputs, default to 0.0 or 1 if conversion fails or missing
+        try:
+            purchase_price = float(request.form.get('purchase_price', 0.0))
+            current_stock = float(request.form.get('current_stock', 0.0))
+            number_of_tabs = int(request.form.get('number_of_tabs', 1))
+        except ValueError:
+            flash('Invalid input for numerical fields (Price, Stock, Units per Pack). Please enter valid numbers.', 'danger')
+            # Re-render with existing form data to preserve user input
+            item_data_for_form_on_error = {
+                'product_name': product_name, 'category': category,
+                'purchase_price': request.form.get('purchase_price', '0.00'),
+                'current_stock': request.form.get('current_stock', '0.00'),
+                'batch_number': request.form.get('batch_number', '').strip(),
+                'barcode': request.form.get('barcode', '').strip(),
+                'number_of_tabs': request.form.get('number_of_tabs', '1'),
+                'item_type': request.form.get('item_type', business_type),
+                'expiry_date': request.form.get('expiry_date', ''),
+                'is_fixed_price': 'is_fixed_price' in request.form,
+                'fixed_sale_price': request.form.get('fixed_sale_price', '0.00')
+            }
+            return render_template('add_edit_inventory.html', title='Add Inventory Item',
+                                   item=item_data_for_form_on_error, user_role=session.get('role'),
+                                   business_type=business_type, current_year=datetime.now().year,
+                                   pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+
+
+        batch_number = request.form.get('batch_number', '').strip()
+        barcode = request.form.get('barcode', '').strip()
+        
+        # Validate required string fields
+        if not product_name or not category:
+            flash('Product Name and Category are required fields.', 'danger')
+            item_data_for_form_on_error = {
+                'product_name': product_name, 'category': category,
+                'purchase_price': purchase_price, 'current_stock': current_stock,
+                'batch_number': batch_number, 'barcode': barcode,
+                'number_of_tabs': number_of_tabs,
+                'item_type': request.form.get('item_type', business_type),
+                'expiry_date': request.form.get('expiry_date', ''),
+                'is_fixed_price': 'is_fixed_price' in request.form,
+                'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
+            }
+            return render_template('add_edit_inventory.html', title='Add Inventory Item',
+                                   item=item_data_for_form_on_error, user_role=session.get('role'),
+                                   business_type=business_type, current_year=datetime.now().year,
+                                   pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+
+
+        # Check if barcode is unique if provided
         if barcode:
-            existing_barcode = InventoryItem.query.filter_by(
+            existing_barcode_item = InventoryItem.query.filter_by(
                 business_id=business_id,
                 barcode=barcode
             ).first()
-            if existing_barcode:
-                flash('Barcode already in use for another product', 'danger')
+            if existing_barcode_item:
+                flash('Barcode already in use for another product.', 'danger')
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
                     'batch_number': batch_number, 'barcode': barcode,
-                    'number_of_tabs': int(request.form.get('number_of_tabs', 1)),
-                    'item_type': business_type,
+                    'number_of_tabs': number_of_tabs,
+                    'item_type': request.form.get('item_type', business_type),
                     'expiry_date': request.form.get('expiry_date', ''),
                     'is_fixed_price': 'is_fixed_price' in request.form,
                     'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
                 }
-                if business_type == 'Pharmacy':
-                    item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
                 return render_template('add_edit_inventory.html', title='Add Inventory Item',
                                        item=item_data_for_form_on_error, user_role=session.get('role'),
-                                       business_type=business_type, current_year=datetime.now().year)
+                                       business_type=business_type, current_year=datetime.now().year,
+                                       pharmacy_info=pharmacy_info, other_businesses=other_businesses)
         
-        number_of_tabs = int(request.form.get('number_of_tabs', 1)) # Default to 1 for non-pharmacy
         expiry_date_str = request.form.get('expiry_date', '').strip()
         
-        # Initialize expiry_date_obj to None
         expiry_date_obj = None 
         if expiry_date_str:
             try:
                 expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
             except ValueError:
                 flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
-                # Prepare item_data_for_form for re-rendering with error, ensuring expiry_date is handled
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': barcode,  # NEW: Include barcode
+                    'batch_number': batch_number, 'barcode': barcode,
                     'number_of_tabs': number_of_tabs,
-                    'item_type': business_type,
-                    'expiry_date': '', # Pass empty string to template for invalid date
+                    'item_type': request.form.get('item_type', business_type),
+                    'expiry_date': '',
                     'is_fixed_price': 'is_fixed_price' in request.form,
                     'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
                 }
-                if business_type == 'Pharmacy':
-                    item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
-
                 return render_template('add_edit_inventory.html', title='Add Inventory Item',
                                        item=item_data_for_form_on_error, user_role=session.get('role'),
-                                       business_type=business_type, current_year=datetime.now().year)
-
-        is_fixed_price = 'is_fixed_price' in request.form
-        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
+                                       business_type=business_type, current_year=datetime.now().year,
+                                       pharmacy_info=pharmacy_info, other_businesses=other_businesses)
 
         if number_of_tabs <= 0:
             flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-            # Prepare item_data_for_form for re-rendering with error, ensuring expiry_date is handled
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': barcode,  # NEW: Include barcode
+                'batch_number': batch_number, 'barcode': barcode,
                 'number_of_tabs': number_of_tabs,
-                'item_type': business_type,
-                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
-                'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price
+                'item_type': request.form.get('item_type', business_type),
+                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
+                'is_fixed_price': 'is_fixed_price' in request.form,
+                'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
             }
-            if business_type == 'Pharmacy':
-                item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
-            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
+            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year, pharmacy_info=pharmacy_info, other_businesses=other_businesses)
 
 
         if InventoryItem.query.filter_by(product_name=product_name, business_id=business_id).first():
             flash('Product with this name already exists for this business.', 'danger')
-            # Prepare item_data_for_form for re-rendering with error, ensuring expiry_date is handled
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': barcode,  # NEW: Include barcode
+                'batch_number': batch_number, 'barcode': barcode,
                 'number_of_tabs': number_of_tabs,
-                'item_type': business_type,
-                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
-                'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price
+                'item_type': request.form.get('item_type', business_type),
+                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
+                'is_fixed_price': 'is_fixed_price' in request.form,
+                'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
             }
-            if business_type == 'Pharmacy':
-                item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
-            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
+            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year, pharmacy_info=pharmacy_info, other_businesses=other_businesses)
         
         sale_price = 0.0
         unit_price_per_tab = 0.0
+        
+        is_fixed_price = 'is_fixed_price' in request.form
+        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0)) # Ensure it's always a float
 
         if is_fixed_price:
             sale_price = fixed_sale_price
             if number_of_tabs > 0:
                 unit_price_per_tab = fixed_sale_price / number_of_tabs
         else:
-            # Calculate sale price and unit price based on markup if not fixed
-            if business_type == 'Pharmacy':
+            # If not fixed price and not pharmacy, assume a sale_price input field is needed
+            # Since the form doesn't have it, we must ensure it's provided or handled
+            if business_type != 'Pharmacy':
+                # This field is MISSING from your HTML template
+                # You need to add an input for name="sale_price" if you want to use this logic
+                input_sale_price = request.form.get('sale_price')
+                if input_sale_price is None or input_sale_price.strip() == '':
+                    flash('Sale Price is required for non-fixed price items in this business type.', 'danger')
+                    item_data_for_form_on_error = {
+                        'product_name': product_name, 'category': category,
+                        'purchase_price': purchase_price, 'current_stock': current_stock,
+                        'batch_number': batch_number, 'barcode': barcode,
+                        'number_of_tabs': number_of_tabs,
+                        'item_type': request.form.get('item_type', business_type),
+                        'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
+                        'is_fixed_price': is_fixed_price,
+                        'fixed_sale_price': fixed_sale_price
+                    }
+                    return render_template('add_edit_inventory.html', title='Add Inventory Item',
+                                           item=item_data_for_form_on_error, user_role=session.get('role'),
+                                           business_type=business_type, current_year=datetime.now().year,
+                                           pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                try:
+                    sale_price = float(input_sale_price)
+                except ValueError:
+                    flash('Invalid input for Sale Price. Please enter a valid number.', 'danger')
+                    item_data_for_form_on_error = {
+                        'product_name': product_name, 'category': category,
+                        'purchase_price': purchase_price, 'current_stock': current_stock,
+                        'batch_number': batch_number, 'barcode': barcode,
+                        'number_of_tabs': number_of_tabs,
+                        'item_type': request.form.get('item_type', business_type),
+                        'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
+                        'is_fixed_price': is_fixed_price,
+                        'fixed_sale_price': fixed_sale_price
+                    }
+                    return render_template('add_edit_inventory.html', title='Add Inventory Item',
+                                           item=item_data_for_form_on_error, user_role=session.get('role'),
+                                           business_type=business_type, current_year=datetime.now().year,
+                                           pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                
+                if number_of_tabs > 0:
+                    unit_price_per_tab = sale_price / number_of_tabs
+            else: # Business type is Pharmacy, and not fixed price
                 markup_percentage = float(request.form.get('markup_percentage_pharmacy', 0.0)) / 100
                 sale_price = purchase_price + (purchase_price * markup_percentage)
                 if number_of_tabs > 0:
                     unit_price_per_tab = sale_price / number_of_tabs
-            else: # Hardware, Supermarket, Provision Store
-                sale_price = float(request.form['sale_price']) # Assuming a sale_price field for non-pharmacy
-                if number_of_tabs > 0:
-                    unit_price_per_tab = sale_price / number_of_tabs
+
 
         new_item = InventoryItem(
             business_id=business_id,
@@ -1575,11 +2510,11 @@ def add_inventory_item():
             sale_price=sale_price,
             current_stock=current_stock,
             batch_number=batch_number,
-            barcode=barcode,  # NEW: Add barcode
+            barcode=barcode,
             number_of_tabs=number_of_tabs,
             unit_price_per_tab=unit_price_per_tab,
-            item_type=business_type, # Set item_type based on business type
-            expiry_date=expiry_date_obj, # This is now a datetime.date object or None
+            item_type=request.form.get('item_type', business_type), # Use the selected item_type from form
+            expiry_date=expiry_date_obj,
             is_fixed_price=is_fixed_price,
             fixed_sale_price=fixed_sale_price,
             is_active=True
@@ -1589,8 +2524,16 @@ def add_inventory_item():
         flash(f'Inventory item "{product_name}" added successfully!', 'success')
         return redirect(url_for('inventory'))
     
-    return render_template('add_edit_inventory.html', title='Add Inventory Item', item={}, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
-
+    # GET request / Initial render
+    # Ensure all context variables are passed on GET for initial form rendering
+    return render_template('add_edit_inventory.html',
+                           title='Add Inventory Item',
+                           item={}, # Empty item for new form
+                           user_role=session.get('role'),
+                           business_type=business_type,
+                           current_year=datetime.now().year,
+                           pharmacy_info=pharmacy_info,
+                           other_businesses=other_businesses)
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 def edit_inventory_item(item_id):
     # ACCESS CONTROL: Allows admin role
@@ -1921,34 +2864,34 @@ def sales():
                            current_year=datetime.now().year) # Pass current_year
 
 
+# app.py
+
+# ... (Existing imports, Flask app setup, DB_TYPE configuration, models, etc.) ...
+
+# app.py
+
 @app.route('/sales/add', methods=['GET', 'POST'])
 @login_required
 def add_sale():
-    # DEBUG: Print at the very beginning of the route
-    print(f"\n--- DEBUG: Entering add_sale route ---")
-    print(f"DEBUG: Session username: {session.get('username')}")
-    print(f"DEBUG: Session role: {session.get('role')}")
-    print(f"DEBUG: Session business_id: {session.get('business_id')}")
-
     # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to add sales records or no business selected.', 'danger')
-        print(f"DEBUG: Access denied for user {session.get('username')}, role {session.get('role')}, business_id {session.get('business_id')}")
         return redirect(url_for('dashboard'))
     
     business_id = get_current_business_id()
     business_type = get_current_business_type()
-
-    print(f"DEBUG: Current business_id: {business_id}")
-    print(f"DEBUG: Current business_type: {business_type}")
 
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
-    elif business_type in ['Supermarket', 'Provision Store']:
+    elif business_type == 'Supermarket':
+        relevant_item_types = ['Supermarket']
+    elif business_type == 'Provision Store':
         relevant_item_types = ['Provision Store']
+    else:
+        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store']
 
     search_query = request.args.get('search', '').strip()
 
@@ -1967,31 +2910,13 @@ def add_sale():
     
     available_inventory_items = available_inventory_items_query.all()
     
-    # DEBUG: Check types before serialization
-    print(f"DEBUG: Type of available_inventory_items (before serialization): {type(available_inventory_items)}")
-    for i, item in enumerate(available_inventory_items):
-        print(f"DEBUG:   Type of item {i} in available_inventory_items: {type(item)}")
-        # If it's an SQLAlchemy model instance, check some attributes
-        if hasattr(item, '__tablename__'):
-            print(f"DEBUG:     Item {i} is a SQLAlchemy model: {item.__tablename__}")
-            # Try to access a simple attribute to see if it causes issues
-            try:
-                print(f"DEBUG:     Item {i} product_name: {item.product_name}")
-            except Exception as e:
-                print(f"DEBUG:     Error accessing product_name for item {i}: {e}")
-
-    # Ensure serialized_inventory_items is clean
     serialized_inventory_items = []
     try:
-        serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
-        print(f"DEBUG: Successfully serialized inventory items.")
+        serialized_inventory_items = [serialize_inventory_item_api(item) for item in available_inventory_items]
     except Exception as e:
         print(f"ERROR: Exception during serialization of available_inventory_items: {e}")
-        # If serialization fails here, we return an empty list or a safe default
         serialized_inventory_items = []
 
-
-    # --- Defensive cleaning of pharmacy_info ---
     raw_pharmacy_info = session.get('business_info', {})
     if isinstance(raw_pharmacy_info, dict):
         pharmacy_info = {
@@ -2022,10 +2947,7 @@ def add_sale():
                 'email': 'info@example.com',
                 'contact': "Your Pharmacy Contact"
             }
-    print(f"DEBUG: Pharmacy info prepared. Type: {type(pharmacy_info)}")
 
-
-    # --- Helper function to ensure cart items are JSON serializable ---
     def clean_cart_items_for_template(raw_cart_items):
         cleaned_items = []
         if isinstance(raw_cart_items, list):
@@ -2041,12 +2963,10 @@ def add_sale():
                     }
                     cleaned_items.append(cleaned_item)
         return cleaned_items
-    # --- End Helper Function ---
 
-    # Initialize variables for the template context
-    sale_for_template_items = [] # Ensure this is explicitly an empty list
+    sale_for_template_items = [] 
     customer_phone_for_template = ''
-    sales_person_name_for_template = session.get('username', 'N/A') # Use this consistently
+    sales_person_name_for_template = session.get('username', 'N/A') 
     print_ready = request.args.get('print_ready', 'false').lower() == 'true'
     last_transaction_details = session.pop('last_transaction_details', [])
     last_transaction_grand_total = session.pop('last_transaction_grand_total', 0.0)
@@ -2055,13 +2975,13 @@ def add_sale():
     last_transaction_sales_person = session.pop('last_transaction_sales_person', '')
     last_transaction_date = session.pop('last_transaction_date', '')
     
-    # NEW: Get auto_print flag from session
-    auto_print = session.pop('auto_print', False)
-
+    # Use session.get to prevent the value from being removed.
+    auto_print = session.get('auto_print', False)
+    if DB_TYPE == 'sqlite':
+        auto_print = True
 
     if request.method == 'POST':
         customer_phone_for_template = request.form.get('customer_phone', '').strip()
-        
         cart_items_json = request.form.get('cart_items_json')
         
         cart_items = []
@@ -2072,97 +2992,32 @@ def add_sale():
             except json.JSONDecodeError:
                 flash('Error processing cart data. Please try again.', 'danger')
         
-        # Always set sale_for_template_items based on the processed cart_items for POST errors
         sale_for_template_items = cart_items
 
         if not cart_items:
             flash('No items in the cart to record a sale.', 'danger')
-            # DEBUG: Print types before rendering on error
-            print(f"\n--- DEBUG (POST Error, No Items) ---")
-            print(f"Type of sale_for_template_items: {type(sale_for_template_items)}")
-            for i, item in enumerate(sale_for_template_items):
-                print(f"  Type of sale_for_template_items[{i}]: {type(item)}")
-                if isinstance(item, dict):
-                    for key, value in item.items():
-                        print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                else:
-                    print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-            print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
-            for i, item in enumerate(serialized_inventory_items):
-                print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
-                if isinstance(item, dict):
-                    for key, value in item.items():
-                        print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                else:
-                    print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-            print(f"Type of pharmacy_info: {type(pharmacy_info)}")
-            if isinstance(pharmacy_info, dict):
-                for key, value in pharmacy_info.items():
-                    print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-            else:
-                print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
-            print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
-            print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
-            print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
-            print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
-            print(f"--- END DEBUG ---")
-
-            try:
-                return render_template('add_edit_sale.html',
-                                    title='Add Sale Record',
-                                    inventory_items=serialized_inventory_items,
-                                    sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
-                                    user_role=session.get('role'),
-                                    pharmacy_info=pharmacy_info,
-                                    print_ready=False,
-                                    current_year=datetime.now().year,
-                                    search_query=search_query,
-                                    business_type=business_type)
-            except Exception as e:
-                print(f"ERROR: Exception caught during render_template (POST, No Items): {e}")
-                raise # Re-raise to see full traceback
-
+            return render_template('add_edit_sale.html',
+                                title='Add Sale Record',
+                                inventory_items=serialized_inventory_items,
+                                sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                                user_role=session.get('role'),
+                                pharmacy_info=pharmacy_info,
+                                print_ready=False,
+                                current_year=datetime.now().year,
+                                search_query=search_query,
+                                business_type=business_type,
+                                auto_print=auto_print)
 
         total_grand_amount = 0.0
         recorded_sale_details = []
 
-        # Validate stock before processing any sales
         for item_data in cart_items:
             product_id = item_data['product_id']
             quantity_sold = item_data['quantity_sold']
             product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
             if not product:
                 flash(f'Product with ID {product_id} not found.', 'danger')
-                print(f"\n--- DEBUG (POST Error, Product Not Found) ---")
-                print(f"Type of sale_for_template_items: {type(sale_for_template_items)}")
-                for i, item in enumerate(sale_for_template_items):
-                    print(f"  Type of sale_for_template_items[{i}]: {type(item)}")
-                    if isinstance(item, dict):
-                        for key, value in item.items():
-                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                    else:
-                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-                print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
-                for i, item in enumerate(serialized_inventory_items):
-                    print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
-                    if isinstance(item, dict):
-                        for key, value in item.items():
-                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                    else:
-                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-                print(f"Type of pharmacy_info: {type(pharmacy_info)}")
-                if isinstance(pharmacy_info, dict):
-                    for key, value in pharmacy_info.items():
-                        print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                else:
-                    print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
-                print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
-                print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
-                print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
-                print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
-                print(f"--- END DEBUG ---")
-                try:
-                    return render_template('add_edit_sale.html',
+                return render_template('add_edit_sale.html',
                                         title='Add Sale Record',
                                         inventory_items=serialized_inventory_items,
                                         sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
@@ -2171,11 +3026,8 @@ def add_sale():
                                         print_ready=False,
                                         current_year=datetime.now().year,
                                         search_query=search_query,
-                                        business_type=business_type)
-                except Exception as e:
-                    print(f"ERROR: Exception caught during render_template (POST, Product Not Found): {e}")
-                    raise # Re-raise to see full traceback
-
+                                        business_type=business_type,
+                                        auto_print=auto_print)
 
             quantity_for_stock_check = quantity_sold
             if item_data['sale_unit_type'] == 'pack':
@@ -2183,36 +3035,7 @@ def add_sale():
 
             if product.current_stock < quantity_for_stock_check:
                 flash(f'Insufficient stock for {product.product_name}. Available: {product.current_stock:.2f} units. Tried to sell: {quantity_for_stock_check:.2f} units.', 'danger')
-                print(f"\n--- DEBUG (POST Error, Insufficient Stock) ---")
-                print(f"Type of sale_for_template_items: {type(sale_for_template_items)}")
-                for i, item in enumerate(sale_for_template_items):
-                    print(f"  Type of sale_for_template_items[{i}]: {type(item)}")
-                    if isinstance(item, dict):
-                        for key, value in item.items():
-                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                    else:
-                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-                print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
-                for i, item in enumerate(serialized_inventory_items):
-                    print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
-                    if isinstance(item, dict):
-                        for key, value in item.items():
-                            print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                    else:
-                        print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-                print(f"Type of pharmacy_info: {type(pharmacy_info)}")
-                if isinstance(pharmacy_info, dict):
-                    for key, value in pharmacy_info.items():
-                        print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-                else:
-                    print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
-                print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
-                print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
-                print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
-                print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
-                print(f"--- END DEBUG ---")
-                try:
-                    return render_template('add_edit_sale.html',
+                return render_template('add_edit_sale.html',
                                         title='Add Sale Record',
                                         inventory_items=serialized_inventory_items,
                                         sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
@@ -2221,15 +3044,11 @@ def add_sale():
                                         print_ready=False,
                                         current_year=datetime.now().year,
                                         search_query=search_query,
-                                        business_type=business_type)
-                except Exception as e:
-                    print(f"ERROR: Exception caught during render_template (POST, Insufficient Stock): {e}")
-                    raise # Re-raise to see full traceback
+                                        business_type=business_type,
+                                        auto_print=auto_print)
 
-
-        # If all stock checks pass, proceed with recording sales and deducting stock
-        transaction_id = str(uuid.uuid4()) # Generate transaction ID here, after all checks
-        sale_date = datetime.now() # Get sale date here
+        transaction_id = str(uuid.uuid4())
+        sale_date = datetime.now()
         for item_data in cart_items:
             product_id = item_data['product_id']
             quantity_sold = item_data['quantity_sold']
@@ -2247,6 +3066,7 @@ def add_sale():
             product.last_updated = datetime.now()
 
             new_sale = SaleRecord(
+                id=str(uuid.uuid4()),
                 business_id=business_id,
                 product_id=product.id,
                 product_name=product.product_name,
@@ -2256,8 +3076,9 @@ def add_sale():
                 total_amount=item_total_amount,
                 sale_date=sale_date,
                 customer_phone=customer_phone_for_template,
-                sales_person_name=sales_person_name_for_template, # Use the consistently defined variable
-                transaction_id=transaction_id
+                sales_person_name=sales_person_name_for_template,
+                transaction_id=transaction_id,
+                synced_to_remote=False
             )
             db.session.add(new_sale)
             total_grand_amount += item_total_amount
@@ -2278,7 +3099,7 @@ def add_sale():
         session['last_transaction_customer_phone'] = customer_phone_for_template
         session['last_transaction_sales_person'] = sales_person_name_for_template
         session['last_transaction_date'] = sale_date.strftime('%Y-%m-%d %H:%M:%S')
-        session['auto_print'] = True  # NEW: Set auto print flag
+        session['auto_print'] = auto_print
 
         send_sms = 'send_sms_receipt' in request.form
         if send_sms and customer_phone_for_template:
@@ -2295,99 +3116,59 @@ def add_sale():
                 f"From: {business_name_for_sms}"
             )
             
-            print(f"Attempting to send SMS to {customer_phone_for_template} for sale transaction.")
-            print(f"SMS Payload: {sms_message}")
+            if check_network_online():
+                try:
+                    sms_payload = {
+                        'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone_for_template,
+                        'from': ARKESEL_SENDER_ID, 'sms': sms_message
+                    }
+                    sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+                    sms_response.raise_for_status()
+                    sms_result = sms_response.json()
 
-            sms_payload = {
-                'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone_for_template,
-                'from': ARKESEL_SENDER_ID, 'sms': sms_message
-            }
-            
-            try:
-                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                sms_response.raise_for_status()
-                sms_result = sms_response.json()
-                print(f"Arkesel SMS API Response: {sms_result}")
+                    if sms_result.get('status') == 'success':
+                        flash(f'SMS receipt sent to customer {customer_phone_for_template} successfully!', 'success')
+                    else:
+                        error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+                        flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
+                except requests.exceptions.HTTPError as http_err:
+                    flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
+                except requests.exceptions.ConnectionError as conn_err:
+                    flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
+                except requests.exceptions.Timeout as timeout_err:
+                    flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
+                except requests.exceptions.RequestException as req_err:
+                    flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
+                except json.JSONDecodeError:
+                    flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+            else:
+                flash("SMS receipt not sent: You are offline.", 'warning')
 
-                if sms_result.get('status') == 'success':
-                    flash(f'SMS receipt sent to customer {customer_phone_for_template} successfully!', 'success')
-                else:
-                    error_message = sms_result.get('message', 'Unknown error from SMS provider.')
-                    flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
-            except requests.exceptions.HTTPError as http_err:
-                flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
-            except requests.exceptions.ConnectionError as conn_err:
-                flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
-            except requests.exceptions.Timeout as timeout_err:
-                flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
-            except requests.exceptions.RequestException as req_err:
-                flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
-            except json.JSONDecodeError:
-                flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
         elif send_sms and not customer_phone_for_template:
             flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
 
         return redirect(url_for('add_sale', print_ready='true'))
     
-    # GET request / Initial render
-    # If print_ready is true, we are showing a receipt, the form items should be empty.
     if print_ready:
         sale_for_template_items = []
-    # If not print_ready, it's either an initial GET or a GET after a non-print redirect.
-    # In these cases, 'items' should be an empty list for a fresh form.
     else:
-        # Explicitly ensure this is a fresh, empty list on GET
         sale_for_template_items = [] 
 
-    # Construct the final 'sale' dictionary for the template
     sale_final_context = {
         'sales_person_name': sales_person_name_for_template,
         'customer_phone': customer_phone_for_template,
-        'items': sale_for_template_items # This should now consistently be an empty list
+        'items': sale_for_template_items
     }
-
-    # DEBUG: Print types before rendering on GET/Initial load
-    print(f"\n--- DEBUG (GET/Initial Load) - Before Render ---")
-    print(f"Type of sale_final_context['items']: {type(sale_final_context['items'])}, Value: {repr(sale_final_context['items'])}")
-    for i, item in enumerate(sale_final_context['items']):
-        print(f"  Type of sale_final_context['items'][{i}]: {type(item)}, Value: {repr(item)}")
-        if isinstance(item, dict):
-            for key, value in item.items():
-                print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-        else:
-            print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-
-    print(f"Type of serialized_inventory_items: {type(serialized_inventory_items)}")
-    for i, item in enumerate(serialized_inventory_items):
-        print(f"  Type of serialized_inventory_items[{i}]: {type(item)}")
-        if isinstance(item, dict):
-            for key, value in item.items():
-                print(f"    Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-        else:
-            print(f"  Item is not a dict, Type: {type(item)}, Value: {repr(item)}")
-
-    print(f"Type of pharmacy_info: {type(pharmacy_info)}")
-    if isinstance(pharmacy_info, dict):
-        for key, value in pharmacy_info.items():
-            print(f"  Key: {key}, Value Type: {type(value)}, Value: {repr(value)}")
-    else:
-        print(f"  pharmacy_info is not a dict, Type: {type(pharmacy_info)}, Value: {repr(pharmacy_info)}")
-
-    print(f"Type of user_role: {type(session.get('role'))}, Value: {repr(session.get('role'))}")
-    print(f"Type of business_type: {type(business_type)}, Value: {repr(business_type)}")
-    print(f"Type of search_query: {type(search_query)}, Value: {repr(search_query)}")
-    print(f"Type of current_year: {type(datetime.now().year)}, Value: {repr(datetime.now().year)}")
-    print(f"--- END DEBUG ---")
 
     try:
         return render_template('add_edit_sale.html', 
                                title='Add Sale Record', 
                                inventory_items=serialized_inventory_items,
-                               sale=sale_final_context, # Use the explicitly constructed sale_final_context
+                               sale=sale_final_context,
                                user_role=session.get('role'),
                                pharmacy_info=pharmacy_info,
                                print_ready=print_ready,
-                               auto_print=auto_print,  # NEW: Pass auto_print flag to template
+                               auto_print=auto_print,
                                last_transaction_details=last_transaction_details,
                                last_transaction_grand_total=last_transaction_grand_total,
                                last_transaction_id=last_transaction_id,
@@ -2399,7 +3180,7 @@ def add_sale():
                                business_type=business_type)
     except Exception as e:
         print(f"ERROR: Exception caught during final render_template (GET): {e}")
-        raise # Re-raise to see full traceback
+        raise
 @app.route('/sales/edit_transaction/<transaction_id>', methods=['GET', 'POST'])
 def edit_sale_transaction(transaction_id): # Note the parameter name change
     # ACCESS CONTROL: Allows admin and sales roles
@@ -2703,6 +3484,16 @@ def print_sale_receipt(transaction_id):
                            last_transaction_date=last_transaction_date,
                            current_year=datetime.now().year)
 
+# NEW: Add a route for returns. For now, it just redirects to sales list.
+@app.route('/sales/add_return', methods=['GET', 'POST'])
+@login_required
+@permission_required(['admin', 'sales']) # Adjust permissions as needed
+def add_return():
+    flash('This is the Add Return page. Functionality to be implemented.', 'info')
+    # You would typically render a new template here for return forms:
+    # return render_template('add_edit_return.html', title='Add Return')
+    # For now, redirect to sales list.
+    return redirect(url_for('sales'))
 # --- Reports Route ---
 
 @app.route('/reports')
@@ -4445,6 +5236,159 @@ def cancel_rental_record(record_id):
     flash(f'Rental record for "{record_to_cancel.item_name_at_rent}" cancelled successfully! Stock returned.', 'success')
     return redirect(url_for('rental_records'))
 
+@app.route('/manage_businesses')
+@login_required
+def manage_businesses():
+    # Access control: Only 'super_admin' or 'admin' role can view this page
+    if session.get('role') not in ['super_admin', 'admin']:
+        flash('You do not have permission to manage businesses.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # Retrieve all businesses from the database
+    businesses = Business.query.all()
+    
+    # This line is critical – ensure it renders 'super_admin_dashboard.html'
+    return render_template('super_admin_dashboard.html', # <--- THIS MUST BE 'super_admin_dashboard.html'
+                           businesses=businesses,
+                           user_role=session.get('role'),
+                           current_year=datetime.now().year)
+
+@app.route('/manage_businesses/toggle_active/<string:business_id>', methods=['POST'])
+@login_required
+def toggle_business_active(business_id):
+    # Access control: Only 'admin' role can toggle business status
+    if session.get('role') not in ['super_admin', 'admin']:
+        flash('You do not have permission to manage businesses.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Fetch the business by its ID or return 404 if not found
+    business = Business.query.get_or_404(business_id)
+    
+    # Toggle the is_active status
+    business.is_active = not business.is_active
+    db.session.commit() # Commit the change to the database
+    
+    # Prepare a user-friendly message based on the new status
+    status_message = "activated" if business.is_active else "deactivated"
+    flash(f'Business "{business.name}" has been {status_message} successfully!', 'success')
+    
+    # Redirect back to the business management page
+    return redirect(url_for('manage_businesses'))
+
+@app.route('/manage_businesses/send_sms_warning/<string:business_id>', methods=['POST'])
+@login_required
+def send_payment_due_sms(business_id):
+    """
+    Sends an SMS warning message (e.g., payment due) to the contact number of a specific business.
+    Accessible by 'super_admin' and 'admin' roles.
+    """
+    if session.get('role') not in ['super_admin', 'admin']:
+        flash('You do not have permission to send SMS warnings.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    business = Business.query.get_or_404(business_id)
+    
+    # Check if a contact number is available for the business
+    if not business.contact:
+        flash(f'Business "{business.name}" has no contact number registered for SMS.', 'danger')
+        return redirect(url_for('super_admin_dashboard'))
+
+    # Compose the SMS message
+    enterprise_name = os.getenv('ENTERPRISE_NAME', 'Global Business Technology') # Fallback if not set
+    sms_message = (
+        f"Dear {business.name},\n"
+        f"This is a friendly reminder that your subscription payment is due. "
+        f"Please make your payment to continue using our services. "
+        f"Contact us at {business.contact} for assistance.\n"
+        f"Thank you, {enterprise_name}."
+    )
+    
+    print(f"Attempting to send payment due SMS to {business.contact} for business {business.name}.")
+    print(f"SMS Message: {sms_message}")
+    
+    # Prepare SMS payload for Arkesel API
+    sms_payload = {
+        'action': 'send-sms',
+        'api_key': os.getenv('ARKESEL_API_KEY'), # Still get API key from env (secure practice)
+        'to': business.contact,
+        'from': os.getenv('ARKESEL_SENDER_ID', 'uniquebence'), # Still get Sender ID from env
+        'sms': sms_message
+    }
+    
+    try:
+        # CORRECTED LINE: Use the global ARKESEL_SMS_URL variable directly
+        sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+        sms_response.raise_for_status()
+        sms_result = sms_response.json()
+        print(f"Arkesel SMS API Response: {sms_result}")
+
+        if sms_result.get('status') == 'success':
+            flash(f'Payment due SMS sent to {business.name} ({business.contact}) successfully!', 'success')
+        else:
+            error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+            flash(f'Failed to send SMS to {business.name}. Error: {error_message}', 'danger')
+    except requests.exceptions.HTTPError as http_err:
+        flash(f'HTTP error sending SMS: {http_err}. Please check API key or sender ID.', 'danger')
+        print(f"HTTP Error: {http_err}")
+    except requests.exceptions.ConnectionError as conn_err:
+        flash(f'Network error sending SMS: {conn_err}. Please check your internet connection.', 'danger')
+        print(f"Connection Error: {conn_err}")
+    except requests.exceptions.Timeout as timeout_err:
+        flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
+        print(f"Timeout Error: {timeout_err}")
+    except json.JSONDecodeError:
+        flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+        print("JSON Decode Error: Response was not valid JSON.")
+    except Exception as e:
+        flash(f'An unexpected error occurred while sending SMS: {e}', 'danger')
+        print(f"Unexpected Error: {e}")
+
+    return redirect(url_for('super_admin_dashboard'))
+
+
+# ... (existing imports, app initialization, and other routes) ...
+
+# ... (existing imports, app initialization, and other routes) ...
+
+@app.route('/get_all_active_products', methods=['GET'])
+@login_required
+def get_all_active_products():
+    """
+    Returns a list of all active inventory items for the current business.
+    This route is called by the frontend (add_edit_sale.html) via AJAX
+    to populate the product dropdowns.
+    """
+    business_id = get_current_business_id()
+    if not business_id:
+        return jsonify({'success': False, 'message': 'Business context not found.'}), 400
+
+    products = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
+    
+    products_data = []
+    for product in products:
+        # Prepare product data, ensuring numerical values are floats and dates are formatted
+        # Ensure all fields expected by the frontend JavaScript are included and consistently named.
+        products_data.append({
+            'id': str(product.id), # Convert UUID to string
+            'product_name': product.product_name,
+            'current_stock': float(product.current_stock or 0.0),
+            'is_fixed_price': product.is_fixed_price,
+            'barcode': product.barcode,
+            'number_of_tabs': float(product.number_of_tabs or 1.0), # Default to 1.0 if None
+            'unit_price_per_tab': float(product.unit_price_per_tab or 0.0),
+            'item_type': product.item_type,
+            'expiry_date': product.expiry_date.strftime('%Y-%m-%d') if product.expiry_date else None,
+            'batch_number': product.batch_number,
+            'purchase_price': float(product.purchase_price or 0.0),
+            'sale_price': float(product.sale_price or 0.0), # Regular sale price
+            'fixed_sale_price': float(product.fixed_sale_price or 0.0), # Fixed sale price
+            'markup_percentage_pharmacy': float(product.markup_percentage_pharmacy or 0.0), # Markup percentage
+        })
+    
+    return jsonify({'success': True, 'products': products_data})
+
+# ... (rest of your app.py code) ...
+
 # NEW: Jinja2 filter to safely format a date or datetime object
 @app.template_filter('format_date')
 def format_date(value, format='%Y-%m-%d'):
@@ -4455,8 +5399,60 @@ def format_date(value, format='%Y-%m-%d'):
 # IMPORTANT: Once Alembic is set up and working, you should remove or comment out
 # db.create_all() from here, as Alembic will manage your schema migrations.
 with app.app_context():
-    # db.create_all() # Comment this out once Alembic is managing...
-    pass 
+    try:
+        # Check if any user exists at all
+        if User.query.first() is None:
+            print("No users found in the database. Attempting to create initial super admin...")
+            
+            super_admin_username = os.getenv('SUPER_ADMIN_USERNAME', 'superadmin')
+            super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD', 'superpassword') 
+
+            # Create a dummy business for the super admin if none exists
+            super_admin_business = Business.query.filter_by(name="SuperAdmin Global Business").first()
+            if not super_admin_business:
+                super_admin_business = Business(
+                    name="SuperAdmin Global Business",
+                    address="Global Admin HQ",
+                    location="Global",
+                    contact="N/A",
+                    type="Administration",
+                    is_active=True,
+                    last_updated=datetime.utcnow()
+                )
+                db.session.add(super_admin_business)
+                db.session.commit()
+                print("Created 'SuperAdmin Global Business' for initial super admin.")
+            else:
+                print("'SuperAdmin Global Business' already exists.")
+
+            # Now create the super admin user
+            existing_super_admin = User.query.filter_by(username=super_admin_username).first()
+            if not existing_super_admin:
+                new_super_admin = User(
+                    username=super_admin_username,
+                    password=super_admin_password, # The setter will hash it
+                    role='super_admin',
+                    business_id=super_admin_business.id,
+                    is_active=True
+                    # REMOVED: last_password_update=datetime.utcnow()
+                    # SQLAlchemy's default will handle this if defined in the model
+                )
+                db.session.add(new_super_admin)
+                db.session.commit()
+                print(f"Initial super admin '{super_admin_username}' created successfully!")
+            else:
+                print(f"Super admin '{super_admin_username}' already exists. Skipping creation.")
+        else:
+            print("Users already exist in the database. Skipping initial super admin creation.")
+    except Exception as e:
+        print(f"Error during initial super admin creation: {e}")
+        db.session.rollback()
+
+# --- Database Initialization (This part should generally be managed by Alembic) ---
+# Keep this pass statement or remove it if db.create_all() is truly not needed.
+with app.app_context():
+    # db.create_all() # Ensure this line is commented out if Alembic handles schema
+    pass
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=os.getenv('PORT', 5000))

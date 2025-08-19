@@ -2,10 +2,10 @@
 
 {% block head %}
     {{ super() }}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- Add barcode scanner library -->
     <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
     <style>
         body {
@@ -32,7 +32,7 @@
         .alert-warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
         .alert-info { background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
         
-        .print-receipt-hidden {
+        .hidden {
             display: none;
         }
 
@@ -81,758 +81,778 @@
             background: #dc2626;
         }
 
-        /* Print-specific styles */
+        /* Elements to hide specifically for printing */
         @media print {
-            body * {
-                visibility: hidden;
-            }
-            #print-container, #print-container * {
-                visibility: visible;
-            }
-            #print-container {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-            }
             .no-print {
                 display: none !important;
             }
         }
+        
     </style>
 {% endblock %}
 
 {% block content %}
+    <div class="container mx-auto p-6 bg-white rounded-lg shadow-md no-print">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">{{ title }}</h1>
+            <a href="{{ url_for('sales') }}" class="btn btn-secondary flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to Sales
+            </a>
+        </div>
 
-{# Receipt Section - Always in the DOM, but hidden. #}
-<div id="receipt-section-wrapper" class="print-receipt-hidden">
-    {% if print_ready and last_transaction_details %}
-        <div id="receipt-section" class="container mx-auto p-6 bg-gray-50 rounded-lg shadow-inner mb-6 border border-gray-200">
-            <h3 class="text-2xl font-semibold text-gray-700 mb-4 text-center">Sales Receipt</h3>
-            <div class="text-sm text-gray-600 mb-4 text-center">
-                <p class="font-bold text-lg text-gray-800">{{ pharmacy_info.name or 'Business Name' }}</p>
-                <p>{{ pharmacy_info.address or 'N/A' }}{% if pharmacy_info.location %}, {{ pharmacy_info.location }}{% endif %}</p>
-                <p>Contact: {{ pharmacy_info.contact or 'N/A' }}</p>
-                <p class="mt-2">Transaction ID: <span class="font-mono text-blue-700">{{ last_transaction_id[:8].upper() }}</span></p>
-                <p>Date: {{ last_transaction_date }}</p>
-                <p>Sales Person: {{ last_transaction_sales_person }}</p>
-                {% if last_transaction_customer_phone %}<p>Customer Phone: {{ last_transaction_customer_phone }}</p>{% endif %}
-            </div>
-
-            <table class="min-w-full bg-white rounded-lg overflow-hidden mb-4">
-                <thead class="bg-gray-100">
-                    <tr>
-                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Product</th>
-                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Qty</th>
-                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Unit Type</th>
-                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Price/Unit</th>
-                        <th class="py-2 px-4 text-left text-sm font-medium text-gray-600">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in last_transaction_details %}
-                    <tr class="border-b border-gray-200 last:border-b-0">
-                        <td class="py-2 px-4 text-sm text-gray-800">{{ item.product_name }}</td>
-                        <td class="py-2 px-4 text-sm text-gray-800">{{ "%.2f" | format(item.quantity_sold) }}</td>
-                        <td class="py-2 px-4 text-sm text-gray-800">{{ item.sale_unit_type }}</td>
-                        <td class="py-2 px-4 text-sm text-gray-800">GH₵{{ "%.2f" | format(item.price_at_time_per_unit_sold) }}</td>
-                        <td class="py-2 px-4 text-sm text-gray-800">GH₵{{ "%.2f" | format(item.total_amount) }}</td>
-                    </tr>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
+                            {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                            {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                            {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                            {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                            {% endif %}
+                            {{ message }}
+                        </div>
                     {% endfor %}
-                </tbody>
-                <tfoot class="bg-gray-100">
-                    <tr>
-                        <td colspan="4" class="py-2 px-4 text-right text-base font-semibold text-gray-800">Grand Total:</td>
-                        <td class="py-2 px-4 text-right text-base font-bold text-gray-900">GH₵{{ "%.2f" | format(last_transaction_grand_total) }}</td>
-                    </tr>
-                </tfoot>
-            </table>
-            <div class="text-center mt-6 no-print">
-                <button onclick="printReceipt()" class="btn btn-primary bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md mr-4">
-                    <i class="fas fa-print mr-2"></i> Print Receipt
-                </button>
-                <a href="{{ url_for('add_sale') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
-                    <i class="fas fa-plus-circle mr-2"></i> New Sale
-                </a >
-                <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md ml-4">
-                    <i class="fas fa-list mr-2"></i> View All Sales
-                </a>
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form id="saleForm" method="POST" action="{{ url_for('add_sale') }}" class="space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="form-group">
+                    <label for="customer_phone" class="block text-sm font-medium text-gray-700 mb-1">Customer Phone (Optional)</label>
+                    <input type="text" id="customer_phone" name="customer_phone" value="{{ sale.get('customer_phone', '') }}"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 p-2">
+                </div>
+                <div class="form-group">
+                    <label for="sales_person_name" class="block text-sm font-medium text-gray-700 mb-1">Sales Person</label>
+                    <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.get('sales_person_name', session.username) }}"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 bg-gray-100 cursor-not-allowed shadow-sm p-2" readonly>
+                </div>
             </div>
-        </div>
-    {% elif print_ready %}
-        <p class="text-center text-gray-600">No transaction details available for printing.</p>
-        <div class="text-center mt-6">
-            <a href="{{ url_for('add_sale') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
-                <i class="fas fa-plus-circle mr-2"></i> New Sale
-            </a>
-            <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md shadow-md ml-4">
-                <i class="fas fa-list mr-2"></i> View All Sales
-            </a>
-        </div>
-    {% endif %}
-</div>
 
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Items to Sell</h3>
 
-{# Main Add Sale Form #}
-<div id="main-content" class="container mx-auto p-6 bg-white rounded-lg shadow-md">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800">{{ title }}</h1>
-        <a href="{{ url_for('sales') }}" class="btn btn-secondary flex items-center">
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-            Back to Sales
-        </a>
+            <div class="card p-4 bg-gray-50 border border-gray-200 rounded-lg mb-6">
+                <h4 class="text-lg font-semibold text-gray-800 mb-3">Find Product</h4>
+                
+                <div class="mb-4 flex flex-wrap gap-4">
+                    <button type="button" id="open-scanner-btn" class="btn btn-primary bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
+                        <i class="fas fa-barcode mr-2"></i> Scan Barcode
+                    </button>
+                    
+                    <div class="flex-1 flex">
+                        <input type="text" id="barcode-input" placeholder="Enter barcode manually"
+                               class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm p-2">
+                        <button type="button" id="add-by-barcode-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-md">
+                            <i class="fas fa-plus mr-2"></i> Add
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="item_search" class="block text-sm font-medium text-gray-700">Search Product</label>
+                    <div class="flex">
+                        <input type="text" id="item_search" name="item_search" value="{{ search_query | default('') }}"
+                               placeholder="Search by product name, category, or batch number"
+                               class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm p-2">
+                        <button type="button" id="search_button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-md">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="cart-items-container" class="space-y-4">
+            </div>
+
+            <button type="button" id="add-another-item-btn" class="btn btn-primary bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
+                <i class="fas fa-plus-circle mr-2"></i> Add Another Item
+            </button>
+
+            <div class="mt-6 text-right">
+                <p class="text-2xl font-bold text-gray-900">Grand Total: GH₵<span id="grand-total">0.00</span></p>
+            </div>
+
+            <div class="form-group mt-6 flex items-center">
+                <input type="checkbox" id="send_sms_receipt" name="send_sms_receipt" class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4">
+                <label for="send_sms_receipt" class="ml-2 text-sm text-gray-700">Send SMS Receipt to Customer</label>
+            </div>
+
+            <input type="hidden" name="cart_items_json" id="cart-items-json">
+
+            <div class="flex justify-end space-x-4 mt-8">
+                <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md shadow-md">
+                    Cancel
+                </a>
+                <button type="submit" class="btn btn-success bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md">
+                    <i class="fas fa-cash-register mr-2"></i> Record Sale
+                </button>
+            </div>
+        </form>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="mb-4">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
-                        {% if category == 'success' %}<i class="fas fa-check-circle"></i>
-                        {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
-                        {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
-                        {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
-                        {% endif %}
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-
-    <form id="saleForm" method="POST" class="space-y-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="form-group">
-                <label for="customer_phone" class="block text-sm font-medium text-gray-700 mb-1">Customer Phone (Optional)</label>
-                <input type="text" id="customer_phone" name="customer_phone" value="{{ sale.get('customer_phone', '') }}"
-                       class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 p-2">
-            </div>
-            <div class="form-group">
-                <label for="sales_person_name" class="block text-sm font-medium text-gray-700 mb-1">Sales Person</label>
-                <input type="text" id="sales_person_name" name="sales_person_name" value="{{ sale.get('sales_person_name', session.username) }}"
-                       class="form-input mt-1 block w-full rounded-md border-gray-300 bg-gray-100 cursor-not-allowed shadow-sm p-2" readonly>
-            </div>
-        </div>
-
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Items to Sell</h3>
-
-        {# Search Bar for Products #}
-        <div class="card p-4 bg-gray-50 border border-gray-200 rounded-lg mb-6">
-            <h4 class="text-lg font-semibold text-gray-800 mb-3">Find Product</h4>
-            
-            <!-- Barcode Scanner Controls -->
-            <div class="mb-4 flex flex-wrap gap-4">
-                <button type="button" id="open-scanner-btn" class="btn btn-primary bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
-                    <i class="fas fa-barcode mr-2"></i> Scan Barcode
-                </button>
-                
-                <div class="flex-1 flex">
-                    <input type="text" id="barcode-input" placeholder="Enter barcode manually"
-                           class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm p-2">
-                    <button type="button" id="add-by-barcode-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-md">
-                        <i class="fas fa-plus mr-2"></i> Add
-                    </button>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label for="item_search" class="block text-sm font-medium text-gray-700">Search Product</label>
-                <div class="flex">
-                    <input type="text" id="item_search" name="item_search" value="{{ search_query | default('') }}"
-                           placeholder="Search by product name, category, or batch number"
-                           class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm p-2">
-                    <button type="button" id="search_button" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r-md">
-                        <i class="fas fa-search"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div id="cart-items-container" class="space-y-4">
-            <!-- Dynamic cart items will be added here -->
-        </div>
-
-        <button type="button" id="add-another-item-btn" class="btn btn-primary bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
-            <i class="fas fa-plus-circle mr-2"></i> Add Another Item
-        </button>
-
-        <div class="mt-6 text-right">
-            <p class="text-2xl font-bold text-gray-900">Grand Total: GH₵<span id="grand-total">0.00</span></p>
-        </div>
-
-        <div class="form-group mt-6 flex items-center">
-            <input type="checkbox" id="send_sms_receipt" name="send_sms_receipt" class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4">
-            <label for="send_sms_receipt" class="ml-2 text-sm text-gray-700">Send SMS Receipt to Customer</label>
-        </div>
-
-        <input type="hidden" name="cart_items_json" id="cart-items-json">
-
-        <div class="flex justify-end space-x-4 mt-8">
-            <a href="{{ url_for('sales') }}" class="btn btn-secondary bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md shadow-md">
-                Cancel
-            </a>
-            <button type="submit" class="btn btn-success bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md">
-                <i class="fas fa-cash-register mr-2"></i> Record Sale
+    <div id="barcode-scanner-container">
+        <div id="barcode-scanner"></div>
+        <div class="scanner-controls">
+            <button id="close-scanner-btn" class="scanner-btn danger">
+                <i class="fas fa-times mr-2"></i> Close Scanner
+            </button>
+            <button id="toggle-camera-btn" class="scanner-btn">
+                <i class="fas fa-sync-alt mr-2"></i> Switch Camera
             </button>
         </div>
-    </form>
-</div>
-
-<!-- Barcode Scanner Modal -->
-<div id="barcode-scanner-container">
-    <div id="barcode-scanner"></div>
-    <div class="scanner-controls">
-        <button id="close-scanner-btn" class="scanner-btn danger">
-            <i class="fas fa-times mr-2"></i> Close Scanner
-        </button>
-        <button id="toggle-camera-btn" class="scanner-btn">
-            <i class="fas fa-sync-alt mr-2"></i> Switch Camera
-        </button>
+        <p class="text-white mt-4">Point the camera at a barcode to scan</p>
     </div>
-    <p class="text-white mt-4">Point the camera at a barcode to scan</p>
-</div>
 
-<script>
-    // Flask passes this data, ensure it's valid JSON
-    const inventoryItems = {{ inventory_items | tojson }};
-    const businessType = "{{ business_type }}";  // Added business type variable
-    const cartItemsContainer = document.getElementById('cart-items-container');
-    const addAnotherItemBtn = document.getElementById('add-another-item-btn');
-    const grandTotalSpan = document.getElementById('grand-total');
-    const cartItemsJsonInput = document.getElementById('cart-items-json');
-    const itemSearchInput = document.getElementById('item_search');
-    const searchButton = document.getElementById('search_button');
-    const saleForm = document.getElementById('saleForm');
-    const mainContent = document.getElementById('main-content');
-    const receiptSectionWrapper = document.getElementById('receipt-section-wrapper');
-
-    // Barcode elements
-    const barcodeInput = document.getElementById('barcode-input');
-    const addByBarcodeBtn = document.getElementById('add-by-barcode-btn');
-    const openScannerBtn = document.getElementById('open-scanner-btn');
-    const closeScannerBtn = document.getElementById('close-scanner-btn');
-    const toggleCameraBtn = document.getElementById('toggle-camera-btn');
-    const scannerContainer = document.getElementById('barcode-scanner-container');
-    const scannerElement = document.getElementById('barcode-scanner');
-
-    let cart = []; // Array to hold all items in the cart
-    let currentCamera = 'environment'; // 'environment' for back camera, 'user' for front
-    let scannerActive = false;
-
-    // Flash message utility
-    function flashMessage(message, category) {
-        const alertContainer = document.querySelector('#main-content .mb-4');
-        if (alertContainer) {
-            const alertDiv = document.createElement('div');
-            alertDiv.classList.add('alert', `alert-${category}`, 'rounded-lg', 'p-4', 'mb-3', 'shadow-md');
-            let iconHtml = '';
-            if (category === 'success') iconHtml = '<i class="fas fa-check-circle"></i>';
-            else if (category === 'danger') iconHtml = '<i class="fas fa-times-circle"></i>';
-            else if (category === 'warning') iconHtml = '<i class="fas fa-exclamation-triangle"></i>';
-            else if (category === 'info') iconHtml = '<i class="fas fa-info-circle"></i>';
-            alertDiv.innerHTML = `${iconHtml} ${message}`;
-            alertContainer.prepend(alertDiv);
-            setTimeout(() => alertDiv.remove(), 5000);
-        }
-    }
-
-    // Function to create a new item row
-    function createItemRow(itemData = {}) {
-        const row = document.createElement('div');
-        row.className = 'item-row grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 bg-gray-50 p-4 rounded-md shadow-sm border border-gray-200 relative';
-        row.innerHTML = `
-            <div class="form-group col-span-full md:col-span-2">
-                <label class="block text-xs font-medium text-gray-600 mb-1">Product</label>
-                <select class="product-select form-input w-full p-2 rounded-md border-gray-300"></select>
-            </div>
-            <div class="form-group">
-                <label class="block text-xs font-medium text-gray-600 mb-1">Unit Type</label>
-                <select class="unit-type-select form-input w-full p-2 rounded-md border-gray-300">
-                    <option value="pack">Pack</option>
-                    <option value="piece">${businessType === 'Pharmacy' ? 'Tab' : 'Piece'}</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
-                <input type="number" step="any" min="0" class="quantity-input form-input w-full p-2 rounded-md border-gray-300" value="0">
-            </div>
-            <div class="form-group">
-                <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH₵)</label>
-                <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
-            </div>
-            <div class="form-group col-span-full md:col-span-1 flex items-end justify-between">
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Item Total (GH₵)</label>
-                    <input type="text" class="item-total-display form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
+    <div id="receipt-modal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 relative">
+            <div id="receipt-content">
                 </div>
-                <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 focus:outline-none p-2 rounded-full">
-                    <i class="fas fa-times-circle text-xl"></i>
-                </button>
+            <div class="flex justify-end mt-4 space-x-2 no-print">
+                <button id="print-receipt-btn" class="btn bg-blue-600 text-white font-bold py-2 px-4 rounded-md"><i class="fas fa-print"></i> Print</button>
+                <button id="close-receipt-btn" class="btn bg-gray-500 text-white font-bold py-2 px-4 rounded-md"><i class="fas fa-times-circle"></i> Close</button>
             </div>
-        `;
+        </div>
+    </div>
 
-        const productSelect = row.querySelector('.product-select');
-        const unitTypeSelect = row.querySelector('.unit-type-select');
-        const quantityInput = row.querySelector('.quantity-input');
-        const unitPriceInput = row.querySelector('.unit-price-input');
-        const itemTotalDisplay = row.querySelector('.item-total-display');
-        const removeItemBtn = row.querySelector('.remove-item-btn');
+    <script>
+        let inventoryItems = [];
+        const businessType = "{{ business_type }}"; 
+        const cartItemsContainer = document.getElementById('cart-items-container');
+        const addAnotherItemBtn = document.getElementById('add-another-item-btn');
+        const grandTotalSpan = document.getElementById('grand-total');
+        const cartItemsJsonInput = document.getElementById('cart-items-json');
+        const itemSearchInput = document.getElementById('item_search');
+        const searchButton = document.getElementById('search_button');
+        const saleForm = document.getElementById('saleForm');
 
-        // Populate product dropdown, FILTERING OUT SERIALIZATION ERRORS
-        let defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = 'Select a Product';
-        defaultOption.disabled = true;
-        defaultOption.selected = true;
-        productSelect.appendChild(defaultOption);
+        const barcodeInput = document.getElementById('barcode-input');
+        const addByBarcodeBtn = document.getElementById('add-by-barcode-btn');
+        const openScannerBtn = document.getElementById('open-scanner-btn');
+        const closeScannerBtn = document.getElementById('close-scanner-btn');
+        const toggleCameraBtn = document.getElementById('toggle-camera-btn');
+        const scannerContainer = document.getElementById('barcode-scanner-container');
+        const scannerElement = document.getElementById('barcode-scanner');
 
-        inventoryItems.filter(item => !item.product_name.startsWith('Serialization Error')).forEach(item => {
-            const currentStock = parseFloat(item.current_stock) || 0;
-            const salePrice = parseFloat(item.sale_price) || 0;
-            const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
-            const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+        const receiptModal = document.getElementById('receipt-modal');
+        const receiptContent = document.getElementById('receipt-content');
+        const printReceiptBtn = document.getElementById('print-receipt-btn');
+        const closeReceiptBtn = document.getElementById('close-receipt-btn');
 
-            const option = document.createElement('option');
-            option.value = item.id;
-            option.textContent = `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`;
-            option.dataset.productName = item.product_name;
-            option.dataset.salePrice = salePrice;
-            option.dataset.currentStock = currentStock;
-            option.dataset.numberOfTabs = parseFloat(item.number_of_tabs) || 1;
-            option.dataset.unitPricePerTab = unitPricePerTab;
-            option.dataset.isFixedPrice = item.is_fixed_price;
-            option.dataset.fixedSalePrice = parseFloat(item.fixed_sale_price) || 0;
-            option.dataset.barcode = item.barcode || '';
-            productSelect.appendChild(option);
-        });
+        let cart = [];
+        let currentCamera = 'environment';
+        let scannerActive = false;
+        let QuaggaInstance = null;
 
-        // Event Listeners for this row
-        const updateRowCalculations = () => {
-            const selectedOption = productSelect.options[productSelect.selectedIndex];
-            if (!selectedOption || !selectedOption.value) {
-                unitPriceInput.value = '0.00';
-                itemTotalDisplay.value = '0.00';
-                updateGrandTotal();
-                return;
+        function flashMessage(message, category) {
+            const existingAlerts = document.querySelectorAll('.alert.dynamic-alert');
+            existingAlerts.forEach(alert => alert.remove());
+
+            const alertContainer = document.querySelector('form').previousElementSibling;
+            if (alertContainer && alertContainer.classList.contains('mb-4')) {
+                const alertDiv = document.createElement('div');
+                alertDiv.classList.add('alert', `alert-${category}`, 'rounded-lg', 'p-4', 'mb-3', 'shadow-md', 'dynamic-alert');
+                let iconHtml = '';
+                if (category === 'success') iconHtml = '<i class="fas fa-check-circle"></i>';
+                else if (category === 'danger') iconHtml = '<i class="fas fa-times-circle"></i>';
+                else if (category === 'warning') iconHtml = '<i class="fas fa-exclamation-triangle"></i>';
+                else if (category === 'info') iconHtml = '<i class="fas fa-info-circle"></i>';
+                alertDiv.innerHTML = `${iconHtml} ${message}`;
+                alertContainer.prepend(alertDiv);
+                setTimeout(() => alertDiv.remove(), 5000);
             }
-
-            const productId = selectedOption.value;
-            const product = inventoryItems.find(item => item.id == productId);  // Use loose comparison
-            const quantity = parseFloat(quantityInput.value) || 0;
-            const unitType = unitTypeSelect.value;
-
-            if (!product || isNaN(quantity) || quantity <= 0) {
-                unitPriceInput.value = '0.00';
-                itemTotalDisplay.value = '0.00';
-                updateGrandTotal();
-                return;
-            }
-
-            let price = 0;
-            // Explicitly parse values to prevent NaN errors
-            const fixedSalePrice = parseFloat(product.fixed_sale_price) || 0;
-            const numberOfTabs = parseFloat(product.number_of_tabs) || 1;
-            const salePrice = parseFloat(product.sale_price) || 0;
-            const unitPricePerTab = parseFloat(product.unit_price_per_tab) || 0;
-
-            if (product.is_fixed_price) {
-                if (unitType === 'pack') {
-                    price = fixedSalePrice;
-                } else { // 'tab' or 'piece'
-                    price = fixedSalePrice / numberOfTabs;
-                }
-            } else {
-                if (unitType === 'pack') {
-                    price = salePrice;
-                } else { // 'tab' or 'piece'
-                    price = unitPricePerTab;
-                }
-            }
-
-            unitPriceInput.value = price.toFixed(2);
-            itemTotalDisplay.value = (price * quantity).toFixed(2);
-
-            // Client-side stock warning
-            let effectiveStock = parseFloat(product.current_stock) || 0;
-            let requestedEffectiveQuantity = quantity;
-
-            if (unitType === 'pack') {
-                requestedEffectiveQuantity = quantity * numberOfTabs;
-            }
-
-            if (requestedEffectiveQuantity > effectiveStock) {
-                quantityInput.classList.add('border-red-500');
-                flashMessage(`Insufficient stock for ${product.product_name}. Available: ${effectiveStock.toFixed(2)} units.`, 'warning');
-            } else {
-                quantityInput.classList.remove('border-red-500');
-            }
-            updateGrandTotal();
-        };
-
-        productSelect.addEventListener('change', updateRowCalculations);
-        unitTypeSelect.addEventListener('change', updateRowCalculations);
-        quantityInput.addEventListener('input', updateRowCalculations);
-
-        removeItemBtn.addEventListener('click', () => {
-            row.remove();
-            updateGrandTotal();
-        });
-
-        // If itemData is provided for pre-population
-        if (Object.keys(itemData).length > 0) {
-            productSelect.value = itemData.product_id;
-            const changeEvent = new Event('change');
-            productSelect.dispatchEvent(changeEvent);
-
-            unitTypeSelect.value = itemData.sale_unit_type;
-            quantityInput.value = itemData.quantity_sold;
-            unitPriceInput.value = parseFloat(itemData.price_at_time_per_unit_sold).toFixed(2);
-            itemTotalDisplay.value = parseFloat(itemData.item_total_amount).toFixed(2);
-            updateGrandTotal();
         }
 
-        return row;
-    }
+        function createItemRow(itemData = {}) {
+            const row = document.createElement('div');
+            row.className = 'item-row grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 bg-gray-50 p-4 rounded-md shadow-sm border border-gray-200 relative';
+            row.innerHTML = `
+                <div class="form-group col-span-full md:col-span-2">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Product</label>
+                    <select class="product-select form-input w-full p-2 rounded-md border-gray-300"></select>
+                </div>
+                <div class="form-group">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Unit Type</label>
+                    <select class="unit-type-select form-input w-full p-2 rounded-md border-gray-300">
+                        <option value="pack">Pack</option>
+                        <option value="piece">${businessType === 'Pharmacy' ? 'Tab' : 'Piece'}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
+                    <input type="number" step="any" min="0" class="quantity-input form-input w-full p-2 rounded-md border-gray-300" value="0">
+                </div>
+                <div class="form-group">
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH₵)</label>
+                    <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
+                </div>
+                <div class="form-group col-span-full md:col-span-1 flex items-end justify-between">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Item Total (GH₵)</label>
+                        <input type="text" class="item-total-display form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
+                    </div>
+                    <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 focus:outline-none p-2 rounded-full">
+                        <i class="fas fa-times-circle text-xl"></i>
+                    </button>
+                </div>
+            `;
 
-    function updateGrandTotal() {
-        let total = 0;
-        const itemRows = cartItemsContainer.querySelectorAll('.item-row');
-        cart = []; // Clear and rebuild cart array
-
-        itemRows.forEach(row => {
             const productSelect = row.querySelector('.product-select');
+            const unitTypeSelect = row.querySelector('.unit-type-select');
             const quantityInput = row.querySelector('.quantity-input');
             const unitPriceInput = row.querySelector('.unit-price-input');
             const itemTotalDisplay = row.querySelector('.item-total-display');
-            const unitTypeSelect = row.querySelector('.unit-type-select');
+            const removeItemBtn = row.querySelector('.remove-item-btn');
 
-            const productId = productSelect.value;
-            const productName = productSelect.options[productSelect.selectedIndex]?.dataset.productName;
-            const quantity = parseFloat(quantityInput.value) || 0;
-            const unitPrice = parseFloat(unitPriceInput.value) || 0;
-            const itemTotal = parseFloat(itemTotalDisplay.value) || 0;
-            const unitType = unitTypeSelect.value;
+            let defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Select a Product';
+            defaultOption.disabled = true;
+            defaultOption.selected = true;
+            productSelect.appendChild(defaultOption);
 
-            if (productId && quantity > 0 && unitPrice > 0) {
-                total += itemTotal;
-                cart.push({
-                    product_id: productId,
-                    product_name: productName,
-                    quantity_sold: quantity,
-                    sale_unit_type: unitType,
-                    price_at_time_per_unit_sold: unitPrice,
-                    item_total_amount: itemTotal
-                });
+            inventoryItems.filter(item => !item.product_name.startsWith('Serialization Error')).forEach(item => {
+                const currentStock = parseFloat(item.current_stock) || 0;
+                const salePrice = parseFloat(item.sale_price) || 0;
+                const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
+                const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`;
+                option.dataset.productName = item.product_name;
+                option.dataset.salePrice = salePrice;
+                option.dataset.currentStock = currentStock;
+                option.dataset.numberOfTabs = parseFloat(item.number_of_tabs) || 1;
+                option.dataset.unitPricePerTab = unitPricePerTab;
+                option.dataset.isFixedPrice = item.is_fixed_price;
+                option.dataset.fixedSalePrice = parseFloat(item.fixed_sale_price) || 0;
+                option.dataset.barcode = item.barcode || '';
+                option.dataset.itemType = item.item_type || '';
+                option.dataset.purchasePrice = parseFloat(item.purchase_price) || 0;
+                option.dataset.markupPercentagePharmacy = parseFloat(item.markup_percentage_pharmacy) || 0;
+                productSelect.appendChild(option);
+            });
+
+            const updateRowCalculations = () => {
+                const selectedOption = productSelect.options[productSelect.selectedIndex];
+                if (!selectedOption || !selectedOption.value) {
+                    unitPriceInput.value = '0.00';
+                    unitPriceInput.readOnly = true;
+                    itemTotalDisplay.value = '0.00';
+                    updateGrandTotal();
+                    return;
+                }
+
+                const productId = selectedOption.value;
+                const product = inventoryItems.find(item => item.id == productId);
+                const quantity = parseFloat(quantityInput.value) || 0;
+                const unitType = unitTypeSelect.value;
+
+                if (!product || isNaN(quantity) || quantity <= 0) {
+                    unitPriceInput.value = '0.00';
+                    itemTotalDisplay.value = '0.00';
+                    updateGrandTotal();
+                    return;
+                }
+
+                let price = 0;
+                const fixedSalePrice = parseFloat(product.fixed_sale_price || 0);
+                const numberOfTabs = parseFloat(product.number_of_tabs || 1);
+                const regularSalePrice = parseFloat(product.sale_price || 0);
+                const unitPricePerTab = parseFloat(product.unit_price_per_tab || 0);
+                const purchasePrice = parseFloat(product.purchase_price || 0);
+                const markupPercentagePharmacy = parseFloat(product.markup_percentage_pharmacy) || 0;
+
+                if (selectedOption.dataset.isFixedPrice === 'true') {
+                    unitPriceInput.readOnly = true;
+                    if (unitType === 'pack') {
+                        price = fixedSalePrice;
+                    } else {
+                        price = fixedSalePrice / numberOfTabs;
+                    }
+                } else {
+                    unitPriceInput.readOnly = false;
+                    if (product.item_type === 'Pharmacy') {
+                        price = purchasePrice * (1 + (markupPercentagePharmacy / 100));
+                    } else {
+                        if (unitType === 'pack') {
+                            price = regularSalePrice;
+                        } else {
+                            price = unitPricePerTab;
+                        }
+                    }
+                }
+                
+                if (unitType !== 'pack' && parseFloat(product.unit_price_per_tab || 0) > 0) {
+                    price = parseFloat(product.unit_price_per_tab);
+                }
+
+                unitPriceInput.value = price.toFixed(2);
+                itemTotalDisplay.value = (price * quantity).toFixed(2);
+
+                let effectiveStock = parseFloat(product.current_stock) || 0;
+                let requestedEffectiveQuantity = quantity;
+
+                if (unitType === 'pack') {
+                    requestedEffectiveQuantity = quantity * numberOfTabs;
+                }
+
+                if (requestedEffectiveQuantity > effectiveStock) {
+                    quantityInput.classList.add('border-red-500');
+                    flashMessage(`Insufficient stock for ${product.product_name}. Available: ${effectiveStock.toFixed(2)} units.`, 'warning');
+                } else {
+                    quantityInput.classList.remove('border-red-500');
+                }
+                updateGrandTotal();
+            };
+
+            productSelect.addEventListener('change', updateRowCalculations);
+            unitTypeSelect.addEventListener('change', updateRowCalculations);
+            quantityInput.addEventListener('input', updateRowCalculations);
+            unitPriceInput.addEventListener('input', updateRowCalculations);
+
+            removeItemBtn.addEventListener('click', () => {
+                row.remove();
+                updateGrandTotal();
+            });
+
+            if (Object.keys(itemData).length > 0) {
+                const productToPopulate = inventoryItems.find(item => item.id == itemData.product_id);
+                if (productToPopulate) {
+                    if (!productSelect.querySelector(`option[value="${productToPopulate.id}"]`)) {
+                        const option = document.createElement('option');
+                        option.value = productToPopulate.id;
+                        option.textContent = `${productToPopulate.product_name} (Stock: ${productToPopulate.current_stock.toFixed(2)}) - GH₵${(productToPopulate.sale_price || 0).toFixed(2)}`;
+                        option.dataset.productName = productToPopulate.product_name;
+                        option.dataset.salePrice = productToPopulate.sale_price;
+                        option.dataset.currentStock = productToPopulate.current_stock;
+                        option.dataset.numberOfTabs = productToPopulate.number_of_tabs || 1;
+                        option.dataset.unitPricePerTab = productToPopulate.unit_price_per_tab || 0;
+                        option.dataset.isFixedPrice = productToPopulate.is_fixed_price;
+                        option.dataset.fixedSalePrice = productToPopulate.fixed_sale_price || 0;
+                        option.dataset.barcode = productToPopulate.barcode || '';
+                        option.dataset.itemType = productToPopulate.item_type || '';
+                        option.dataset.purchasePrice = parseFloat(productToPopulate.purchase_price) || 0;
+                        option.dataset.markupPercentagePharmacy = parseFloat(productToPopulate.markup_percentage_pharmacy) || 0;
+                        productSelect.appendChild(option);
+                    }
+                    productSelect.value = itemData.product_id;
+                    unitTypeSelect.value = itemData.sale_unit_type;
+                    quantityInput.value = itemData.quantity_sold;
+                    unitPriceInput.value = parseFloat(itemData.price_at_time_per_unit_sold).toFixed(2);
+                    itemTotalDisplay.value = parseFloat(itemData.item_total_amount).toFixed(2);
+                }
+                updateRowCalculations();
+            } else {
+                unitPriceInput.readOnly = true;
+            }
+
+            return row;
+        }
+
+        function updateGrandTotal() {
+            let total = 0;
+            const itemRows = cartItemsContainer.querySelectorAll('.item-row');
+            cart = [];
+
+            itemRows.forEach(row => {
+                const productSelect = row.querySelector('.product-select');
+                const quantityInput = row.querySelector('.quantity-input');
+                const unitPriceInput = row.querySelector('.unit-price-input');
+                const itemTotalDisplay = row.querySelector('.item-total-display');
+                const unitTypeSelect = row.querySelector('.unit-type-select');
+
+                const productId = productSelect.value;
+                const selectedOption = productSelect.options[productSelect.selectedIndex];
+                const productName = selectedOption ? selectedOption.dataset.productName : '';
+                const quantity = parseFloat(quantityInput.value) || 0;
+                const unitPrice = parseFloat(unitPriceInput.value) || 0;
+                const itemTotal = parseFloat(itemTotalDisplay.value) || 0;
+                const unitType = unitTypeSelect.value;
+
+                if (productId && quantity > 0 && unitPrice >= 0) {
+                    total += itemTotal;
+                    cart.push({
+                        product_id: productId,
+                        product_name: productName,
+                        quantity_sold: quantity,
+                        sale_unit_type: unitType,
+                        price_at_time_per_unit_sold: unitPrice,
+                        item_total_amount: itemTotal
+                    });
+                }
+            });
+            grandTotalSpan.textContent = total.toFixed(2);
+            cartItemsJsonInput.value = JSON.stringify(cart);
+        }
+
+        addAnotherItemBtn.addEventListener('click', () => {
+            cartItemsContainer.appendChild(createItemRow());
+            updateGrandTotal();
+        });
+
+        searchButton.addEventListener('click', function() {
+            const currentSearchQuery = itemSearchInput.value.trim();
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('search', currentSearchQuery);
+            window.location.href = currentUrl.toString();
+        });
+
+        itemSearchInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                searchButton.click();
             }
         });
-        grandTotalSpan.textContent = total.toFixed(2);
-        cartItemsJsonInput.value = JSON.stringify(cart);
-    }
 
-    addAnotherItemBtn.addEventListener('click', () => {
-        cartItemsContainer.appendChild(createItemRow());
-        updateGrandTotal();
-    });
+        function startScanner() {
+            if (scannerActive) return;
 
-    // Search button click handler
-    searchButton.addEventListener('click', function() {
-        const currentSearchQuery = itemSearchInput.value.trim();
-        const currentUrl = new URL(window.location.href);
-        currentUrl.searchParams.set('search', currentSearchQuery);
-        window.location.href = currentUrl.toString();
-    });
+            scannerContainer.style.display = 'flex';
+            scannerActive = true;
 
-    // Allow pressing Enter in search bar to trigger search
-    itemSearchInput.addEventListener('keypress', function(event) {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            searchButton.click();
+            Quagga.init({
+                inputStream : {
+                    name : "Live",
+                    type : "LiveStream",
+                    target: scannerElement,
+                    constraints: {
+                        facingMode: currentCamera
+                    },
+                },
+                decoder : {
+                    readers : ["ean_reader", "ean_8_reader", "code_39_reader", "code_128_reader", "upc_reader"]
+                }
+            }, function(err) {
+                if (err) {
+                    console.error(err);
+                    flashMessage('Error starting barcode scanner. Please ensure camera access is granted.', 'danger');
+                    scannerContainer.style.display = 'none';
+                    scannerActive = false;
+                    return
+                }
+                Quagga.start();
+                QuaggaInstance = Quagga;
+            });
+
+            Quagga.onDetected(function(result) {
+                const code = result.codeResult.code;
+                if (code) {
+                    barcodeInput.value = code;
+                    stopScanner();
+                    addByBarcodeBtn.click();
+                }
+            });
         }
-    });
 
-    // Print function that always works
-    function printReceipt() {
-        const receiptSection = document.getElementById('receipt-section');
-        if (!receiptSection) {
-            console.error("Receipt section not found");
-            return;
+        function stopScanner() {
+            if (QuaggaInstance) {
+                QuaggaInstance.stop();
+                QuaggaInstance = null;
+            }
+            scannerContainer.style.display = 'none';
+            scannerActive = false;
+        }
+
+        openScannerBtn.addEventListener('click', startScanner);
+        closeScannerBtn.addEventListener('click', stopScanner);
+
+        toggleCameraBtn.addEventListener('click', () => {
+            currentCamera = (currentCamera === 'environment') ? 'user' : 'environment';
+            if (scannerActive) {
+                stopScanner();
+                startScanner();
+            }
+        });
+
+        addByBarcodeBtn.addEventListener('click', () => {
+            const barcode = barcodeInput.value.trim();
+            if (barcode) {
+                let targetRow = null;
+                document.querySelectorAll('.item-row').forEach(row => {
+                    const productSelect = row.querySelector('.product-select');
+                    if (productSelect.value === '') {
+                        targetRow = row;
+                    }
+                });
+
+                if (!targetRow) {
+                    targetRow = createItemRow();
+                    cartItemsContainer.appendChild(targetRow);
+                }
+
+                fetchProductByBarcodeAndPopulateRow(barcode, targetRow);
+            } else {
+                flashMessage('Please enter a barcode or product name.', 'warning');
+            }
+        });
+
+        barcodeInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                addByBarcodeBtn.click();
+            }
+        });
+
+        function fetchProductByBarcodeAndPopulateRow(barcode, rowElement) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+            fetch("{{ url_for('get_product_by_barcode') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ barcode: barcode })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.product) {
+                    populateProductRow(rowElement, data.product);
+                    flashMessage(`Product '${data.product.product_name}' added!`, 'success');
+                    barcodeInput.value = '';
+                    updateGrandTotal();
+                } else {
+                    flashMessage(data.message || 'Product not found.', 'warning');
+                    const productSelect = rowElement.querySelector('.product-select');
+                    productSelect.value = '';
+                    productSelect.dispatchEvent(new Event('change'));
+                    barcodeInput.value = '';
+                    updateGrandTotal();
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching product:', error);
+                flashMessage('Error fetching product. Please try again.', 'danger');
+                barcodeInput.value = '';
+                updateGrandTotal();
+            });
+        }
+
+        function populateProductRow(rowElement, product) {
+            const productSelect = rowElement.querySelector('.product-select');
+            const unitTypeSelect = rowElement.querySelector('.unit-type-select');
+            const quantityInput = rowElement.querySelector('.quantity-input');
+            const unitPriceInput = rowElement.querySelector('.unit-price-input');
+            const itemTotalDisplay = rowElement.querySelector('.item-total-display');
+
+            if (!productSelect.querySelector(`option[value="${product.id}"]`)) {
+                const option = document.createElement('option');
+                option.value = product.id;
+                const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+                option.textContent = `${product.product_name} (Stock: ${product.current_stock.toFixed(2)}) - GH₵${(product.sale_price || 0).toFixed(2)} / GH₵${(product.unit_price_per_tab || 0).toFixed(2)} per ${unitLabel}`;
+                option.dataset.productName = product.product_name;
+                option.dataset.salePrice = product.sale_price;
+                option.dataset.currentStock = product.current_stock;
+                option.dataset.numberOfTabs = product.number_of_tabs || 1;
+                option.dataset.unitPricePerTab = product.unit_price_per_tab || 0;
+                option.dataset.isFixedPrice = product.is_fixed_price;
+                option.dataset.fixedSalePrice = product.fixed_sale_price || 0;
+                option.dataset.barcode = product.barcode || '';
+                option.dataset.itemType = product.item_type || '';
+                option.dataset.purchasePrice = product.purchase_price || 0;
+                option.dataset.markupPercentagePharmacy = product.markup_percentage_pharmacy || 0;
+                productSelect.appendChild(option);
+            }
+            productSelect.value = product.id;
+
+            if (parseFloat(product.unit_price_per_tab || 0) > 0 && (product.item_type === 'Pharmacy' || product.item_type === 'Hardware Material')) {
+                unitTypeSelect.value = 'piece';
+                unitTypeSelect.options[1].textContent = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+            } else {
+                unitTypeSelect.value = 'pack';
+            }
+
+            quantityInput.value = 1;
+            unitPriceInput.readOnly = true;
+            updateRowCalculations();
         }
         
-        // Create a print-friendly HTML document
-        const printContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Print Receipt</title>
-            <meta charset="UTF-8">
-            <style>
+        // This function will now generate the receipt HTML directly
+        function generateReceiptHtml(transactionDetails) {
+            if (!transactionDetails || !transactionDetails.last_transaction_details || transactionDetails.last_transaction_details.length === 0) {
+                return '<h3 class="text-xl font-bold text-center text-gray-800">No transaction details found.</h3>';
+            }
+
+            const transactionItemsHtml = transactionDetails.last_transaction_details.map(item => `
+                <div class="flex justify-between py-1 border-b border-dashed border-gray-400">
+                    <span class="flex-1">${item.product_name}</span>
+                    <span class="w-16 text-center">${item.quantity_sold}</span>
+                    <span class="w-20 text-right">GH₵${parseFloat(item.total_amount).toFixed(2)}</span>
+                </div>
+            `).join('');
+
+            return `
+                <div class="text-center font-mono">
+                    <h2 class="text-2xl font-bold">{{ pharmacy_info.name or 'Business Name' }}</h2>
+                    <p class="text-xs">{{ pharmacy_info.address or 'N/A' }}{% if pharmacy_info.location %}, {{ pharmacy_info.location }}{% endif %}</p>
+                    <p class="text-xs">Contact: {{ pharmacy_info.contact or 'N/A' }}</p>
+                    <div class="my-4 border-t border-b border-dashed border-gray-400 py-2">
+                        <p class="text-sm">Receipt</p>
+                        <p class="text-xs">Transaction ID: ${transactionDetails.last_transaction_id.substring(0, 8).toUpperCase()}</p>
+                        <p class="text-xs">Date: ${transactionDetails.last_transaction_date}</p>
+                        <p class="text-xs">Sales Person: ${transactionDetails.last_transaction_sales_person}</p>
+                        ${transactionDetails.last_transaction_customer_phone ? `<p class="text-xs">Customer Phone: ${transactionDetails.last_transaction_customer_phone}</p>` : ''}
+                    </div>
+                    
+                    <div class="flex justify-between font-semibold">
+                        <span class="flex-1">Item</span>
+                        <span class="w-16 text-center">Qty</span>
+                        <span class="w-20 text-right">Total</span>
+                    </div>
+                    ${transactionItemsHtml}
+                    
+                    <div class="mt-4 pt-2 border-t border-dashed border-gray-400 flex justify-between font-bold text-lg">
+                        <span>Grand Total:</span>
+                        <span>GH₵${parseFloat(transactionDetails.last_transaction_grand_total).toFixed(2)}</span>
+                    </div>
+                    
+                    <div class="mt-6 text-xs text-gray-600">
+                        <p>Thank you for your business!</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showReceipt(transactionDetails) {
+            receiptContent.innerHTML = generateReceiptHtml(transactionDetails);
+            receiptModal.classList.remove('hidden');
+        }
+
+        printReceiptBtn.addEventListener('click', () => {
+            const printContent = document.getElementById('receipt-content').innerHTML;
+            const printWindow = window.open('', '', 'height=600,width=800');
+            printWindow.document.write('<html><head><title>Print Receipt</title>');
+            printWindow.document.write('<style>');
+            printWindow.document.write(`
                 body {
                     font-family: 'Inter', sans-serif;
-                    background-color: white;
-                    padding: 20px;
+                    font-size: 12px;
+                }
+                .receipt-container {
+                    width: 100%;
+                    max-width: 300px;
+                    margin: 0 auto;
+                    padding: 10px;
+                    text-align: center;
+                }
+                .header h3 {
+                    font-size: 1.2em;
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                }
+                .details p {
                     margin: 0;
                 }
-                .container {
-                    max-width: 600px;
-                    margin: 0 auto;
-                    background-color: #f9fafb;
-                    padding: 20px;
-                    border-radius: 8px;
-                    border: 1px solid #e5e7eb;
+                .item-row {
+                    display: flex;
+                    justify-content: space-between;
+                    border-bottom: 1px dashed #ddd;
+                    padding: 5px 0;
                 }
-                h3 {
-                    text-align: center;
-                    font-size: 1.5rem;
-                    font-weight: 600;
-                    color: #374151;
-                    margin-bottom: 1.5rem;
+                .item-row > * {
+                    flex-shrink: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
-                .text-center {
-                    text-align: center;
+                .item-row .product { flex-grow: 1; text-align: left; }
+                .item-row .qty { width: 50px; text-align: center; }
+                .item-row .total { width: 80px; text-align: right; }
+                .total {
+                    font-weight: bold;
+                    text-align: right;
+                    font-size: 1.1em;
+                    margin-top: 10px;
                 }
-                .text-sm {
-                    font-size: 0.875rem;
+                .footer {
+                    margin-top: 20px;
                 }
-                .text-gray-600 {
-                    color: #4b5563;
+            `);
+            printWindow.document.write('</style></head><body>');
+            printWindow.document.write(printContent);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.onload = () => {
+                printWindow.print();
+            };
+        });
+
+        closeReceiptBtn.addEventListener('click', () => {
+            receiptModal.classList.add('hidden');
+        });
+
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+            fetch("{{ url_for('get_all_active_products') }}", {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': csrfToken
                 }
-                .font-bold {
-                    font-weight: 700;
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.products) {
+                    inventoryItems = data.products;
+
+                    const initialCartData = {{ sale.get('items', []) | tojson | safe }};
+                    if (initialCartData && initialCartData.length > 0) {
+                        initialCartData.forEach(item => {
+                            cartItemsContainer.appendChild(createItemRow(item));
+                        });
+                    } else {
+                        cartItemsContainer.appendChild(createItemRow());
+                    }
+                    updateGrandTotal();
+                } else {
+                    flashMessage(data.message || 'Failed to load product list.', 'danger');
+                    console.error('Failed to load all products:', data.message);
+                    cartItemsContainer.appendChild(createItemRow());
                 }
-                .text-lg {
-                    font-size: 1.125rem;
-                }
-                .text-gray-800 {
-                    color: #1f2937;
-                }
-                .mt-2 {
-                    margin-top: 0.5rem;
-                }
-                table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 20px 0;
-                }
-                thead {
-                    background-color: #f3f4f6;
-                }
-                th {
-                    padding: 0.5rem 1rem;
-                    text-align: left;
-                    font-size: 0.875rem;
-                    font-weight: 500;
-                    color: #4b5563;
-                }
-                td {
-                    padding: 0.5rem 1rem;
-                    border-bottom: 1px solid #e5e7eb;
-                    font-size: 0.875rem;
-                    color: #1f2937;
-                }
-                tfoot {
-                    background-color: #f3f4f6;
-                    font-weight: 600;
-                }
-                .no-print {
-                    display: none;
-                }
-                .font-mono {
-                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-                }
-                .text-blue-700 {
-                    color: #1d4ed8;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                ${receiptSection.innerHTML}
-            </div>
-            <script>
-                window.onload = function() {
-                    window.print();
-                }
-            <\/script>
-        </body>
-        </html>
-        `;
-        
-        // Create a blob and open it
-        const blob = new Blob([printContent], {type: 'text/html'});
-        const url = URL.createObjectURL(blob);
-        
-        // Create a hidden iframe for printing
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        iframe.src = url;
-        document.body.appendChild(iframe);
-        
-        iframe.onload = function() {
-            // Print after content loads
-            setTimeout(() => {
-                iframe.contentWindow.focus();
-                iframe.contentWindow.print();
+            })
+            .catch(error => {
+                flashMessage('Error loading product list. Please check console.', 'danger');
+                console.error('Error fetching all products:', error);
+                cartItemsContainer.appendChild(createItemRow());
+            });
+
+            // This is the new logic to handle the redirect from the server
+            const printReady = {{ print_ready | tojson }};
+            const autoPrint = {{ auto_print | tojson }};
+
+            if (printReady) {
+                const transactionDetails = {
+                    last_transaction_id: '{{ last_transaction_id | tojson | safe }}'.replace(/['"]/g, ''),
+                    last_transaction_date: '{{ last_transaction_date | tojson | safe }}'.replace(/['"]/g, ''),
+                    last_transaction_sales_person: '{{ last_transaction_sales_person | tojson | safe }}'.replace(/['"]/g, ''),
+                    last_transaction_customer_phone: '{{ last_transaction_customer_phone | tojson | safe }}'.replace(/['"]/g, ''),
+                    last_transaction_grand_total: '{{ last_transaction_grand_total | tojson | safe }}'.replace(/['"]/g, ''),
+                    last_transaction_details: {{ last_transaction_details | tojson | safe }}
+                };
                 
-                // Clean up after printing
-                setTimeout(() => {
-                    document.body.removeChild(iframe);
-                    URL.revokeObjectURL(url);
-                }, 1000);
-            }, 500);
-        };
-    }
-
-    // ===================== BARCODE FUNCTIONALITY =====================
-    
-    // Add product by barcode
-    function addProductByBarcode(barcode) {
-        // Find the product by barcode
-        const product = inventoryItems.find(item => item.barcode === barcode);
-        
-        if (!product) {
-            flashMessage(`No product found with barcode: ${barcode}`, 'warning');
-            return;
-        }
-        
-        // Create a new cart row
-        const newRow = createItemRow();
-        cartItemsContainer.appendChild(newRow);
-        
-        // Find the select element in the new row
-        const productSelect = newRow.querySelector('.product-select');
-        productSelect.value = product.id; // Set the product based on scanned barcode
-        
-        // Trigger change event to update other fields (unit price, etc.)
-        const changeEvent = new Event('change');
-        productSelect.dispatchEvent(changeEvent);
-        
-        // Optionally, set quantity to 1 if it's a new item added by barcode
-        const quantityInput = newRow.querySelector('.quantity-input');
-        if (quantityInput.value === "0") { // Only if initial value is 0
-            quantityInput.value = 1;
-            quantityInput.dispatchEvent(new Event('input')); // Trigger input event to update totals
-        }
-
-        // Close scanner after successful scan
-        closeBarcodeScanner();
-        barcodeInput.value = ''; // Clear barcode input
-        barcodeInput.focus(); // Keep focus on barcode input for next scan/manual entry
-        flashMessage(`Product "${product.product_name}" added by barcode.`, 'success');
-    }
-
-    addByBarcodeBtn.addEventListener('click', () => {
-        const barcode = barcodeInput.value.trim();
-        if (barcode) {
-            addProductByBarcode(barcode);
-        } else {
-            flashMessage('Please enter a barcode or use the scanner.', 'info');
-        }
-    });
-
-    barcodeInput.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter') {
-            event.preventDefault(); // Prevent form submission
-            addByBarcodeBtn.click(); // Trigger the add button
-        }
-    });
-
-    // QuaggaJS setup for barcode scanning
-    openScannerBtn.addEventListener('click', () => {
-        scannerContainer.style.display = 'flex';
-        scannerActive = true;
-        Quagga.init({
-            inputStream : {
-                name : "Live",
-                type : "LiveStream",
-                target: scannerElement,    // Or '#barcode-scanner' (CSS selector)
-                constraints: {
-                    facingMode: currentCamera // 'environment' (rear) or 'user' (front)
+                showReceipt(transactionDetails);
+                
+                if (autoPrint) {
+                    window.setTimeout(() => {
+                        printReceiptBtn.click();
+                    }, 500); // Small delay to ensure modal is rendered
                 }
-            },
-            decoder : {
-                readers : ['ean_reader', 'code_128_reader', 'upc_reader'] // Specify barcode types
             }
-        }, function(err) {
-            if (err) {
-                console.error("Quagga initialization error:", err);
-                flashMessage('Could not start scanner. Check camera permissions.', 'danger');
-                scannerContainer.style.display = 'none';
-                scannerActive = false;
+        });
+
+        saleForm.addEventListener('submit', async function(event) {
+            // Note: We no longer prevent the default form submission.
+            // The Flask redirect handles the navigation.
+            updateGrandTotal();
+            
+            if (cart.length === 0 || cart.some(item => item.quantity_sold <= 0 || item.product_id === '')) {
+                event.preventDefault(); // Prevent submission if validation fails
+                flashMessage('Please add at least one valid item with a quantity greater than zero.', 'danger');
                 return;
             }
-            Quagga.start();
         });
-
-        Quagga.onDetected(function(result) {
-            const code = result.codeResult.code;
-            console.log("Barcode detected:", code);
-            addProductByBarcode(code); // Add detected product to cart
-            // Quagga.stop(); // Stop scanner after successful scan
-            // scannerActive = false;
-            // scannerContainer.style.display = 'none';
-        });
-    });
-
-    closeScannerBtn.addEventListener('click', () => {
-        closeBarcodeScanner();
-    });
-
-    toggleCameraBtn.addEventListener('click', () => {
-        if (scannerActive) {
-            Quagga.stop();
-            currentCamera = (currentCamera === 'environment') ? 'user' : 'environment';
-            openScannerBtn.click(); // Re-initialize with new camera
-        }
-    });
-
-    function closeBarcodeScanner() {
-        if (scannerActive) {
-            Quagga.stop();
-            scannerActive = false;
-            scannerContainer.style.display = 'none';
-        }
-    }
-    
-    // Clean up when page is closed (important for camera access)
-    window.addEventListener('beforeunload', closeBarcodeScanner);
-
-    // ===================== END BARCODE FUNCTIONALITY =====================
-
-    // Initial setup when page loads
-    document.addEventListener('DOMContentLoaded', () => {
-        // Hide the main content and show the receipt if print_ready is true
-        {% if print_ready %}
-            mainContent.classList.add('print-receipt-hidden');
-            receiptSectionWrapper.classList.remove('print-receipt-hidden');
-            
-            // Auto-print after a short delay if auto_print is true
-            {% if auto_print %}
-                setTimeout(printReceipt, 500);
-            {% endif %}
-        {% else %}
-            mainContent.classList.remove('print-receipt-hidden');
-            receiptSectionWrapper.classList.add('print-receipt-hidden');
-            // Check if there are existing items in the sale (for editing or re-rendering after error)
-            const initialSaleItems = {{ sale.get('items', []) | tojson }};
-
-            if (initialSaleItems && initialSaleItems.length > 0) {
-                initialSaleItems.forEach(item => {
-                    cartItemsContainer.appendChild(createItemRow(item));
-                });
-            } else {
-                // If no initial items, add one empty row for a new sale
-                cartItemsContainer.appendChild(createItemRow());
-            }
-            updateGrandTotal();
-        {% endif %}
-        
-        // Focus on barcode input for quick scanning
-        barcodeInput.focus();
-    });
-</script>
+    </script>
 {% endblock %}
