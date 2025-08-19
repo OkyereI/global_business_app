@@ -1693,14 +1693,19 @@ def add_sale():
     business_type = get_current_business_type()
 
     # Determine which item types are relevant for the current business type
+    
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
-    elif business_type in ['Supermarket', 'Provision Store']:
-        relevant_item_types = ['Provision Store'] # Assuming 'Provision Store' covers general goods for these
-    # Add more mappings if you have other business types and their corresponding item types
+    elif business_type == 'Supermarket': # Changed from 'in' to handle 'Supermarket' type specifically
+        relevant_item_types = ['Supermarket'] # Add 'Supermarket' as relevant item type
+    elif business_type == 'Provision Store': # Handle Provision Store separately if its items are distinct
+        relevant_item_types = ['Provision Store']
+    else:
+        # Fallback or general type if none matches. Consider if a business can have diverse types.
+        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
