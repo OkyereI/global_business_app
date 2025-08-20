@@ -2882,16 +2882,19 @@ def add_sale():
     business_type = get_current_business_type()
 
     relevant_item_types = []
+    
+    # Check the business type from the session to filter relevant items
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
+        # The item_type for hardware is 'Hardware Material'
         relevant_item_types = ['Hardware Material']
     elif business_type == 'Supermarket':
-        relevant_item_types = ['Supermarket']
-    elif business_type == 'Provision Store':
-        relevant_item_types = ['Provision Store']
+        relevant_item_types = ['Supermarket', 'Provision Store']
     else:
-        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store']
+        # Default to Pharmacy if business_type is not recognized or not yet set
+        relevant_item_types = ['Pharmacy']
+
 
     search_query = request.args.get('search', '').strip()
 
