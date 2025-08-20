@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ('/home/isaac/pharmapp/build/app/PYZ-00.pyz',
+=======
+('/home/isaac/Documents/clone_app/pharmapp/build/app/PYZ-00.pyz',
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
  [('IPython',
    '/home/isaac/env/lib/python3.10/site-packages/IPython/__init__.py',
    'PYMODULE'),
@@ -1329,6 +1333,7 @@
   ('distutils.versionpredicate',
    '/usr/lib/python3.10/distutils/versionpredicate.py',
    'PYMODULE'),
+<<<<<<< HEAD
   ('dns',
    '/home/isaac/env/lib/python3.10/site-packages/dns/__init__.py',
    'PYMODULE'),
@@ -1719,6 +1724,8 @@
   ('dns.zonetypes',
    '/home/isaac/env/lib/python3.10/site-packages/dns/zonetypes.py',
    'PYMODULE'),
+=======
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
   ('doctest', '/usr/lib/python3.10/doctest.py', 'PYMODULE'),
   ('dotenv',
    '/home/isaac/env/lib/python3.10/site-packages/dotenv/__init__.py',
@@ -1763,6 +1770,7 @@
   ('email.policy', '/usr/lib/python3.10/email/policy.py', 'PYMODULE'),
   ('email.quoprimime', '/usr/lib/python3.10/email/quoprimime.py', 'PYMODULE'),
   ('email.utils', '/usr/lib/python3.10/email/utils.py', 'PYMODULE'),
+<<<<<<< HEAD
   ('email_validator',
    '/home/isaac/env/lib/python3.10/site-packages/email_validator/__init__.py',
    'PYMODULE'),
@@ -1784,6 +1792,8 @@
   ('email_validator.version',
    '/home/isaac/env/lib/python3.10/site-packages/email_validator/version.py',
    'PYMODULE'),
+=======
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
   ('exceptiongroup',
    '/home/isaac/env/lib/python3.10/site-packages/exceptiongroup/__init__.py',
    'PYMODULE'),
@@ -1921,6 +1931,7 @@
   ('flask_sqlalchemy.track_modifications',
    '/home/isaac/env/lib/python3.10/site-packages/flask_sqlalchemy/track_modifications.py',
    'PYMODULE'),
+<<<<<<< HEAD
   ('flask_wtf',
    '/home/isaac/env/lib/python3.10/site-packages/flask_wtf/__init__.py',
    'PYMODULE'),
@@ -1945,6 +1956,8 @@
   ('flask_wtf.recaptcha.widgets',
    '/home/isaac/env/lib/python3.10/site-packages/flask_wtf/recaptcha/widgets.py',
    'PYMODULE'),
+=======
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
   ('fnmatch', '/usr/lib/python3.10/fnmatch.py', 'PYMODULE'),
   ('fractions', '/usr/lib/python3.10/fractions.py', 'PYMODULE'),
   ('ftplib', '/usr/lib/python3.10/ftplib.py', 'PYMODULE'),
@@ -5992,6 +6005,7 @@
   ('werkzeug.wsgi',
    '/home/isaac/env/lib/python3.10/site-packages/werkzeug/wsgi.py',
    'PYMODULE'),
+<<<<<<< HEAD
   ('wtforms',
    '/home/isaac/env/lib/python3.10/site-packages/wtforms/__init__.py',
    'PYMODULE'),
@@ -6049,6 +6063,8 @@
   ('wtforms.widgets.core',
    '/home/isaac/env/lib/python3.10/site-packages/wtforms/widgets/core.py',
    'PYMODULE'),
+=======
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
   ('xml', '/usr/lib/python3.10/xml/__init__.py', 'PYMODULE'),
   ('xml.dom', '/usr/lib/python3.10/xml/dom/__init__.py', 'PYMODULE'),
   ('xml.dom.NodeFilter',

@@ -5,7 +5,11 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
+<<<<<<< HEAD
     datas=[('templates', 'templates'), ('instance/instance_data.db', '.')],
+=======
+    datas=[],
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,5 +39,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+<<<<<<< HEAD
     icon=['gbt.png'],
+=======
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
 )
