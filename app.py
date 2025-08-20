@@ -168,10 +168,6 @@ class User(db.Model):
     role = db.Column(db.String(50), nullable=False)
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW LINE: Add this field
-<<<<<<< HEAD
-=======
-
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     __table_args__ = (db.UniqueConstraint('username', 'business_id', name='_username_business_uc'),)
 
     # Property to set password, automatically hashes it
