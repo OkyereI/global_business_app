@@ -207,6 +207,7 @@ class InventoryItem(db.Model):
     barcode = db.Column(db.String(50), unique=True, nullable=True)  # Add this line
     __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
     markup_percentage_pharmacy = db.Column(db.Numeric(10, 2), default=0.00)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
     def __repr__(self):
         return f'<InventoryItem {self.product_name} (Stock: {self.current_stock})>'
 
@@ -247,48 +248,11 @@ class Company(db.Model):
     balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit (from your business's perspective)
     # Ensure 'last_updated' is defined here as it caused a migration issue before
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
 
     # Relationship to CompanyTransaction
     transactions = db.relationship('CompanyTransaction', backref='company', lazy=True, cascade="all, delete-orphan")
 
-    # Relationships to Creditor and Debtor models with overlaps to resolve warnings
-    # These definitions should match what you have, ensuring 'Creditor' and 'Debtor'
-    # models correctly define their 'company_id' foreign keys.
-
-<<<<<<< HEAD
-    # Primary relationships with descriptive backrefs
-    # If the warnings specifically mentioned 'creditor_records' and 'debtor_records'
-    # as the conflicting ones, and you don't have explicit definitions for them
-    # in your Company model, then the 'overlaps' should go on the relationships
-    # on the Creditor/Debtor side.
-    # However, if 'creditor_records' and 'debtors_records' *do* exist, you need to
-    # decide which ones are primary and apply overlaps accordingly.
-    # For now, I'm assuming 'creditors_list' and 'debtors_list' are your main ones
-    # from the Company side.
-
-    # If your SQLAlchemy warnings refer to specific relationship names like
-    # 'Company.creditor_records' and 'Company.debtors_records' (which are NOT in this snippet),
-    # you MUST add the overlaps parameter to *those* specific relationships.
-    # The snippet you sent does *not* contain the relationships that the warnings
-    # directly called out as needing the overlaps parameter.
-
-    # Re-adding `overlaps` to the `creditors_list` and `debtors_list` relationships
-    # ONLY IF these are actually conflicting with *other* relationships defined
-    # on the Company model (e.g., if you still have `creditor_records` defined elsewhere).
-    # If 'creditors_list' is the ONLY relationship to Creditor from Company, it might not
-    # need an 'overlaps' here. The warnings suggest *other* named relationships.
-
-    # Based on the warnings you shared:
-    # `Company.creditor_records` conflicts with `Company.creditors_list` AND `Creditor.company_creditor_rel`.
-    # This implies that `creditor_records` is a relationship that needs the `overlaps` parameter
-    # and should list `creditors_list` and `company_creditor_rel` within it.
-
-    # If you only have `creditors_list` and `debtors_list` defined on Company:
-=======
-    # NEW: Relationships to Creditor and Debtor models
-    # This assumes your Creditor and Debtor models have 'company_id' foreign keys
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     creditors_list = db.relationship(
                 'Creditor',
                 back_populates='company_creditor_rel', # This should match the backref name on Creditor
@@ -301,10 +265,6 @@ class Company(db.Model):
         lazy=True,
         cascade="all, delete-orphan"
     )
-<<<<<<< HEAD
-
-=======
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
 
     @property
@@ -335,7 +295,7 @@ class CompanyTransaction(db.Model):
     date = db.Column(db.DateTime, nullable=False, default=datetime.now)
     description = db.Column(db.Text)
     recorded_by = db.Column(db.String(100)) # User who recorded the transaction
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
     def __repr__(self):
         return f'<CompanyTransaction {self.type} {self.amount} for {self.company_id}>'
 
@@ -352,7 +312,7 @@ class FutureOrder(db.Model):
     actual_collection_date = db.Column(db.DateTime)
     status = db.Column(db.String(50), default='Pending', nullable=False) # 'Pending', 'Collected', 'Cancelled'
     remaining_balance = db.Column(db.Float, nullable=False, default=0.0) # Amount still owed by customer
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
     def get_items(self):
         return json.loads(self.items_json)
 
@@ -373,7 +333,7 @@ class HirableItem(db.Model):
     current_stock = db.Column(db.Integer, nullable=False, default=0) # Number of units available for hiring
     last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     is_active = db.Column(db.Boolean, default=True, nullable=False) # For soft delete
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
     __table_args__ = (db.UniqueConstraint('item_name', 'business_id', name='_hirable_item_name_business_uc'),)
 
     def __repr__(self):
@@ -411,7 +371,7 @@ class Creditor(db.Model):
     company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
     balance = db.Column(db.Float, default=0.0, nullable=False)
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
     # Relationship to Company (optional, but good for direct access)
     company_creditor_rel = db.relationship(
                 'Company',
@@ -429,20 +389,10 @@ class Debtor(db.Model):
     company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
     balance = db.Column(db.Float, default=0.0, nullable=False)
     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
     # Relationship to Company (optional, but good for direct access)
     company_debtor_rel = db.relationship(
-<<<<<<< HEAD
-                    'Company',
-                    back_populates='debtors_list', # This matches the relationship name on Company
-                    lazy=True
-                )
-=======
-                'Company',
-                back_populates='debtors_list', # This matches the relationship name on Company
-                lazy=True
-            )
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
+        'Company',back_populates='debtors_list',lazy=True)
 
     def __repr__(self):
         return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
@@ -2279,10 +2229,9 @@ def add_inventory_item():
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
-<<<<<<< HEAD
+
     elif business_type in ['Supermarket', 'Provision Store']:
         relevant_item_types = ['Provision Store']
-=======
     elif business_type == 'Supermarket': # Changed from 'in' to handle 'Supermarket' type specifically
         relevant_item_types = ['Supermarket'] # Add 'Supermarket' as relevant item type
     elif business_type == 'Provision Store': # Handle Provision Store separately if its items are distinct
@@ -2290,7 +2239,6 @@ def add_inventory_item():
     else:
         # Fallback or general type if none matches. Consider if a business can have diverse types.
         relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
@@ -2907,13 +2855,10 @@ def add_sale():
     business_id = get_current_business_id()
     business_type = get_current_business_type()
 
-<<<<<<< HEAD
-=======
     print(f"DEBUG: Current business_id: {business_id}")
     print(f"DEBUG: Current business_type: {business_type}")
 
     
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     relevant_item_types = []
     
     # Check the business type from the session to filter relevant items
@@ -2922,23 +2867,13 @@ def add_sale():
     elif business_type == 'Hardware':
         # The item_type for hardware is 'Hardware Material'
         relevant_item_types = ['Hardware Material']
-<<<<<<< HEAD
     elif business_type == 'Supermarket':
         relevant_item_types = ['Supermarket', 'Provision Store']
     else:
         # Default to Pharmacy if business_type is not recognized or not yet set
         relevant_item_types = ['Pharmacy']
 
-=======
-    elif business_type == 'Supermarket': # Changed from 'in' to handle 'Supermarket' type specifically
-        relevant_item_types = ['Supermarket'] # Add 'Supermarket' as relevant item type
-    elif business_type == 'Provision Store': # Handle Provision Store separately if its items are distinct
-        relevant_item_types = ['Provision Store']
-    else:
-        # Fallback or general type if none matches. Consider if a business can have diverse types.
-        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
->>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
-
+   
     search_query = request.args.get('search', '').strip()
 
     available_inventory_items_query = InventoryItem.query.filter(
