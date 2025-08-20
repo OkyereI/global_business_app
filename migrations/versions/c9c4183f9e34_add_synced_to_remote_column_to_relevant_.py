@@ -1,10 +1,3 @@
-"""Add synced_to_remote column to relevant models
-
-Revision ID: c9c4183f9e34
-Revises: 
-Create Date: 2023-11-09 11:30:00.000000
-
-"""
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.sql import table, column
@@ -16,56 +9,59 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+ # Removed: op.alter_column('sales_records', 'synced_to_remote', nullable=False)
 def upgrade():
-    # Add synced_to_remote as a nullable boolean with a default value of False
-    # Then, update all existing rows to False
-    # Finally, alter the column to be NOT NULL
-    
+    # Use inspect to get columns and check for existence
+    inspector = sa.inspect(op.get_bind())
+
+    # Helper function to check for column existence
+    def has_column(table_name, column_name):
+        return any(c['name'] == column_name for c in inspector.get_columns(table_name))
+
     # companies table
-    op.add_column('companies', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('companies', 'synced_to_remote'):
+        op.add_column('companies', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE companies SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('companies', 'synced_to_remote', nullable=False)
     
     # company_transactions table
-    op.add_column('company_transactions', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('company_transactions', 'synced_to_remote'):
+        op.add_column('company_transactions', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE company_transactions SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('company_transactions', 'synced_to_remote', nullable=False)
 
     # creditors table
-    op.add_column('creditors', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('creditors', 'synced_to_remote'):
+        op.add_column('creditors', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE creditors SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('creditors', 'synced_to_remote', nullable=False)
     
     # debtors table
-    op.add_column('debtors', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('debtors', 'synced_to_remote'):
+        op.add_column('debtors', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE debtors SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('debtors', 'synced_to_remote', nullable=False)
 
     # future_orders table
-    op.add_column('future_orders', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('future_orders', 'synced_to_remote'):
+        op.add_column('future_orders', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE future_orders SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('future_orders', 'synced_to_remote', nullable=False)
 
     # hirable_items table
-    op.add_column('hirable_items', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('hirable_items', 'synced_to_remote'):
+        op.add_column('hirable_items', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE hirable_items SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('hirable_items', 'synced_to_remote', nullable=False)
 
     # inventory_items table
-    op.add_column('inventory_items', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('inventory_items', 'synced_to_remote'):
+        op.add_column('inventory_items', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE inventory_items SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('inventory_items', 'synced_to_remote', nullable=False)
 
     # rental_records table
-    op.add_column('rental_records', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('rental_records', 'synced_to_remote'):
+        op.add_column('rental_records', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE rental_records SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('rental_records', 'synced_to_remote', nullable=False)
     
     # sales_records table
-    op.add_column('sales_records', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
+    if not has_column('sales_records', 'synced_to_remote'):
+        op.add_column('sales_records', sa.Column('synced_to_remote', sa.Boolean(), nullable=True, server_default=sa.text('false')))
     op.execute("UPDATE sales_records SET synced_to_remote = FALSE WHERE synced_to_remote IS NULL")
-    op.alter_column('sales_records', 'synced_to_remote', nullable=False)
-
 def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
     # Dropping columns in the reverse order
