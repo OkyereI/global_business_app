@@ -168,6 +168,10 @@ class User(db.Model):
     role = db.Column(db.String(50), nullable=False)
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW LINE: Add this field
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     __table_args__ = (db.UniqueConstraint('username', 'business_id', name='_username_business_uc'),)
 
     # Property to set password, automatically hashes it
@@ -256,6 +260,7 @@ class Company(db.Model):
     # These definitions should match what you have, ensuring 'Creditor' and 'Debtor'
     # models correctly define their 'company_id' foreign keys.
 
+<<<<<<< HEAD
     # Primary relationships with descriptive backrefs
     # If the warnings specifically mentioned 'creditor_records' and 'debtor_records'
     # as the conflicting ones, and you don't have explicit definitions for them
@@ -284,6 +289,10 @@ class Company(db.Model):
     # and should list `creditors_list` and `company_creditor_rel` within it.
 
     # If you only have `creditors_list` and `debtors_list` defined on Company:
+=======
+    # NEW: Relationships to Creditor and Debtor models
+    # This assumes your Creditor and Debtor models have 'company_id' foreign keys
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     creditors_list = db.relationship(
                 'Creditor',
                 back_populates='company_creditor_rel', # This should match the backref name on Creditor
@@ -296,7 +305,10 @@ class Company(db.Model):
         lazy=True,
         cascade="all, delete-orphan"
     )
+<<<<<<< HEAD
 
+=======
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
 
     @property
@@ -424,10 +436,17 @@ class Debtor(db.Model):
 
     # Relationship to Company (optional, but good for direct access)
     company_debtor_rel = db.relationship(
+<<<<<<< HEAD
                     'Company',
                     back_populates='debtors_list', # This matches the relationship name on Company
                     lazy=True
                 )
+=======
+                'Company',
+                back_populates='debtors_list', # This matches the relationship name on Company
+                lazy=True
+            )
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
 
     def __repr__(self):
         return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
@@ -2258,13 +2277,24 @@ def add_inventory_item():
     business_type = get_current_business_type()
 
     # Determine which item types are relevant for the current business type
+   
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
+<<<<<<< HEAD
     elif business_type in ['Supermarket', 'Provision Store']:
         relevant_item_types = ['Provision Store']
+=======
+    elif business_type == 'Supermarket': # Changed from 'in' to handle 'Supermarket' type specifically
+        relevant_item_types = ['Supermarket'] # Add 'Supermarket' as relevant item type
+    elif business_type == 'Provision Store': # Handle Provision Store separately if its items are distinct
+        relevant_item_types = ['Provision Store']
+    else:
+        # Fallback or general type if none matches. Consider if a business can have diverse types.
+        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
@@ -2881,6 +2911,13 @@ def add_sale():
     business_id = get_current_business_id()
     business_type = get_current_business_type()
 
+<<<<<<< HEAD
+=======
+    print(f"DEBUG: Current business_id: {business_id}")
+    print(f"DEBUG: Current business_type: {business_type}")
+
+    
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
     relevant_item_types = []
     
     # Check the business type from the session to filter relevant items
@@ -2889,12 +2926,22 @@ def add_sale():
     elif business_type == 'Hardware':
         # The item_type for hardware is 'Hardware Material'
         relevant_item_types = ['Hardware Material']
+<<<<<<< HEAD
     elif business_type == 'Supermarket':
         relevant_item_types = ['Supermarket', 'Provision Store']
     else:
         # Default to Pharmacy if business_type is not recognized or not yet set
         relevant_item_types = ['Pharmacy']
 
+=======
+    elif business_type == 'Supermarket': # Changed from 'in' to handle 'Supermarket' type specifically
+        relevant_item_types = ['Supermarket'] # Add 'Supermarket' as relevant item type
+    elif business_type == 'Provision Store': # Handle Provision Store separately if its items are distinct
+        relevant_item_types = ['Provision Store']
+    else:
+        # Fallback or general type if none matches. Consider if a business can have diverse types.
+        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
+>>>>>>> 9823f2e49f8fad873f50c5a3321e708833d8c6cb
 
     search_query = request.args.get('search', '').strip()
 
