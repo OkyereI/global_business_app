@@ -1197,7 +1197,7 @@ def login():
             session['username'] = user.username
             session['role'] = user.role
             session['business_id'] = user.business_id
-            
+            session['business_name'] = business.name 
             # Fetch business info and store in session
             session['business_type'] = business.type # Changed from business.business_type to business.type
             session['business_info'] = {
@@ -2847,6 +2847,7 @@ def sales():
 @app.route('/sales/add', methods=['GET', 'POST'])
 @login_required
 def add_sale():
+    
     # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
         flash('You do not have permission to add sales records or no business selected.', 'danger')
