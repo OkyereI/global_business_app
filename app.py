@@ -393,14 +393,14 @@ class FutureOrder(db.Model):
     __tablename__ = 'future_orders'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=True) # Optional, can be direct customer
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=True)
     customer_name = db.Column(db.String(255), nullable=False)
     customer_phone = db.Column(db.String(20), nullable=True)
-    order_details = db.Column(db.Text, nullable=False) # JSON string of items, quantities, etc.
+    order_details = db.Column(db.Text, nullable=False)
     total_amount = db.Column(db.Float, nullable=False)
     order_date = db.Column(db.Date, default=date.today, nullable=False)
     pickup_date = db.Column(db.Date, nullable=False)
-    status = db.Column(db.String(50), default='Pending', nullable=False) # e.g., 'Pending', 'Ready', 'Completed', 'Cancelled'
+    status = db.Column(db.String(50), default='Pending', nullable=False)
     notes = db.Column(db.Text, nullable=True)
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
 
@@ -410,11 +410,18 @@ class FutureOrder(db.Model):
         self.order_details = json.dumps(details_list)
 
     def get_order_details(self):
-        return json.loads(self.order_details)
+        if self.order_details:
+            return json.loads(self.order_details)
+        return []
+
+    @property
+    def remaining_balance(self):
+        """Calculates the remaining balance of the order."""
+        return self.total_amount
 
     def __repr__(self):
+
         return f'<FutureOrder {self.customer_name} - {self.total_amount}>'
-# ... (existing imports and other model definitions) ...
 
 class Customer(db.Model):
     __tablename__ = 'customers'
@@ -4773,7 +4780,7 @@ def future_orders():
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
-    orders = FutureOrder.query.filter_by(business_id=business_id).order_by(FutureOrder.date_ordered.desc()).all()
+    orders = FutureOrder.query.filter_by(business_id=business_id).order_by(FutureOrder.order_date.desc()).all()    
     return render_template('future_order_list.html', orders=orders, user_role=session.get('role'), current_year=datetime.now().year)
 
 
