@@ -208,6 +208,8 @@
         <div class="card {% if print_ready %}hidden{% endif %}">
             {% if session.get('business_type') == 'Hardware' and user_role in ['admin', 'sales'] %}
                 <form action="{{ url_for('add_rental_record') }}" method="POST">
+                    {# CSRF TOKEN ADDED HERE #}
+                    {{ csrf_token() }}
                     <div class="mb-4">
                         <label for="hirable_item_id" class="block text-gray-700 text-sm font-semibold mb-2">Hirable Item:</label>
                         <select id="hirable_item_id" name="hirable_item_id"

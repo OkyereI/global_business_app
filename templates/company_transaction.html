@@ -80,16 +80,13 @@
         }
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(1, minmax(0, 1fr));
+            grid-template-columns: repeat(1, minmax(0, 1fr)); /* Only one column for balance */
             gap: 1rem;
             margin-bottom: 2rem;
             text-align: center;
         }
-        @media (min-width: 768px) {
-            .summary-grid {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-        }
+        /* Removed @media (min-width: 768px) rule for summary-grid */
+
         .summary-card {
             padding: 1rem;
             border-radius: 0.5rem;
@@ -98,12 +95,8 @@
         .summary-card-blue {
             background-color: #eff6ff;
         }
-        .summary-card-red {
-            background-color: #fef2f2;
-        }
-        .summary-card-green {
-            background-color: #f0fdf4;
-        }
+        /* Removed summary-card-red and summary-card-green styles */
+        
         .summary-title {
             font-size: 1.125rem;
             font-weight: 600;
@@ -118,16 +111,8 @@
         .balance-value-negative {
             color: #dc2626;
         }
-        .total-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        .total-creditors-color {
-            color: #991b1b;
-        }
-        .total-debtors-color {
-            color: #15803d;
-        }
+        /* Removed .total-value, .total-creditors-color, .total-debtors-color styles */
+
         .card {
             padding: 1.5rem;
             background-color: #ffffff;
@@ -315,18 +300,11 @@
     <div class="summary-grid">
         <div class="summary-card summary-card-blue">
             <h2 class="summary-title text-blue-700">Current Balance</h2>
-            <p class="balance-value {% if company.balance >= 0 %}balance-value-positive{% else %}balance-value-negative{% endif %}">
-                GH₵ {{ "%.2f"|format(company.balance) }}
+            <p class="balance-value {% if company.current_balance >= 0 %}balance-value-positive{% else %}balance-value-negative{% endif %}">
+                GH₵ {{ "%.2f"|format(company.current_balance) }}
             </p>
         </div>
-        <div class="summary-card summary-card-red">
-            <h2 class="summary-title text-red-700">Total Creditors (We Owe Them)</h2>
-            <p class="total-value total-creditors-color">GH₵ {{ "%.2f"|format(company.total_creditors_amount) }}</p>
-        </div>
-        <div class="summary-card summary-card-green">
-            <h2 class="summary-title text-green-700">Total Debtors (They Owe Us)</h2>
-            <p class="total-value total-debtors-color">GH₵ {{ "%.2f"|format(company.total_debtors_amount) }}</p>
-        </div>
+        {# Removed Total Creditors and Total Debtors summary cards #}
     </div>
 
     {# Main Transaction Form #}
@@ -404,10 +382,10 @@
                 <tbody>
                     {% for transaction in transactions %}
                     <tr>
-                        <td>{{ transaction.date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
                         <td>
-                            <span class="status-badge {% if transaction.type == 'Credit' %}credit{% elif transaction.type == 'Debit' %}debit{% endif %}">
-                                {{ transaction.type }}
+                            <span class="status-badge {% if transaction.transaction_type == 'Credit' %}credit{% elif transaction.transaction_type == 'Debit' %}debit{% endif %}">
+                                {{ transaction.transaction_type }}
                             </span>
                         </td>
                         <td>GH₵{{ "%.2f" | format(transaction.amount) }}</td>

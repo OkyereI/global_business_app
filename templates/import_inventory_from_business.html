@@ -162,6 +162,8 @@
         {% endwith %}
 
         <form method="POST" class="space-y-4 form-layout">
+            {# CSRF TOKEN ADDED HERE #}
+            {{ csrf_token() }}
             <div class="form-group">
                 <label for="source_business_id" class="block text-sm font-medium text-gray-700 form-group-label">Select Source Business (Same Type: {{ session.get('business_type') }})</label>
                 <select id="source_business_id" name="source_business_id" required

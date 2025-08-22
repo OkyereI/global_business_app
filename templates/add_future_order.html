@@ -131,6 +131,9 @@
         {% endwith %}
 
         <form method="POST" action="{{ url_for('add_future_order') }}" class="space-y-6">
+            {# CSRF TOKEN ADDED HERE #}
+            {{ csrf_token() }}
+
             <h2 class="section-title">Customer Details</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="form-group">
