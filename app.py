@@ -1866,6 +1866,7 @@ def view_business_details(business_id):
     return render_template('view_business_details.html', business=business, initial_admin=initial_admin, current_year=datetime.now().year)
 
 
+
 @app.route('/super_admin/delete_business/<string:business_id>')
 def delete_business(business_id):
     if session.get('role') not in ['super_admin', 'admin']:
@@ -1873,11 +1874,33 @@ def delete_business(business_id):
         return redirect(url_for('login'))
     
     business_to_delete = Business.query.get_or_404(business_id)
-    
-    db.session.delete(business_to_delete)
-    db.session.commit()
 
-    flash(f'Business "{business_to_delete.name}" and all its associated data deleted successfully!', 'success')
+    try:
+        # Step 1: Delete all associated SalesRecords
+        SalesRecord.query.filter_by(business_id=business_id).delete()
+        
+        # Step 2: Delete all associated InventoryItems
+        InventoryItem.query.filter_by(business_id=business_id).delete()
+        
+        # Step 3: Delete the Business record itself
+        db.session.delete(business_to_delete)
+        
+        # Commit the transaction to apply all deletions
+        db.session.commit()
+
+        # Check if the session business was the one deleted, and clear it
+        if session.get('business_id') == business_id:
+            session.pop('business_id', None)
+            session.pop('business_type', None)
+            session.pop('business_info', None)
+        
+        flash(f'Business "{business_to_delete.business_name}" and all its associated data deleted successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'An error occurred while deleting the business: {e}', 'danger')
+        print(f"Error during business deletion: {e}")
+
     return redirect(url_for('super_admin_dashboard'))
 
 @app.route('/super_admin/download_inventory/<string:business_id>')
