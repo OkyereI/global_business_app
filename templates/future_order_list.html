@@ -177,7 +177,7 @@
                         <td>{{ order.customer_phone if order.customer_phone else 'N/A' }}</td>
                         <td>
                             <ul class="list-disc list-inside">
-                                {% for item in order.get_items() %}
+                                {% for item in order.get_order_details() %}
                                     <li>{{ item.product_name }} ({{ "%.2f" % item.quantity }} {{ item.unit_type }}s @ GH₵{{ "%.2f" % item.unit_price }})</li>
                                 {% endfor %}
                             </ul>
@@ -186,7 +186,7 @@
                         <td class="{% if order.remaining_balance > 0 %}balance-outstanding{% else %}balance-paid{% endif %}">
                             GH₵{{ "%.2f" % order.remaining_balance }}
                         </td>
-                        <td>{{ order.date_ordered.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td>{{ order.order_date.strftime('%Y-%m-%d') }}</td>
                         <td>{{ order.expected_collection_date.strftime('%Y-%m-%d') if order.expected_collection_date else 'N/A' }}</td>
                         <td>{{ order.actual_collection_date.strftime('%Y-%m-%d %H:%M:%S') if order.actual_collection_date else 'N/A' }}</td>
                         <td class="status-{{ order.status | lower }}">{{ order.status }}</td>
