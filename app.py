@@ -15,6 +15,7 @@ from werkzeug.security import generate_password_hash, check_password_hash # Impo
 from sqlalchemy import func,cast # Import func for aggregate functions
 from flask_wtf.csrf import CSRFProtect # Add this line
 import sys
+from sqlalchemy import Index 
 
 # --- Flask-Login setup (if you are using it, otherwise remove these lines) ---
 # For simplicity, I'll define a basic login_required if Flask-Login is not explicitly used.
@@ -202,12 +203,17 @@ class InventoryItem(db.Model):
     is_fixed_price = db.Column(db.Boolean, default=False, nullable=False) # If true, sale_price is fixed_sale_price
     fixed_sale_price = db.Column(db.Float, default=0.0, nullable=False) # The fixed price if is_fixed_price is true
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    barcode = db.Column(db.String(100), unique=True, nullable=True) # Changed to nullable=True
+    # Remove unique=True from here. The uniqueness will be handled by the partial index below.
+    barcode = db.Column(db.String(100), nullable=True) 
     markup_percentage_pharmacy = db.Column(db.Float, default=0.0, nullable=False) # NEW: Markup for pharmacy items
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
 
     __table_args__ = (
         db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),
+        # NEW: Partial index to enforce uniqueness on 'barcode' only where it's NOT NULL.
+        # This allows multiple NULL values for barcode.
+        # Ensure 'Index' is imported from sqlalchemy: `from sqlalchemy import Index`
+        db.Index('idx_unique_active_barcode', barcode, unique=True, postgresql_where=barcode.isnot(None)),
     )
 
     def __repr__(self):
@@ -1028,7 +1034,7 @@ def push_data_to_remote(remote_business_id):
     
     # 1. Push pending Sales Records (those not yet marked as synced in local DB)
     with app.app_context(): # Ensure we are in app context for DB operations
-        pending_sales = SaleRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
+        pending_sales = SalesRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
         if pending_sales:
             sales_data = [serialize_sale_record_api(s) for s in pending_sales]
             try:
@@ -2876,6 +2882,8 @@ def add_inventory_item():
                            other_businesses=other_businesses)
 
 
+
+
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 @login_required
 def edit_inventory_item(item_id):
@@ -2888,16 +2896,19 @@ def edit_inventory_item(item_id):
     item_to_edit = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
     business_type = get_current_business_type()
 
-    # Determine which item types are relevant for the current business type
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
-    elif business_type == 'Supermarket' or business_type == 'Provision Store':
+    elif business_type in ['Supermarket', 'Provision Store']:
         relevant_item_types = ['Provision Store'] 
 
     if request.method == 'POST':
+        # Define is_fixed_price and fixed_sale_price early to avoid NameError
+        is_fixed_price = 'is_fixed_price' in request.form
+        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
+
         try:
             product_name = request.form['product_name'].strip()
             category = request.form['category'].strip()
@@ -2905,17 +2916,17 @@ def edit_inventory_item(item_id):
             current_stock = float(request.form['current_stock'])
             batch_number = request.form.get('batch_number', '').strip()
             new_barcode = request.form.get('barcode', '').strip()
-            item_type = request.form['item_type'] # Get item_type from form
+            item_type = request.form['item_type']
             number_of_tabs = int(request.form.get('number_of_tabs', 1))
             
             # Helper function to prepare common form data for re-rendering on error
             def prepare_error_form_data(
                 product_name, category, purchase_price, current_stock,
                 batch_number, new_barcode, number_of_tabs, item_type,
-                expiry_date_str_or_obj, is_fixed_price_checked, fixed_sale_price, markup_percentage_pharmacy_val # Added markup here
+                expiry_date_str_or_obj, is_fixed_price_checked, fixed_sale_price, markup_percentage_pharmacy_val
             ):
                 error_item_data = {
-                    'id': item_to_edit.id, # Keep original ID for context
+                    'id': item_to_edit.id,
                     'product_name': product_name, 
                     'category': category,
                     'purchase_price': purchase_price, 
@@ -2926,36 +2937,36 @@ def edit_inventory_item(item_id):
                     'item_type': item_type,
                     'is_fixed_price': is_fixed_price_checked, 
                     'fixed_sale_price': fixed_sale_price,
-                    'is_active': 'is_active' in request.form # Checkbox presence
+                    'is_active': 'is_active' in request.form 
                 }
-                # Handle expiry date for display
                 if isinstance(expiry_date_str_or_obj, date):
                     error_item_data['expiry_date'] = expiry_date_str_or_obj.strftime('%Y-%m-%d')
                 else:
-                    error_item_data['expiry_date'] = expiry_date_str_or_obj # Use string as is (e.g., empty or invalid)
+                    error_item_data['expiry_date'] = expiry_date_str_or_obj
 
-                # Ensure markup_percentage_pharmacy is always a float for the template
                 if business_type == 'Pharmacy':
                     error_item_data['markup_percentage_pharmacy'] = float(markup_percentage_pharmacy_val or 0.0)
                 return error_item_data
 
             # Barcode uniqueness check
-            if new_barcode and new_barcode != item_to_edit.barcode:
-                existing_barcode = InventoryItem.query.filter_by(
-                    business_id=business_id,
-                    barcode=new_barcode
+            barcode_to_save = new_barcode if new_barcode else None
+            if barcode_to_save and barcode_to_save != item_to_edit.barcode:
+                existing_barcode = InventoryItem.query.filter(
+                    InventoryItem.business_id == business_id,
+                    InventoryItem.barcode == barcode_to_save,
+                    InventoryItem.id != item_id
                 ).first()
                 if existing_barcode:
-                    flash('Barcode already in use for another product', 'danger')
-                    return render_template('add_edit_inventory_item.html', 
+                    flash('Barcode already in use for another product.', 'danger')
+                    return render_template('add_edit_inventory.html',
                                            title=f'Edit Inventory Item: {item_to_edit.product_name}',
                                            item=prepare_error_form_data(
                                                 product_name, category, purchase_price, current_stock,
                                                 batch_number, new_barcode, number_of_tabs, item_type,
                                                 request.form.get('expiry_date', ''), 
-                                                'is_fixed_price' in request.form, 
-                                                float(request.form.get('fixed_sale_price', 0.0)),
-                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                                is_fixed_price, # Use defined variable
+                                                fixed_sale_price, # Use defined variable
+                                                request.form.get('markup_percentage_pharmacy', 0.0)
                                            ), 
                                            user_role=session.get('role'),
                                            business_type=business_type, current_year=datetime.now().year)
@@ -2967,31 +2978,28 @@ def edit_inventory_item(item_id):
                     expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
                 except ValueError:
                     flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
-                    return render_template('add_edit_inventory_item.html', 
+                    return render_template('add_edit_inventory.html',
                                            title=f'Edit Inventory Item: {item_to_edit.product_name}',
                                            item=prepare_error_form_data(
                                                 product_name, category, purchase_price, current_stock,
                                                 batch_number, new_barcode, number_of_tabs, item_type,
-                                                '', # Empty string for invalid date
-                                                'is_fixed_price' in request.form, 
-                                                float(request.form.get('fixed_sale_price', 0.0)),
-                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                                '', 
+                                                is_fixed_price, # Use defined variable
+                                                fixed_sale_price, # Use defined variable
+                                                request.form.get('markup_percentage_pharmacy', 0.0)
                                            ), 
                                            user_role=session.get('role'),
                                            business_type=business_type, current_year=datetime.now().year)
 
-            is_fixed_price = 'is_fixed_price' in request.form
-            fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
-
             if number_of_tabs <= 0:
                 flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-                return render_template('add_edit_inventory_item.html', 
+                return render_template('add_edit_inventory.html',
                                            title='Edit Inventory Item', 
                                            item=prepare_error_form_data(
                                                 product_name, category, purchase_price, current_stock,
                                                 batch_number, new_barcode, number_of_tabs, item_type,
                                                 expiry_date_obj, is_fixed_price, fixed_sale_price,
-                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                                request.form.get('markup_percentage_pharmacy', 0.0)
                                            ), 
                                            user_role=session.get('role'),
                                            business_type=business_type, current_year=datetime.now().year)
@@ -2999,13 +3007,13 @@ def edit_inventory_item(item_id):
             # Product name uniqueness check (excluding current item)
             if InventoryItem.query.filter(InventoryItem.product_name == product_name, InventoryItem.business_id == business_id, InventoryItem.id != item_id).first():
                 flash('Product with this name already exists for this business.', 'danger')
-                return render_template('add_edit_inventory_item.html', 
+                return render_template('add_edit_inventory.html',
                                            title='Edit Inventory Item', 
                                            item=prepare_error_form_data(
                                                 product_name, category, purchase_price, current_stock,
                                                 batch_number, new_barcode, number_of_tabs, item_type,
                                                 expiry_date_obj, is_fixed_price, fixed_sale_price,
-                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                                request.form.get('markup_percentage_pharmacy', 0.0)
                                            ), 
                                            user_role=session.get('role'),
                                            business_type=business_type, current_year=datetime.now().year)
@@ -3017,7 +3025,7 @@ def edit_inventory_item(item_id):
             item_to_edit.current_stock = current_stock
             item_to_edit.last_updated = datetime.now()
             item_to_edit.batch_number = batch_number
-            item_to_edit.barcode = new_barcode
+            item_to_edit.barcode = barcode_to_save 
             item_to_edit.number_of_tabs = number_of_tabs
             item_to_edit.item_type = item_type
             item_to_edit.expiry_date = expiry_date_obj
@@ -3030,7 +3038,7 @@ def edit_inventory_item(item_id):
 
             if is_fixed_price:
                 sale_price = fixed_sale_price
-                item_to_edit.markup_percentage_pharmacy = 0.0 # Reset if fixed price
+                item_to_edit.markup_percentage_pharmacy = 0.0 
             else:
                 if business_type == 'Pharmacy':
                     markup_percentage_form_value = float(request.form.get('markup_percentage_pharmacy', 0.0))
@@ -3038,13 +3046,12 @@ def edit_inventory_item(item_id):
                     sale_price = purchase_price * (1 + (markup_percentage_form_value / 100))
                 else:
                     sale_price = purchase_price
-                    item_to_edit.markup_percentage_pharmacy = 0.0 # Ensure it's set to 0 for non-pharmacy
+                    item_to_edit.markup_percentage_pharmacy = 0.0 
 
-            # Calculate unit price per tab based on the determined sale_price
             if number_of_tabs > 0:
                 unit_price_per_tab = sale_price / number_of_tabs
             else:
-                unit_price_per_tab = sale_price # If 0 tabs, unit price is the pack price (prevents division by zero)
+                unit_price_per_tab = sale_price 
 
             item_to_edit.sale_price = sale_price
             item_to_edit.unit_price_per_tab = unit_price_per_tab
@@ -3053,11 +3060,9 @@ def edit_inventory_item(item_id):
             flash(f'Inventory item "{product_name}" updated successfully!', 'success')
             return redirect(url_for('inventory'))
         except ValueError as e:
-            db.session.rollback() # Rollback on value errors
+            db.session.rollback()
             flash(f'Invalid input data. Please check your numbers and dates. Error: {e}', 'danger')
-            # Re-render the form with current request data on validation error
-            # This is crucial for user experience
-            return render_template('add_edit_inventory_item.html', 
+            return render_template('add_edit_inventory.html',
                                    title=f'Edit Inventory Item: {item_to_edit.product_name}',
                                    item=prepare_error_form_data(
                                         request.form.get('product_name', ''), 
@@ -3069,9 +3074,9 @@ def edit_inventory_item(item_id):
                                         int(request.form.get('number_of_tabs', 1)), 
                                         request.form.get('item_type', ''),
                                         request.form.get('expiry_date', ''), 
-                                        'is_fixed_price' in request.form, 
-                                        float(request.form.get('fixed_sale_price', 0.0)),
-                                        request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                        is_fixed_price, # Use defined variable
+                                        fixed_sale_price, # Use defined variable
+                                        request.form.get('markup_percentage_pharmacy', 0.0)
                                    ),
                                    user_role=session.get('role'),
                                    business_type=business_type, 
@@ -3079,17 +3084,15 @@ def edit_inventory_item(item_id):
         except Exception as e:
             db.session.rollback()
             flash(f'An unexpected error occurred: {e}', 'danger')
-            # For general exceptions, it might be better to redirect or show a simpler error
             return redirect(url_for('inventory'))
 
     # --- GET Request / Initial Render ---
-    # Prepare item data for the form, ensuring expiry date is a string for the HTML input
     item_data_for_form = {
         'id': item_to_edit.id,
         'product_name': item_to_edit.product_name,
         'category': item_to_edit.category,
         'purchase_price': item_to_edit.purchase_price,
-        'sale_price': item_to_edit.sale_price, # Stored sale_price
+        'sale_price': item_to_edit.sale_price,
         'current_stock': item_to_edit.current_stock,
         'last_updated': item_to_edit.last_updated.isoformat(),
         'batch_number': item_to_edit.batch_number,
@@ -3104,23 +3107,21 @@ def edit_inventory_item(item_id):
 
     item_data_for_form['expiry_date'] = item_to_edit.expiry_date.strftime('%Y-%m-%d') if item_to_edit.expiry_date else ''
     
-    # Calculate initial markup percentage for display as a float for the template
     if business_type == 'Pharmacy' and not item_to_edit.is_fixed_price and item_to_edit.purchase_price is not None and item_to_edit.purchase_price > 0:
         if item_to_edit.markup_percentage_pharmacy is not None:
             item_data_for_form['markup_percentage_pharmacy'] = float(item_to_edit.markup_percentage_pharmacy)
         else:
             markup_percentage = ((item_to_edit.sale_price - item_to_edit.purchase_price) / item_to_edit.purchase_price) * 100
-            item_data_for_form['markup_percentage_pharmacy'] = float(f"{markup_percentage:.2f}") # Ensure float type
+            item_data_for_form['markup_percentage_pharmacy'] = float(f"{markup_percentage:.2f}")
     else:
-        item_data_for_form['markup_percentage_pharmacy'] = 0.0 # Default to float 0.0
+        item_data_for_form['markup_percentage_pharmacy'] = 0.0
 
     return render_template('add_edit_inventory.html',
                            title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                           item=item_data_for_form, # Pass the prepared dictionary
+                           item=item_data_for_form,
                            business_type=business_type,
                            user_role=session.get('role'),
                            current_year=datetime.now().year)
-
 
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory_item(item_id):
@@ -3596,6 +3597,7 @@ def add_sale():
                             business_type=business_type,
                             auto_print=auto_print)
 
+
 @app.route('/sales/edit_transaction/<transaction_id>', methods=['GET', 'POST'])
 def edit_sale_transaction(transaction_id): # Note the parameter name change
     # ACCESS CONTROL: Allows admin and sales roles
@@ -3604,22 +3606,20 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
         return redirect(url_for('dashboard'))
     
     business_id = get_current_business_id()
-    # Fetch all sale records for this transaction ID
+    
     sales_in_transaction = SalesRecord.query.filter_by(
-    receipt_number=transaction_id,
-    business_id=business_id
-).order_by(SalesRecord.transaction_date.asc()).all()
+        receipt_number=transaction_id, # Assuming receipt_number is the unique identifier for a transaction group
+        business_id=business_id
+    ).order_by(SalesRecord.transaction_date.asc()).all()
 
 
-    if not sales_in_transaction_to_edit:
+    if not sales_in_transaction:
         flash('Sale transaction not found.', 'danger')
         return redirect(url_for('sales'))
 
-    # Use the first sale record to get common transaction details like original date
-    first_sale_record = sales_in_transaction_to_edit[0]
+    first_sale_record = sales_in_transaction[0]
     
     business_type = get_current_business_type()
-    # Determine which item types are relevant for the current business type
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
@@ -3644,17 +3644,16 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
         cart_items_json = request.form.get('cart_items_json')
         if not cart_items_json:
             flash('No items in the cart to update the sale.', 'danger')
-            return redirect(url_for('edit_sale_transaction', transaction_id=transaction_id)) # Use new route name
+            return redirect(url_for('edit_sale_transaction', transaction_id=transaction_id))
 
         new_cart_items = json.loads(cart_items_json)
 
         # --- Revert old stock and prepare for new stock deduction ---
-        for old_sale_record in sales_in_transaction_to_edit: # Iterate through the fetched records
+        for old_sale_record in sales_in_transaction:
             product = InventoryItem.query.filter_by(id=old_sale_record.product_id, business_id=business_id).first()
             if product:
                 quantity_to_return = old_sale_record.quantity_sold
                 if old_sale_record.sale_unit_type == 'pack':
-                    # Need to fetch the product again to get number_of_tabs if not already available
                     original_product_for_tabs = InventoryItem.query.filter_by(id=old_sale_record.product_id, business_id=business_id).first()
                     if original_product_for_tabs:
                         quantity_to_return = old_sale_record.quantity_sold * original_product_for_tabs.number_of_tabs
@@ -3662,7 +3661,7 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
                 product.current_stock += quantity_to_return
                 product.last_updated = datetime.now()
                 db.session.add(product)
-            db.session.delete(old_sale_record) # Mark old records for deletion
+            db.session.delete(old_sale_record)
 
         # --- Validate and record new items ---
         total_grand_amount = 0.0
@@ -3683,8 +3682,8 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
                                        user_role=session.get('role'),
                                        pharmacy_info=pharmacy_info,
                                        print_ready=False,
-                                       current_year=datetime.now().year)
-
+                                       current_year=datetime.now().year,
+                                       auto_print=False) # ADDED: auto_print
             quantity_for_stock_check = quantity_sold
             if item_data['sale_unit_type'] == 'pack':
                 quantity_for_stock_check = quantity_sold * product.number_of_tabs
@@ -3699,7 +3698,8 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
                                        user_role=session.get('role'),
                                        pharmacy_info=pharmacy_info,
                                        print_ready=False,
-                                       current_year=datetime.now().year)
+                                       current_year=datetime.now().year,
+                                       auto_print=False) # ADDED: auto_print
 
         # Second pass: Record new sales and deduct stock
         for item_data in new_cart_items:
@@ -3718,28 +3718,31 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
             product.current_stock -= quantity_to_deduct
             product.last_updated = datetime.now()
 
-            new_sale_record = SaleRecord( # Renamed variable to avoid conflict
-                business_id=business_id,
-                product_id=product.id,
-                product_name=product.product_name,
-                quantity_sold=quantity_sold,
-                sale_unit_type=sale_unit_type,
-                price_at_time_per_unit_sold=price_at_time_per_unit_sold,
-                total_amount=item_total_amount,
-                sale_date=first_sale_record.sale_date, # Keep original sale date for the transaction
-                customer_phone=customer_phone,
-                sales_person_name=sales_person_name,
-                transaction_id=transaction_id # Use the original transaction ID
-            )
-            db.session.add(new_sale_record) # Use new variable
             total_grand_amount += item_total_amount
-            recorded_sale_details.append({
-                'product_name': product.product_name,
-                'quantity_sold': quantity_sold,
-                'sale_unit_type': sale_unit_type,
-                'price_at_time_per_unit_sold': price_at_time_per_unit_sold,
-                'total_amount': item_total_amount
-            })
+
+        # After deleting old records and iterating through new_cart_items, we need to
+        # create *one* new SalesRecord entry that represents the updated transaction.
+        # This single SalesRecord will have the receipt_number and its items_sold_json
+        # will contain all the items from new_cart_items.
+        
+        # Delete old SalesRecords associated with this transaction_id
+        SalesRecord.query.filter_by(receipt_number=transaction_id, business_id=business_id).delete()
+        
+        # Create a new, single SalesRecord for the updated transaction
+        updated_transaction_record = SalesRecord(
+            business_id=business_id,
+            transaction_date=first_sale_record.transaction_date, # Maintain original transaction date
+            customer_phone=customer_phone,
+            sales_person_name=sales_person_name,
+            grand_total_amount=total_grand_amount,
+            payment_method=first_sale_record.payment_method, # Keep original payment method
+            receipt_number=transaction_id,
+            reference_number=first_sale_record.reference_number # Keep original reference number
+        )
+        # Set the items_sold_json for this *single* new SalesRecord
+        updated_transaction_record.set_items_sold(new_cart_items) 
+        db.session.add(updated_transaction_record)
+
 
         db.session.commit()
         flash(f'Sale transaction {transaction_id[:8].upper()} updated successfully!', 'success')
@@ -3747,15 +3750,9 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
 
     # --- GET Request / Initial Render ---
     items_for_cart = []
-    for sale_record in sales_in_transaction_to_edit:
-        items_for_cart.append({
-            'product_id': sale_record.product_id,
-            'product_name': sale_record.product_name,
-            'quantity_sold': sale_record.quantity_sold,
-            'sale_unit_type': sale_record.sale_unit_type,
-            'price_at_time_per_unit_sold': sale_record.price_at_time_per_unit_sold,
-            'total_amount': sale_record.total_amount
-        })
+    if sales_in_transaction:
+        transaction_record = sales_in_transaction[0]
+        items_for_cart = transaction_record.get_items_sold()
 
     sale_data_for_form = {
         'customer_phone': first_sale_record.customer_phone,
@@ -3776,8 +3773,8 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
                            last_transaction_customer_phone='',
                            last_transaction_sales_person='',
                            last_transaction_date='',
-                           current_year=datetime.now().year)
-
+                           current_year=datetime.now().year,
+                           auto_print=False) # ADDED: auto_print
 
 @app.route('/sales/delete_transaction/<transaction_id>')
 def delete_sale_transaction(transaction_id): # Note the parameter name change
