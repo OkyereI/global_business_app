@@ -140,37 +140,36 @@ migrate = Migrate(app, db) # Initialize Flask-Migrate
 class Business(db.Model):
     __tablename__ = 'businesses'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = db.Column(db.String(255), unique=True, nullable=False)
-    address = db.Column(db.String(255))
-    location = db.Column(db.String(100))
-    contact = db.Column(db.String(50))
-    type = db.Column(db.String(50), default='Pharmacy', nullable=False) # 'Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'
-    is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW: Field to track business activity status
-    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now) # NEW: Add this line
-    # Relationships (rest of your relationships remain here)
-    users = db.relationship('User', backref='business', lazy=True, cascade="all, delete-orphan")
-    inventory_items = db.relationship('InventoryItem', backref='business', lazy=True, cascade="all, delete-orphan")
-    sales_records = db.relationship('SaleRecord', backref='business', lazy=True, cascade="all, delete-orphan")
-    companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan")
-    future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan")
-    hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan")
-    rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan")
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    type = db.Column(db.String(50), nullable=False) # e.g., 'Pharmacy', 'Hardware'
+    address = db.Column(db.String(200), nullable=True)
+    location = db.Column(db.String(100), nullable=True)
+    contact = db.Column(db.String(50), nullable=True)
+    email = db.Column(db.String(120), nullable=True) # New email field
+    is_active = db.Column(db.Boolean, default=True)
+    users = db.relationship('User', backref='business', lazy=True)
+    inventory_items = db.relationship('InventoryItem', backref='business_inventory', lazy=True)
+    sales_records = db.relationship('SalesRecord', backref='business_sales', lazy=True)
+    rental_records = db.relationship('RentalRecord', backref='business_rentals', lazy=True)
+    creditors = db.relationship('Creditor', backref='business_creditor', lazy=True)
+    debtors = db.relationship('Debtor', backref='business_debtor', lazy=True)
+    hirable_items = db.relationship('HirableItem', backref='business_hirable_item', lazy=True)
+    company_transactions = db.relationship('CompanyTransaction', backref='business_company_transaction', lazy=True)
+    future_orders = db.relationship('FutureOrder', backref='business_future_order', lazy=True)
 
     def __repr__(self):
         return f'<Business {self.name} ({self.type})>'
-
 
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     username = db.Column(db.String(100), nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False) # Changed from 'password' to 'password_hash'
+    password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(50), nullable=False)
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW LINE: Add this field
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
     __table_args__ = (db.UniqueConstraint('username', 'business_id', name='_username_business_uc'),)
 
-    # Property to set password, automatically hashes it
     @property
     def password(self):
         raise AttributeError('password is not a readable attribute')
@@ -179,7 +178,6 @@ class User(db.Model):
     def password(self, password):
         self.password_hash = generate_password_hash(password)
 
-    # Method to verify password
     def verify_password(self, password):
         return check_password_hash(self.password_hash, password)
 
@@ -195,207 +193,507 @@ class InventoryItem(db.Model):
     purchase_price = db.Column(db.Float, nullable=False)
     sale_price = db.Column(db.Float, nullable=False)
     current_stock = db.Column(db.Float, nullable=False)
-    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    batch_number = db.Column(db.String(100))
-    number_of_tabs = db.Column(db.Integer, nullable=False, default=1) # Tabs for Pharmacy, pieces for Hardware
-    unit_price_per_tab = db.Column(db.Float, nullable=False) # Unit price per tab/piece
-    item_type = db.Column(db.String(50), default='Pharmacy') # 'Pharmacy', 'Provision Store', 'Hardware Material'
-    expiry_date = db.Column(db.Date) # This is a db.Date, which should return datetime.date objects
-    is_fixed_price = db.Column(db.Boolean, default=False)
-    fixed_sale_price = db.Column(db.Float, default=0.0)
-    is_active = db.Column(db.Boolean, default=True, nullable=False) # New: For soft delete
-    barcode = db.Column(db.String(50), unique=True, nullable=True)  # Add this line
-    __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
-    markup_percentage_pharmacy = db.Column(db.Numeric(10, 2), default=0.00)
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    batch_number = db.Column(db.String(100), nullable=True)
+    number_of_tabs = db.Column(db.Integer, default=1, nullable=False)  # For Pharmacy: tablets/pack
+    unit_price_per_tab = db.Column(db.Float, default=0.0, nullable=False) # For Pharmacy: sale price per tablet
+    item_type = db.Column(db.String(50), nullable=False) # e.g., 'Pharmacy', 'Hardware Material', 'Provision Store'
+    expiry_date = db.Column(db.Date, nullable=True)
+    is_fixed_price = db.Column(db.Boolean, default=False, nullable=False) # If true, sale_price is fixed_sale_price
+    fixed_sale_price = db.Column(db.Float, default=0.0, nullable=False) # The fixed price if is_fixed_price is true
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    barcode = db.Column(db.String(100), unique=True, nullable=True) # Changed to nullable=True
+    markup_percentage_pharmacy = db.Column(db.Float, default=0.0, nullable=False) # NEW: Markup for pharmacy items
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),
+    )
+
     def __repr__(self):
-        return f'<InventoryItem {self.product_name} (Stock: {self.current_stock})>'
+        return f'<InventoryItem {self.product_name} ({self.current_stock})>'
 
-
-class SaleRecord(db.Model):
+class SalesRecord(db.Model):
     __tablename__ = 'sales_records'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    product_id = db.Column(db.String(36), db.ForeignKey('inventory_items.id'), nullable=False)
-    product_name = db.Column(db.String(255), nullable=False)
-    quantity_sold = db.Column(db.Float, nullable=False)
-    sale_unit_type = db.Column(db.String(50)) # e.g., 'pack', 'tab', 'unit'
-    price_at_time_per_unit_sold = db.Column(db.Float, nullable=False)
-    total_amount = db.Column(db.Float, nullable=False)
-    sale_date = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    customer_phone = db.Column(db.String(50))
-    sales_person_name = db.Column(db.String(100))
-    reference_number = db.Column(db.String(100)) # For external reference if needed
-    transaction_id = db.Column(db.String(36), nullable=False, default=lambda: str(uuid.uuid4())) # To group items in one sale
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW: Flag for sync
+    transaction_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    customer_phone = db.Column(db.String(20), nullable=True) # Optional customer phone
+    sales_person_name = db.Column(db.String(100), nullable=False)
+    grand_total_amount = db.Column(db.Float, nullable=False) # The total for the entire sale
+    payment_method = db.Column(db.String(50), nullable=True) # e.g., 'Cash', 'Card', 'Mobile Money'
+    
+    # This is the new column for storing detailed items
+    items_sold_json = db.Column(db.Text, nullable=False, default='[]') 
+    
+    is_synced = db.Column(db.Boolean, nullable=False, default=False)
+    receipt_number = db.Column(db.String(50), unique=True, nullable=True) # Made nullable true and set default to avoid errors
+    reference_number = db.Column(db.String(100), nullable=True) # For external references if any
+
+    # Foreign key relationship
+    business = db.relationship('Business', backref='_sales_records_for_business', lazy=True)
+    def set_items_sold(self, items_list):
+        self.items_sold_json = json.dumps(items_list)
+
+    def get_items_sold(self):
+        if self.items_sold_json:
+            return json.loads(self.items_sold_json)
+        return []
 
     def __repr__(self):
-        return f'<SaleRecord {self.product_name} - {self.quantity_sold}>'
-    def __repr__(self):
-        return f'<SaleRecord {self.product_name} (Qty: {self.quantity_sold})>'
+        return f'<SalesRecord {self.receipt_number or self.id} - GH₵{self.grand_total_amount:.2f}>'
 
-# --- New Models for Hardware Business ---
-
-class Company(db.Model):
-    __tablename__ = 'companies'
+class Creditor(db.Model):
+    __tablename__ = 'creditors'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    name = db.Column(db.String(255), nullable=False)
-    contact_person = db.Column(db.String(100))
-    phone = db.Column(db.String(50))
-    email = db.Column(db.String(100))
-    address = db.Column(db.String(255))
-    balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit (from your business's perspective)
-    # Ensure 'last_updated' is defined here as it caused a migration issue before
-    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
-
-    # Relationship to CompanyTransaction
-    transactions = db.relationship('CompanyTransaction', backref='company', lazy=True, cascade="all, delete-orphan")
-
-    creditors_list = db.relationship(
-                'Creditor',
-                back_populates='company_creditor_rel', # This should match the backref name on Creditor
-                lazy=True,
-                cascade="all, delete-orphan"
-            )
-    debtors_list = db.relationship(
-        'Debtor',
-        back_populates='company_debtor_rel', # This should match the backref name on Debtor
-        lazy=True,
-        cascade="all, delete-orphan"
-    )
-    __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
-
-    @property
-    def total_creditors_amount(self):
-        
-        # Sums the balance of all associated Creditor records
-        return db.session.query(func.sum(Creditor.balance)).filter_by(
-            company_id=self.id, business_id=self.business_id
-        ).scalar() or 0.0
-
-    @property
-    def total_debtors_amount(self):
-        # Sums the balance of all associated Debtor records
-        return db.session.query(func.sum(Debtor.balance)).filter_by(
-            company_id=self.id, business_id=self.business_id
-        ).scalar() or 0.0
+    company_name = db.Column(db.String(255), nullable=False)
+    contact_person = db.Column(db.String(100), nullable=True)
+    phone_number = db.Column(db.String(20), nullable=True)
+    email = db.Column(db.String(120), nullable=True)
+    amount_owed = db.Column(db.Float, nullable=False)
+    date_incurred = db.Column(db.Date, nullable=False)
+    due_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(50), default='Outstanding', nullable=False) # e.g., 'Outstanding', 'Paid', 'Partial'
+    notes = db.Column(db.Text, nullable=True)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
 
     def __repr__(self):
-        return f'<Company {self.name} (Balance: {self.balance})>'
+        return f'<Creditor {self.company_name} - {self.amount_owed}>'
 
-class CompanyTransaction(db.Model):
-    __tablename__ = 'company_transactions'
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False)
-    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False) # Redundant but useful for filtering
-    type = db.Column(db.String(50), nullable=False) # 'Credit' or 'Debit'
-    amount = db.Column(db.Float, nullable=False)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    description = db.Column(db.Text)
-    recorded_by = db.Column(db.String(100)) # User who recorded the transaction
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
-    def __repr__(self):
-        return f'<CompanyTransaction {self.type} {self.amount} for {self.company_id}>'
-
-class FutureOrder(db.Model):
-    __tablename__ = 'future_orders'
+class Debtor(db.Model):
+    __tablename__ = 'debtors'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
     customer_name = db.Column(db.String(255), nullable=False)
-    customer_phone = db.Column(db.String(50))
-    items_json = db.Column(db.Text, nullable=False) # JSON string of [{'product_id', 'product_name', 'quantity', 'unit_price', 'unit_type'}]
-    total_amount = db.Column(db.Float, nullable=False)
-    date_ordered = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    expected_collection_date = db.Column(db.Date)
-    actual_collection_date = db.Column(db.DateTime)
-    status = db.Column(db.String(50), default='Pending', nullable=False) # 'Pending', 'Collected', 'Cancelled'
-    remaining_balance = db.Column(db.Float, nullable=False, default=0.0) # Amount still owed by customer
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
-    def get_items(self):
-        return json.loads(self.items_json)
-
-    def set_items(self, items_list):
-        self.items_json = json.dumps(items_list)
+    phone_number = db.Column(db.String(20), nullable=True)
+    email = db.Column(db.String(120), nullable=True)
+    amount_due = db.Column(db.Float, nullable=False)
+    date_incurred = db.Column(db.Date, nullable=False)
+    due_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(50), default='Outstanding', nullable=False) # e.g., 'Outstanding', 'Paid', 'Partial'
+    notes = db.Column(db.Text, nullable=True)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
 
     def __repr__(self):
-        return f'<FutureOrder {self.customer_name} (Status: {self.status})>'
+        return f'<Debtor {self.customer_name} - {self.amount_due}>'
 
-# NEW: Hirable Item Model for Hardware
+
 class HirableItem(db.Model):
     __tablename__ = 'hirable_items'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
     item_name = db.Column(db.String(255), nullable=False)
-    description = db.Column(db.Text)
-    daily_hire_price = db.Column(db.Float, nullable=False)
-    current_stock = db.Column(db.Integer, nullable=False, default=0) # Number of units available for hiring
-    last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    is_active = db.Column(db.Boolean, default=True, nullable=False) # For soft delete
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
-    __table_args__ = (db.UniqueConstraint('item_name', 'business_id', name='_hirable_item_name_business_uc'),)
+    description = db.Column(db.Text, nullable=True)
+    rental_price_per_day = db.Column(db.Float, nullable=False)
+    current_stock = db.Column(db.Integer, nullable=False) # Number of units available for hire
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
 
     def __repr__(self):
         return f'<HirableItem {self.item_name} (Stock: {self.current_stock})>'
 
-# NEW: Rental Record Model for Hardware
 class RentalRecord(db.Model):
     __tablename__ = 'rental_records'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
     hirable_item_id = db.Column(db.String(36), db.ForeignKey('hirable_items.id'), nullable=False)
-    item_name_at_rent = db.Column(db.String(255), nullable=False) # Store name at time of rent for historical accuracy
+    item_name_at_rent = db.Column(db.String(255), nullable=False) # Store name at time of rent for history
     customer_name = db.Column(db.String(255), nullable=False)
-    customer_phone = db.Column(db.String(50))
-    start_date = db.Column(db.Date, nullable=False)
-    end_date = db.Column(db.Date) # Expected return date
-    actual_return_date = db.Column(db.DateTime)
-    # Removed 'quantity' column as it does not exist in the database and was always 1
-    number_of_days = db.Column(db.Integer, nullable=False) # Days calculated at the time of rental
-    daily_hire_price_at_rent = db.Column(db.Float, nullable=False)
-    total_hire_amount = db.Column(db.Float, nullable=False)
-    status = db.Column(db.String(50), default='Rented', nullable=False) # 'Rented', 'Completed', 'Overdue', 'Cancelled'
-    sales_person_name = db.Column(db.String(100)) # User who recorded the rental
-    date_recorded = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    customer_phone = db.Column(db.String(20), nullable=True)
+    quantity = db.Column(db.Integer, nullable=False)
+    rental_price_per_day_at_rent = db.Column(db.Float, nullable=False) # Price at time of rent
+    rent_date = db.Column(db.Date, default=date.today, nullable=False)
+    return_date = db.Column(db.Date, nullable=True) # Expected or actual return date
+    total_rental_amount = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(50), default='Active', nullable=False) # e.g., 'Active', 'Returned', 'Overdue', 'Cancelled'
+    notes = db.Column(db.Text, nullable=True)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+    due_date = db.Column(db.Date, nullable=True) # Make it nullable, as initial rentals might not have it strictly set
 
-    # Define relationship to HirableItem
     hirable_item = db.relationship('HirableItem', backref='rental_records_rel', lazy=True)
 
     def __repr__(self):
-        return f'<RentalRecord {self.item_name_at_rent} for {self.customer_name} (Status: {self.status})>'
-class Creditor(db.Model):
-    __tablename__ = 'creditors'
+        return f'<RentalRecord {self.item_name_at_rent} - {self.customer_name}>'
+
+class Company(db.Model):
+    __tablename__ = 'companies'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    business_id = db.Column(db.String(36), nullable=False, index=True)
-    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
-    balance = db.Column(db.Float, default=0.0, nullable=False)
-    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
-    # Relationship to Company (optional, but good for direct access)
-    company_creditor_rel = db.relationship(
-                'Company',
-                back_populates='creditors_list', # This matches the relationship name on Company
-                lazy=True
-            )
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    contact_person = db.Column(db.String(100), nullable=True)
+    phone_number = db.Column(db.String(20), nullable=True) # Ensure this is phone_number
+    email = db.Column(db.String(120), nullable=True)
+    address = db.Column(db.String(200), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    date_added = db.Column(db.DateTime, default=datetime.utcnow)
+
+    business = db.relationship('Business', backref='companies', lazy=True)
+    # The backref 'transactions' from CompanyTransaction provides access to company.transactions
+    
+    def calculate_current_balance(self):
+        """
+        Calculates the current balance for this company based on its transactions.
+        A positive balance means the company *owes* your business.
+        'Credit' (e.g., business supplies company, company owes business) increases balance.
+        'Debit' (e.g., company pays business, company's debt to business decreases) decreases balance.
+        """
+        total_debits = db.session.query(func.sum(CompanyTransaction.amount)).filter(
+            CompanyTransaction.company_id == self.id,
+            CompanyTransaction.transaction_type == 'Debit'
+        ).scalar() or 0.0
+
+        total_credits = db.session.query(func.sum(CompanyTransaction.amount)).filter(
+            CompanyTransaction.company_id == self.id,
+            CompanyTransaction.transaction_type == 'Credit'
+        ).scalar() or 0.0
+
+        balance = total_credits - total_debits
+        return float(balance)
+
+    @property
+    def total_creditors_amount(self):
+        """
+        Calculates the total amount the business owes this company (creditor balance).
+        Returns a positive value if the company is a net creditor to the business, otherwise 0.
+        """
+        current_balance = self.calculate_current_balance()
+        return abs(current_balance) if current_balance < 0 else 0.0
+
+    @property
+    def total_debtors_amount(self):
+        """
+        Calculates the total amount this company owes the business (debtor balance).
+        Returns a positive value if the company is a net debtor to the business, otherwise 0.
+        """
+        current_balance = self.calculate_current_balance()
+        return current_balance if current_balance > 0 else 0.0
 
     def __repr__(self):
-        return f"<Creditor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
+        return f'<Company {self.name}>'
 
-class Debtor(db.Model):
-    __tablename__ = 'debtors'
+class CompanyTransaction(db.Model):
+    __tablename__ = 'company_transactions'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    business_id = db.Column(db.String(36), nullable=False, index=True)
-    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
-    balance = db.Column(db.Float, default=0.0, nullable=False)
-    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
-    # Relationship to Company (optional, but good for direct access)
-    company_debtor_rel = db.relationship(
-        'Company',back_populates='debtors_list',lazy=True)
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False)
+    transaction_type = db.Column(db.String(50), nullable=False) # e.g., 'Credit', 'Payment'
+    amount = db.Column(db.Float, nullable=False)
+    transaction_date = db.Column(db.Date, default=date.today, nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+
+    company = db.relationship('Company', backref='transactions', lazy=True)
 
     def __repr__(self):
-        return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
+        return f'<CompanyTransaction {self.transaction_type} {self.amount} for {self.company.company_name}>'
+
+class FutureOrder(db.Model):
+    __tablename__ = 'future_orders'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=True) # Optional, can be direct customer
+    customer_name = db.Column(db.String(255), nullable=False)
+    customer_phone = db.Column(db.String(20), nullable=True)
+    order_details = db.Column(db.Text, nullable=False) # JSON string of items, quantities, etc.
+    total_amount = db.Column(db.Float, nullable=False)
+    order_date = db.Column(db.Date, default=date.today, nullable=False)
+    pickup_date = db.Column(db.Date, nullable=False)
+    status = db.Column(db.String(50), default='Pending', nullable=False) # e.g., 'Pending', 'Ready', 'Completed', 'Cancelled'
+    notes = db.Column(db.Text, nullable=True)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+
+    company = db.relationship('Company', backref='future_orders_rel', lazy=True)
+
+    def set_order_details(self, details_list):
+        self.order_details = json.dumps(details_list)
+
+    def get_order_details(self):
+        return json.loads(self.order_details)
+
+    def __repr__(self):
+        return f'<FutureOrder {self.customer_name} - {self.total_amount}>'
+# ... (existing imports and other model definitions) ...
+
+class Customer(db.Model):
+    __tablename__ = 'customers'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    customer_name = db.Column(db.String(100), nullable=True)
+    phone_number = db.Column(db.String(20), unique=True, nullable=False) # Phone number as unique identifier
+    email = db.Column(db.String(120), unique=False, nullable=True) # Email can be optional and not unique
+    address = db.Column(db.String(255), nullable=True)
+    date_added = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    # Add other customer-related fields as needed
+
+    # Relationship to Business (optional, but good for clarity)
+    business = db.relationship('Business', backref='customers', lazy=True)
+
+    def __repr__(self):
+        return f'<Customer {self.customer_name} ({self.phone_number})>'
+
+# ... (rest of your app.py code) ...
+# class Business(db.Model):
+#     __tablename__ = 'businesses'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     name = db.Column(db.String(255), unique=True, nullable=False)
+#     address = db.Column(db.String(255))
+#     location = db.Column(db.String(100))
+#     contact = db.Column(db.String(50))
+#     type = db.Column(db.String(50), default='Pharmacy', nullable=False) # 'Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'
+#     is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW: Field to track business activity status
+#     last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now, onupdate=datetime.now) # NEW: Add this line
+#     # Relationships (rest of your relationships remain here)
+#     users = db.relationship('User', backref='business', lazy=True, cascade="all, delete-orphan")
+#     inventory_items = db.relationship('InventoryItem', backref='business', lazy=True, cascade="all, delete-orphan")
+#     sales_records = db.relationship('SaleRecord', backref='business', lazy=True, cascade="all, delete-orphan")
+#     companies = db.relationship('Company', backref='business', lazy=True, cascade="all, delete-orphan")
+#     future_orders = db.relationship('FutureOrder', backref='business', lazy=True, cascade="all, delete-orphan")
+#     hirable_items = db.relationship('HirableItem', backref='business', lazy=True, cascade="all, delete-orphan")
+#     rental_records = db.relationship('RentalRecord', backref='business', lazy=True, cascade="all, delete-orphan")
+
+#     def __repr__(self):
+#         return f'<Business {self.name} ({self.type})>'
+
+
+# class User(db.Model):
+#     __tablename__ = 'users'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     username = db.Column(db.String(100), nullable=False)
+#     password_hash = db.Column(db.String(255), nullable=False) # Changed from 'password' to 'password_hash'
+#     role = db.Column(db.String(50), nullable=False)
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     is_active = db.Column(db.Boolean, default=True, nullable=False) # NEW LINE: Add this field
+#     __table_args__ = (db.UniqueConstraint('username', 'business_id', name='_username_business_uc'),)
+
+#     # Property to set password, automatically hashes it
+#     @property
+#     def password(self):
+#         raise AttributeError('password is not a readable attribute')
+
+#     @password.setter
+#     def password(self, password):
+#         self.password_hash = generate_password_hash(password)
+
+#     # Method to verify password
+#     def verify_password(self, password):
+#         return check_password_hash(self.password_hash, password)
+
+#     def __repr__(self):
+#         return f'<User {self.username} ({self.role})>'
+
+# class InventoryItem(db.Model):
+#     __tablename__ = 'inventory_items'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     product_name = db.Column(db.String(255), nullable=False)
+#     category = db.Column(db.String(100), nullable=False)
+#     purchase_price = db.Column(db.Float, nullable=False)
+#     sale_price = db.Column(db.Float, nullable=False)
+#     current_stock = db.Column(db.Float, nullable=False)
+#     last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+#     batch_number = db.Column(db.String(100))
+#     number_of_tabs = db.Column(db.Integer, nullable=False, default=1) # Tabs for Pharmacy, pieces for Hardware
+#     unit_price_per_tab = db.Column(db.Float, nullable=False) # Unit price per tab/piece
+#     item_type = db.Column(db.String(50), default='Pharmacy') # 'Pharmacy', 'Provision Store', 'Hardware Material'
+#     expiry_date = db.Column(db.Date) # This is a db.Date, which should return datetime.date objects
+#     is_fixed_price = db.Column(db.Boolean, default=False)
+#     fixed_sale_price = db.Column(db.Float, default=0.0)
+#     is_active = db.Column(db.Boolean, default=True, nullable=False) # New: For soft delete
+#     barcode = db.Column(db.String(50), unique=True, nullable=True)  # Add this line
+#     __table_args__ = (db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),)
+#     markup_percentage_pharmacy = db.Column(db.Numeric(10, 2), default=0.00)
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+#     def __repr__(self):
+#         return f'<InventoryItem {self.product_name} (Stock: {self.current_stock})>'
+
+
+# class SaleRecord(db.Model):
+#     __tablename__ = 'sales_records'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     product_id = db.Column(db.String(36), db.ForeignKey('inventory_items.id'), nullable=False)
+#     product_name = db.Column(db.String(255), nullable=False)
+#     quantity_sold = db.Column(db.Float, nullable=False)
+#     sale_unit_type = db.Column(db.String(50)) # e.g., 'pack', 'tab', 'unit'
+#     price_at_time_per_unit_sold = db.Column(db.Float, nullable=False)
+#     total_amount = db.Column(db.Float, nullable=False)
+#     sale_date = db.Column(db.DateTime, nullable=False, default=datetime.now)
+#     customer_phone = db.Column(db.String(50))
+#     sales_person_name = db.Column(db.String(100))
+#     reference_number = db.Column(db.String(100)) # For external reference if needed
+#     transaction_id = db.Column(db.String(36), nullable=False, default=lambda: str(uuid.uuid4())) # To group items in one sale
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW: Flag for sync
+
+#     def __repr__(self):
+#         return f'<SaleRecord {self.product_name} - {self.quantity_sold}>'
+#     def __repr__(self):
+#         return f'<SaleRecord {self.product_name} (Qty: {self.quantity_sold})>'
+
+# # --- New Models for Hardware Business ---
+
+# class Company(db.Model):
+#     __tablename__ = 'companies'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     name = db.Column(db.String(255), nullable=False)
+#     contact_person = db.Column(db.String(100))
+#     phone = db.Column(db.String(50))
+#     email = db.Column(db.String(100))
+#     address = db.Column(db.String(255))
+#     balance = db.Column(db.Float, default=0.0, nullable=False) # Positive for credit, negative for debit (from your business's perspective)
+#     # Ensure 'last_updated' is defined here as it caused a migration issue before
+#     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+
+#     # Relationship to CompanyTransaction
+#     transactions = db.relationship('CompanyTransaction', backref='company', lazy=True, cascade="all, delete-orphan")
+
+#     creditors_list = db.relationship(
+#                 'Creditor',
+#                 back_populates='company_creditor_rel', # This should match the backref name on Creditor
+#                 lazy=True,
+#                 cascade="all, delete-orphan"
+#             )
+#     debtors_list = db.relationship(
+#         'Debtor',
+#         back_populates='company_debtor_rel', # This should match the backref name on Debtor
+#         lazy=True,
+#         cascade="all, delete-orphan"
+#     )
+#     __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_company_name_business_uc'),)
+
+#     @property
+#     def total_creditors_amount(self):
+        
+#         # Sums the balance of all associated Creditor records
+#         return db.session.query(func.sum(Creditor.balance)).filter_by(
+#             company_id=self.id, business_id=self.business_id
+#         ).scalar() or 0.0
+
+#     @property
+#     def total_debtors_amount(self):
+#         # Sums the balance of all associated Debtor records
+#         return db.session.query(func.sum(Debtor.balance)).filter_by(
+#             company_id=self.id, business_id=self.business_id
+#         ).scalar() or 0.0
+
+#     def __repr__(self):
+#         return f'<Company {self.name} (Balance: {self.balance})>'
+
+# class CompanyTransaction(db.Model):
+#     __tablename__ = 'company_transactions'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False)
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False) # Redundant but useful for filtering
+#     type = db.Column(db.String(50), nullable=False) # 'Credit' or 'Debit'
+#     amount = db.Column(db.Float, nullable=False)
+#     date = db.Column(db.DateTime, nullable=False, default=datetime.now)
+#     description = db.Column(db.Text)
+#     recorded_by = db.Column(db.String(100)) # User who recorded the transaction
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+#     def __repr__(self):
+#         return f'<CompanyTransaction {self.type} {self.amount} for {self.company_id}>'
+
+# class FutureOrder(db.Model):
+#     __tablename__ = 'future_orders'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     customer_name = db.Column(db.String(255), nullable=False)
+#     customer_phone = db.Column(db.String(50))
+#     items_json = db.Column(db.Text, nullable=False) # JSON string of [{'product_id', 'product_name', 'quantity', 'unit_price', 'unit_type'}]
+#     total_amount = db.Column(db.Float, nullable=False)
+#     date_ordered = db.Column(db.DateTime, nullable=False, default=datetime.now)
+#     expected_collection_date = db.Column(db.Date)
+#     actual_collection_date = db.Column(db.DateTime)
+#     status = db.Column(db.String(50), default='Pending', nullable=False) # 'Pending', 'Collected', 'Cancelled'
+#     remaining_balance = db.Column(db.Float, nullable=False, default=0.0) # Amount still owed by customer
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+#     def get_items(self):
+#         return json.loads(self.items_json)
+
+#     def set_items(self, items_list):
+#         self.items_json = json.dumps(items_list)
+
+#     def __repr__(self):
+#         return f'<FutureOrder {self.customer_name} (Status: {self.status})>'
+
+# # NEW: Hirable Item Model for Hardware
+# class HirableItem(db.Model):
+#     __tablename__ = 'hirable_items'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     item_name = db.Column(db.String(255), nullable=False)
+#     description = db.Column(db.Text)
+#     daily_hire_price = db.Column(db.Float, nullable=False)
+#     current_stock = db.Column(db.Integer, nullable=False, default=0) # Number of units available for hiring
+#     last_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+#     is_active = db.Column(db.Boolean, default=True, nullable=False) # For soft delete
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+#     __table_args__ = (db.UniqueConstraint('item_name', 'business_id', name='_hirable_item_name_business_uc'),)
+
+#     def __repr__(self):
+#         return f'<HirableItem {self.item_name} (Stock: {self.current_stock})>'
+
+# # NEW: Rental Record Model for Hardware
+# class RentalRecord(db.Model):
+#     __tablename__ = 'rental_records'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+#     hirable_item_id = db.Column(db.String(36), db.ForeignKey('hirable_items.id'), nullable=False)
+#     item_name_at_rent = db.Column(db.String(255), nullable=False) # Store name at time of rent for historical accuracy
+#     customer_name = db.Column(db.String(255), nullable=False)
+#     customer_phone = db.Column(db.String(50))
+#     start_date = db.Column(db.Date, nullable=False)
+#     end_date = db.Column(db.Date) # Expected return date
+#     actual_return_date = db.Column(db.DateTime)
+#     # Removed 'quantity' column as it does not exist in the database and was always 1
+#     number_of_days = db.Column(db.Integer, nullable=False) # Days calculated at the time of rental
+#     daily_hire_price_at_rent = db.Column(db.Float, nullable=False)
+#     total_hire_amount = db.Column(db.Float, nullable=False)
+#     status = db.Column(db.String(50), default='Rented', nullable=False) # 'Rented', 'Completed', 'Overdue', 'Cancelled'
+#     sales_person_name = db.Column(db.String(100)) # User who recorded the rental
+#     date_recorded = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+#     # Define relationship to HirableItem
+#     hirable_item = db.relationship('HirableItem', backref='rental_records_rel', lazy=True)
+
+#     def __repr__(self):
+#         return f'<RentalRecord {self.item_name_at_rent} for {self.customer_name} (Status: {self.status})>'
+# class Creditor(db.Model):
+#     __tablename__ = 'creditors'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), nullable=False, index=True)
+#     company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
+#     balance = db.Column(db.Float, default=0.0, nullable=False)
+#     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+#     # Relationship to Company (optional, but good for direct access)
+#     company_creditor_rel = db.relationship(
+#                 'Company',
+#                 back_populates='creditors_list', # This matches the relationship name on Company
+#                 lazy=True
+#             )
+
+#     def __repr__(self):
+#         return f"<Creditor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
+
+# class Debtor(db.Model):
+#     __tablename__ = 'debtors'
+#     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+#     business_id = db.Column(db.String(36), nullable=False, index=True)
+#     company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False, index=True) # CORRECTED: 'companies.id'
+#     balance = db.Column(db.Float, default=0.0, nullable=False)
+#     last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+#     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # NEW
+#     # Relationship to Company (optional, but good for direct access)
+#     company_debtor_rel = db.relationship(
+#         'Company',back_populates='debtors_list',lazy=True)
+
+#     def __repr__(self):
+#         return f"<Debtor {self.id} (Company: {self.company_id}) Balance: {self.balance:.2f}>"
 
 # --- Flask app setup (secret_key, Arkesel, etc.) ---
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your_super_secret_key_here')
@@ -434,6 +732,7 @@ def safe_convert(value, converter, default):
     except (TypeError, ValueError):
         # Catch specific conversion errors and return default
         return default
+
 
 def serialize_inventory_item(item):
     """
@@ -1095,10 +1394,11 @@ def get_product_by_barcode():
     if not query_string:
         return jsonify({'success': False, 'message': 'Barcode or product name not provided.'}), 400
 
-    # 1. Try searching by exact barcode first (case-insensitive and trimmed)
+    # 1. Try searching by exact barcode first.
+    # We explicitly handle cases where the barcode might be empty or None in the database.
     product = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
-        func.lower(func.trim(InventoryItem.barcode)) == func.lower(query_string), # Trim and lower both sides
+        (InventoryItem.barcode == query_string) | (InventoryItem.barcode == None) | (InventoryItem.barcode == ''),
         InventoryItem.is_active == True
     ).first()
     print(f"DEBUG: get_product_by_barcode - Product found by exact barcode: {product.product_name if product else 'None'}")
@@ -1166,7 +1466,6 @@ def get_product_by_barcode():
             'success': False,
             'message': message
         }), 404
-
 @app.route('/')
 def index():
     if 'username' in session:
@@ -1273,137 +1572,171 @@ def business_selection():
 
 # --- Placeholder routes for demonstration ---
 # In a real application, these would be fully implemented.
+
+
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # ACCESS CONTROL: Specific redirects first
+    if 'username' not in session:
+        flash('Please log in to access this page.', 'warning')
+        return redirect(url_for('login'))
+
+    if session.get('role') == 'super_admin':
+        return redirect(url_for('super_admin_dashboard'))
+
+    if 'business_id' not in session:
+        return redirect(url_for('business_selection'))
+
+    # Now that we've ensured login and business selection, proceed
+    username = session.get('username')
+    role = session.get('role')
     business_id = get_current_business_id()
-    if not business_id:
-        flash('No business selected. Please select a business or register one.', 'warning')
-        return redirect(url_for('login'))
-
-    current_business = Business.query.get(business_id)
-    # Check if the current business is active
-    if not current_business or not getattr(current_business, 'is_active', True):
-        flash('Your business account is currently inactive. Please contact support.', 'danger')
-        session.clear() # Clear session to force re-login/business selection
-        return redirect(url_for('login'))
-
     business_type = get_current_business_type()
 
-    # Common data for all business types
-    # Ensure 'is_active' attribute exists before filtering
-    total_products_query = InventoryItem.query.filter_by(business_id=business_id)
-    if hasattr(InventoryItem, 'is_active'):
-        total_products_query = total_products_query.filter_by(is_active=True)
-    total_products = total_products_query.count()
-
-    total_users_query = User.query.filter_by(business_id=business_id)
-    if hasattr(User, 'is_active'):
-        total_users_query = total_users_query.filter_by(is_active=True)
-    total_users = total_users_query.count()
-
-    # Sales data for all business types
     today = date.today()
-    start_of_week = today - timedelta(days=today.weekday()) # Monday
-    start_of_month = today.replace(day=1)
-    start_of_year = today.replace(month=1, day=1)
+    three_months_from_now = today + timedelta(days=90)
 
-    sales_today = db.session.query(func.sum(SaleRecord.total_amount)).filter(
-        SaleRecord.business_id == business_id,
-        cast(SaleRecord.sale_date, db.Date) == today
+    # --- Initialize all dashboard variables to prevent UndefinedError in template ---
+    total_products = 0
+    total_customers = 0
+    total_sales_overall = 0.0
+    today_sales_revenue = 0.0
+    current_stock_value_at_cost = 0.0
+    current_stock_value_at_sale = 0.0
+    total_potential_gross_profit_stock = 0.0
+    overall_stock_profit_margin = 0.0
+    low_stock_items = []
+    expired_items = []
+    expiring_soon_items = []
+    overdue_rentals = []
+    recent_activity = []
+    sales_by_person_today = []
+    total_inventory_items = 0
+
+    # Common filters for queries
+    common_filter_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True)
+
+    # --- Overall Business Metrics (Stock Valuation) ---
+    current_inventory_items = common_filter_items.all()
+    total_inventory_items = len(current_inventory_items)
+
+    for item in current_inventory_items:
+        current_stock = item.current_stock or 0.0
+        number_of_tabs = item.number_of_tabs or 1.0
+
+        # Calculate cost value
+        cost_per_base_unit = float(item.purchase_price / number_of_tabs) if number_of_tabs > 0 else 0.0
+        current_stock_value_at_cost += current_stock * cost_per_base_unit
+
+        # Calculate sale value
+        sale_value_per_base_unit = 0.0
+        if item.is_fixed_price:
+            sale_value_per_base_unit = float(item.fixed_sale_price / number_of_tabs) if number_of_tabs > 0 else 0.0
+        else:
+            if item.item_type == 'Pharmacy':
+                sale_value_per_base_unit = float(item.purchase_price * (1 + (item.markup_percentage_pharmacy or 0) / 100) / number_of_tabs) if number_of_tabs > 0 else 0.0
+            elif item.item_type == 'Hardware Material':
+                sale_value_per_base_unit = item.unit_price_per_tab or 0.0
+            else:
+                sale_value_per_base_unit = float(item.sale_price / number_of_tabs) if number_of_tabs > 0 else 0.0
+        
+        current_stock_value_at_sale += current_stock * sale_value_per_base_unit
+
+    total_potential_gross_profit_stock = current_stock_value_at_sale - current_stock_value_at_cost
+    overall_stock_profit_margin = (total_potential_gross_profit_stock / current_stock_value_at_sale) * 100 if current_stock_value_at_sale > 0 else 0.0
+
+
+    # --- Sales Metrics ---
+    # Total Sales (overall for the business lifetime)
+    total_sales_overall = db.session.query(db.func.sum(SalesRecord.grand_total_amount)).filter_by(business_id=business_id).scalar() or 0.0
+
+    # Total Sales Today
+    today_sales_revenue = db.session.query(db.func.sum(SalesRecord.grand_total_amount)).filter(
+        SalesRecord.business_id == business_id,
+        cast(SalesRecord.transaction_date, db.Date) == today
     ).scalar() or 0.0
 
-    sales_this_week = db.session.query(func.sum(SaleRecord.total_amount)).filter(
-        SaleRecord.business_id == business_id,
-        cast(SaleRecord.sale_date, db.Date) >= start_of_week
-    ).scalar() or 0.0
-
-    sales_this_month = db.session.query(func.sum(SaleRecord.total_amount)).filter(
-        SaleRecord.business_id == business_id,
-        cast(SaleRecord.sale_date, db.Date) >= start_of_month
-    ).scalar() or 0.0
-
-    sales_this_year = db.session.query(func.sum(SaleRecord.total_amount)).filter(
-        SaleRecord.business_id == business_id,
-        cast(SaleRecord.sale_date, db.Date) >= start_of_year
-    ).scalar() or 0.0
-    
-    # Low stock alerts
-    low_stock_threshold = 10 # Example threshold
-    low_stock_items_query = InventoryItem.query.filter(
-        InventoryItem.business_id == business_id,
-        InventoryItem.current_stock <= low_stock_threshold
-    )
-    if hasattr(InventoryItem, 'is_active'):
-        low_stock_items_query = low_stock_items_query.filter(InventoryItem.is_active == True)
-    low_stock_items = low_stock_items_query.order_by(InventoryItem.current_stock).all()
-
-
-    # Expiring items
-    expiring_items = []
-    if business_type in ['Pharmacy', 'Supermarket', 'Provision Store']:
-        expiry_threshold_days = 30 # Items expiring within 30 days
-        expiry_date_threshold = today + timedelta(days=expiry_threshold_days)
-        expiring_items_query = InventoryItem.query.filter(
-            InventoryItem.business_id == business_id,
-            InventoryItem.expiry_date.isnot(None),
-            InventoryItem.expiry_date <= expiry_date_threshold
-        )
-        if hasattr(InventoryItem, 'is_active'):
-            expiring_items_query = expiring_items_query.filter(InventoryItem.is_active == True)
-        expiring_items = expiring_items_query.order_by(InventoryItem.expiry_date).all()
-
-    # Sales by Sales Person for Today
+    # Sales by Sales Person Today
     sales_by_person_today = db.session.query(
-        User.username,
-        func.sum(SaleRecord.total_amount)
-    ).join(User, SaleRecord.sales_person_name == User.username).filter(
-        SaleRecord.business_id == business_id,
-        cast(SaleRecord.sale_date, db.Date) == today
-    ).group_by(User.username).all()
+        SalesRecord.sales_person_name,
+        func.sum(SalesRecord.grand_total_amount)
+    ).filter(
+        SalesRecord.business_id == business_id,
+        cast(SalesRecord.transaction_date, db.Date) == today
+    ).group_by(SalesRecord.sales_person_name).order_by(func.sum(SalesRecord.grand_total_amount).desc()).all()
 
-    # Business-specific dashboard data for Hardware
-    business_dashboard_data = {}
+
+    # --- Inventory Management Metrics ---
+    # Low Stock Items
+    low_stock_threshold = 10
+    low_stock_items = common_filter_items.filter(
+        InventoryItem.current_stock <= low_stock_threshold,
+        InventoryItem.current_stock > 0
+    ).order_by(InventoryItem.current_stock).all()
+
+    total_products = total_inventory_items
+
+    # Total Customers
+    total_customers = Customer.query.filter_by(business_id=business_id, is_active=True).count() or 0
+
+    # --- Pharmacy Specific (Expiry Dates) ---
+    if business_type == 'Pharmacy':
+        expired_items = common_filter_items.filter(
+            InventoryItem.expiry_date != None,
+            InventoryItem.expiry_date < today
+        ).order_by(InventoryItem.expiry_date).all()
+
+        expiring_soon_items = common_filter_items.filter(
+            InventoryItem.expiry_date != None,
+            InventoryItem.expiry_date >= today,
+            InventoryItem.expiry_date <= three_months_from_now
+        ).order_by(InventoryItem.expiry_date).all()
+    
+    # --- Hardware Specific (Rental Records) ---
     if business_type == 'Hardware':
-        total_hirable_items_query = HirableItem.query.filter_by(business_id=business_id)
-        if hasattr(HirableItem, 'is_active'):
-            total_hirable_items_query = total_hirable_items_query.filter_by(is_active=True)
-        total_hirable_items = total_hirable_items_query.count()
-
-        rented_items = RentalRecord.query.filter_by(business_id=business_id, status='Rented').count()
         overdue_rentals = RentalRecord.query.filter(
             RentalRecord.business_id == business_id,
-            RentalRecord.status == 'Rented',
-            RentalRecord.end_date < today
-        ).count()
-        business_dashboard_data = {
-            'total_hirable_items': total_hirable_items,
-            'rented_items': rented_items,
-            'overdue_rentals': overdue_rentals
-        }
-        # Also include for Hardware specific report section (Future Orders and Companies counts)
-        total_companies = Company.query.filter_by(business_id=business_id).count()
-        total_future_orders = FutureOrder.query.filter_by(business_id=business_id, status='Pending').count()
-        business_dashboard_data['total_companies'] = total_companies
-        business_dashboard_data['total_future_orders'] = total_future_orders
+            RentalRecord.return_date == None,
+            RentalRecord.due_date < today
+        ).order_by(RentalRecord.due_date).all()
+
+    # --- Recent Activity (e.g., last 5 sales records) ---
+    recent_activity = SalesRecord.query.filter_by(business_id=business_id).order_by(SalesRecord.transaction_date.desc()).limit(5).all()
 
 
     return render_template('dashboard.html',
-                           username=session.get('username'),
-                           user_role=session.get('role'),
+                           title='Dashboard',
+                           username=username,
+                           user_role=role,
                            business_name=session.get('business_name'),
                            business_type=business_type,
+                           
+                           # Metrics (aligned with template expectations)
                            total_products=total_products,
-                           total_users=total_users,
-                           sales_today=sales_today,
-                           sales_this_week=sales_this_week,
-                           sales_this_month=sales_this_month,
-                           sales_this_year=sales_this_year,
+                           total_customers=total_customers,
+                           total_sales_today=today_sales_revenue,
                            low_stock_items=low_stock_items,
-                           expiring_items=expiring_items,
+                           total_inventory_items=total_inventory_items,
                            sales_by_person_today=sales_by_person_today,
-                           business_dashboard_data=business_dashboard_data,
+
+                           # Comprehensive Stock Metrics
+                           current_stock_value_at_cost=current_stock_value_at_cost,
+                           current_stock_value_at_sale=current_stock_value_at_sale,
+                           total_potential_gross_profit_stock=total_potential_gross_profit_stock,
+                           overall_stock_profit_margin=overall_stock_profit_margin,
+                           total_sales_overall=total_sales_overall,
+
+                           # Type-specific reports
+                           expired_items=expired_items,
+                           expiring_soon_items=expiring_soon_items,
+                           overdue_rentals=overdue_rentals,
+                           
+                           # General
+                           recent_activity=recent_activity,
                            current_year=datetime.now().year)
+
 @app.route('/super_admin_dashboard')
 def super_admin_dashboard():
     # Allow 'admin' role to view this dashboard
@@ -2211,7 +2544,6 @@ def upload_current_inventory_csv():
 
 
 # app.py (your add_inventory_item route)
-
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def add_inventory_item():
     # ACCESS CONTROL: Allows admin role
@@ -2232,9 +2564,10 @@ def add_inventory_item():
 
     elif business_type in ['Supermarket', 'Provision Store']:
         relevant_item_types = ['Provision Store']
-    elif business_type == 'Supermarket': # Changed from 'in' to handle 'Supermarket' type specifically
-        relevant_item_types = ['Supermarket'] # Add 'Supermarket' as relevant item type
-    elif business_type == 'Provision Store': # Handle Provision Store separately if its items are distinct
+    # The following two elifs are redundant with the one above, but kept for direct mapping to original.
+    elif business_type == 'Supermarket':
+        relevant_item_types = ['Supermarket']
+    elif business_type == 'Provision Store':
         relevant_item_types = ['Provision Store']
     else:
         # Fallback or general type if none matches. Consider if a business can have diverse types.
@@ -2319,15 +2652,18 @@ def add_inventory_item():
 
 
         batch_number = request.form.get('batch_number', '').strip()
-        barcode = request.form.get('barcode', '').strip()
+        raw_barcode = request.form.get('barcode', '').strip() # Get the barcode string
         
+        # Set barcode to None if it's an empty string, otherwise keep the value
+        barcode_to_save = raw_barcode if raw_barcode else None
+
         # Validate required string fields
         if not product_name or not category:
             flash('Product Name and Category are required fields.', 'danger')
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': barcode,
+                'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                 'number_of_tabs': number_of_tabs,
                 'item_type': request.form.get('item_type', business_type),
                 'expiry_date': request.form.get('expiry_date', ''),
@@ -2340,18 +2676,18 @@ def add_inventory_item():
                                    pharmacy_info=pharmacy_info, other_businesses=other_businesses)
 
 
-        # Check if barcode is unique if provided
-        if barcode:
+        # Check if barcode is unique if provided and not None
+        if barcode_to_save: # Only check uniqueness if barcode_to_save is not None/empty
             existing_barcode_item = InventoryItem.query.filter_by(
                 business_id=business_id,
-                barcode=barcode
+                barcode=barcode_to_save
             ).first()
             if existing_barcode_item:
                 flash('Barcode already in use for another product.', 'danger')
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': barcode,
+                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                     'number_of_tabs': number_of_tabs,
                     'item_type': request.form.get('item_type', business_type),
                     'expiry_date': request.form.get('expiry_date', ''),
@@ -2374,7 +2710,7 @@ def add_inventory_item():
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': barcode,
+                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                     'number_of_tabs': number_of_tabs,
                     'item_type': request.form.get('item_type', business_type),
                     'expiry_date': '',
@@ -2391,7 +2727,7 @@ def add_inventory_item():
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': barcode,
+                'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                 'number_of_tabs': number_of_tabs,
                 'item_type': request.form.get('item_type', business_type),
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2406,7 +2742,7 @@ def add_inventory_item():
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': barcode,
+                'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                 'number_of_tabs': number_of_tabs,
                 'item_type': request.form.get('item_type', business_type),
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2437,7 +2773,7 @@ def add_inventory_item():
                     item_data_for_form_on_error = {
                         'product_name': product_name, 'category': category,
                         'purchase_price': purchase_price, 'current_stock': current_stock,
-                        'batch_number': batch_number, 'barcode': barcode,
+                        'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                         'number_of_tabs': number_of_tabs,
                         'item_type': request.form.get('item_type', business_type),
                         'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2455,7 +2791,7 @@ def add_inventory_item():
                     item_data_for_form_on_error = {
                         'product_name': product_name, 'category': category,
                         'purchase_price': purchase_price, 'current_stock': current_stock,
-                        'batch_number': batch_number, 'barcode': barcode,
+                        'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                         'number_of_tabs': number_of_tabs,
                         'item_type': request.form.get('item_type', business_type),
                         'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2484,7 +2820,7 @@ def add_inventory_item():
             sale_price=sale_price,
             current_stock=current_stock,
             batch_number=batch_number,
-            barcode=barcode,
+            barcode=barcode_to_save, # Use the processed barcode_to_save here
             number_of_tabs=number_of_tabs,
             unit_price_per_tab=unit_price_per_tab,
             item_type=request.form.get('item_type', business_type), # Use the selected item_type from form
@@ -2508,7 +2844,10 @@ def add_inventory_item():
                            current_year=datetime.now().year,
                            pharmacy_info=pharmacy_info,
                            other_businesses=other_businesses)
+
+
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
+@login_required
 def edit_inventory_item(item_id):
     # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
@@ -2526,156 +2865,192 @@ def edit_inventory_item(item_id):
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
     elif business_type == 'Supermarket' or business_type == 'Provision Store':
-        relevant_item_types = ['Provision Store'] # Assuming 'Provision Store' covers general goods for these
-
-    available_inventory_items = InventoryItem.query.filter(
-        InventoryItem.business_id == business_id,
-        InventoryItem.is_active == True,
-        InventoryItem.item_type.in_(relevant_item_types)).all()
-    serialized_available_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
-
+        relevant_item_types = ['Provision Store'] 
 
     if request.method == 'POST':
-        product_name = request.form['product_name'].strip()
-        category = request.form['category'].strip()
-        purchase_price = float(request.form['purchase_price'])
-        current_stock = float(request.form['current_stock'])
-        batch_number = request.form.get('batch_number', '').strip()
-        new_barcode = request.form.get('barcode', '').strip()  # NEW: Get barcode
-        
-        # NEW: Check if barcode is unique
-        if new_barcode and new_barcode != item_to_edit.barcode:
-            existing_barcode = InventoryItem.query.filter_by(
-                business_id=business_id,
-                barcode=new_barcode
-            ).first()
-            if existing_barcode:
-                flash('Barcode already in use for another product', 'danger')
-                item_data_for_form_on_error = {
-                    'id': item_to_edit.id,
-                    'product_name': product_name, 'category': category,
-                    'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': new_barcode,
-                    'number_of_tabs': int(request.form.get('number_of_tabs', 1)),
-                    'item_type': business_type,
-                    'expiry_date': request.form.get('expiry_date', ''),
-                    'is_fixed_price': 'is_fixed_price' in request.form,
-                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0)),
-                    'is_active': 'is_active' in request.form
-                }
-                if business_type == 'Pharmacy':
-                    item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
-                return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                                       item=item_data_for_form_on_error, user_role=session.get('role'),
-                                       business_type=business_type, current_year=datetime.now().year)
-        
-        number_of_tabs = int(request.form.get('number_of_tabs', 1))
-        expiry_date_str = request.form.get('expiry_date', '').strip()
-        
-        # Initialize expiry_date_obj to None
-        expiry_date_obj = None 
-        if expiry_date_str:
-            try:
-                expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
-            except ValueError:
-                flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
-                # Prepare item_data_for_form_on_error for re-rendering with error, ensuring expiry_date is handled
-                item_data_for_form_on_error = {
-                    'id': item_to_edit.id, # Keep ID for context
-                    'product_name': product_name, 'category': category,
-                    'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': new_barcode,  # NEW: Include barcode
+        try:
+            product_name = request.form['product_name'].strip()
+            category = request.form['category'].strip()
+            purchase_price = float(request.form['purchase_price'])
+            current_stock = float(request.form['current_stock'])
+            batch_number = request.form.get('batch_number', '').strip()
+            new_barcode = request.form.get('barcode', '').strip()
+            item_type = request.form['item_type'] # Get item_type from form
+            number_of_tabs = int(request.form.get('number_of_tabs', 1))
+            
+            # Helper function to prepare common form data for re-rendering on error
+            def prepare_error_form_data(
+                product_name, category, purchase_price, current_stock,
+                batch_number, new_barcode, number_of_tabs, item_type,
+                expiry_date_str_or_obj, is_fixed_price_checked, fixed_sale_price, markup_percentage_pharmacy_val # Added markup here
+            ):
+                error_item_data = {
+                    'id': item_to_edit.id, # Keep original ID for context
+                    'product_name': product_name, 
+                    'category': category,
+                    'purchase_price': purchase_price, 
+                    'current_stock': current_stock,
+                    'batch_number': batch_number, 
+                    'barcode': new_barcode,
                     'number_of_tabs': number_of_tabs,
-                    'item_type': business_type,
-                    'expiry_date': '', # Pass empty string to template for invalid date
-                    'is_fixed_price': 'is_fixed_price' in request.form,
-                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0)),
-                    'is_active': 'is_active' in request.form
+                    'item_type': item_type,
+                    'is_fixed_price': is_fixed_price_checked, 
+                    'fixed_sale_price': fixed_sale_price,
+                    'is_active': 'is_active' in request.form # Checkbox presence
                 }
+                # Handle expiry date for display
+                if isinstance(expiry_date_str_or_obj, date):
+                    error_item_data['expiry_date'] = expiry_date_str_or_obj.strftime('%Y-%m-%d')
+                else:
+                    error_item_data['expiry_date'] = expiry_date_str_or_obj # Use string as is (e.g., empty or invalid)
+
+                # Ensure markup_percentage_pharmacy is always a float for the template
                 if business_type == 'Pharmacy':
-                    item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
+                    error_item_data['markup_percentage_pharmacy'] = float(markup_percentage_pharmacy_val or 0.0)
+                return error_item_data
 
-                return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                                       item=item_data_for_form_on_error, user_role=session.get('role'),
-                                       business_type=business_type, current_year=datetime.now().year)
+            # Barcode uniqueness check
+            if new_barcode and new_barcode != item_to_edit.barcode:
+                existing_barcode = InventoryItem.query.filter_by(
+                    business_id=business_id,
+                    barcode=new_barcode
+                ).first()
+                if existing_barcode:
+                    flash('Barcode already in use for another product', 'danger')
+                    return render_template('add_edit_inventory_item.html', 
+                                           title=f'Edit Inventory Item: {item_to_edit.product_name}',
+                                           item=prepare_error_form_data(
+                                                product_name, category, purchase_price, current_stock,
+                                                batch_number, new_barcode, number_of_tabs, item_type,
+                                                request.form.get('expiry_date', ''), 
+                                                'is_fixed_price' in request.form, 
+                                                float(request.form.get('fixed_sale_price', 0.0)),
+                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                           ), 
+                                           user_role=session.get('role'),
+                                           business_type=business_type, current_year=datetime.now().year)
+            
+            expiry_date_str = request.form.get('expiry_date', '').strip()
+            expiry_date_obj = None
+            if expiry_date_str:
+                try:
+                    expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
+                    return render_template('add_edit_inventory_item.html', 
+                                           title=f'Edit Inventory Item: {item_to_edit.product_name}',
+                                           item=prepare_error_form_data(
+                                                product_name, category, purchase_price, current_stock,
+                                                batch_number, new_barcode, number_of_tabs, item_type,
+                                                '', # Empty string for invalid date
+                                                'is_fixed_price' in request.form, 
+                                                float(request.form.get('fixed_sale_price', 0.0)),
+                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                           ), 
+                                           user_role=session.get('role'),
+                                           business_type=business_type, current_year=datetime.now().year)
 
-        is_fixed_price = 'is_fixed_price' in request.form
-        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
+            is_fixed_price = 'is_fixed_price' in request.form
+            fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
 
-        if number_of_tabs <= 0:
-            flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-            # Prepare item_data_for_form_on_error for re-rendering with error, ensuring expiry_date is handled
-            item_data_for_form_on_error = {
-                'id': item_to_edit.id,
-                'product_name': product_name, 'category': category,
-                'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': new_barcode,  # NEW: Include barcode
-                'number_of_tabs': number_of_tabs,
-                'item_type': business_type,
-                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
-                'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price,
-                'is_active': 'is_active' in request.form
-            }
-            if business_type == 'Pharmacy':
-                item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
-            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
+            if number_of_tabs <= 0:
+                flash('Number of units/pieces per pack must be greater than zero.', 'danger')
+                return render_template('add_edit_inventory_item.html', 
+                                           title='Edit Inventory Item', 
+                                           item=prepare_error_form_data(
+                                                product_name, category, purchase_price, current_stock,
+                                                batch_number, new_barcode, number_of_tabs, item_type,
+                                                expiry_date_obj, is_fixed_price, fixed_sale_price,
+                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                           ), 
+                                           user_role=session.get('role'),
+                                           business_type=business_type, current_year=datetime.now().year)
 
+            # Product name uniqueness check (excluding current item)
+            if InventoryItem.query.filter(InventoryItem.product_name == product_name, InventoryItem.business_id == business_id, InventoryItem.id != item_id).first():
+                flash('Product with this name already exists for this business.', 'danger')
+                return render_template('add_edit_inventory_item.html', 
+                                           title='Edit Inventory Item', 
+                                           item=prepare_error_form_data(
+                                                product_name, category, purchase_price, current_stock,
+                                                batch_number, new_barcode, number_of_tabs, item_type,
+                                                expiry_date_obj, is_fixed_price, fixed_sale_price,
+                                                request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                           ), 
+                                           user_role=session.get('role'),
+                                           business_type=business_type, current_year=datetime.now().year)
+            
+            # --- If all validations pass, update the item ---
+            item_to_edit.product_name = product_name
+            item_to_edit.category = category
+            item_to_edit.purchase_price = purchase_price
+            item_to_edit.current_stock = current_stock
+            item_to_edit.last_updated = datetime.now()
+            item_to_edit.batch_number = batch_number
+            item_to_edit.barcode = new_barcode
+            item_to_edit.number_of_tabs = number_of_tabs
+            item_to_edit.item_type = item_type
+            item_to_edit.expiry_date = expiry_date_obj
+            item_to_edit.is_fixed_price = is_fixed_price
+            item_to_edit.fixed_sale_price = fixed_sale_price
+            item_to_edit.is_active = 'is_active' in request.form
 
-        if InventoryItem.query.filter(InventoryItem.product_name == product_name, InventoryItem.business_id == business_id, InventoryItem.id != item_id).first():
-            flash('Product with this name already exists for this business.', 'danger')
-            # Prepare item_data_for_form_on_error for re-rendering with error, ensuring expiry_date is handled
-            item_data_for_form_on_error = {
-                'id': item_to_edit.id,
-                'product_name': product_name, 'category': category,
-                'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': new_barcode,  # NEW: Include barcode
-                'number_of_tabs': number_of_tabs,
-                'item_type': business_type,
-                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '', # Format parsed date or empty
-                'is_fixed_price': is_fixed_price, 'fixed_sale_price': fixed_sale_price,
-                'is_active': 'is_active' in request.form
-            }
-            if business_type == 'Pharmacy':
-                item_data_for_form_on_error['markup_percentage_pharmacy'] = request.form.get('markup_percentage_pharmacy', '')
-            return render_template('add_edit_inventory.html', title='Edit Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
-        
-        item_to_edit.product_name = product_name
-        item_to_edit.category = category
-        item_to_edit.purchase_price = purchase_price
-        item_to_edit.current_stock = current_stock
-        item_to_edit.last_updated = datetime.now()
-        item_to_edit.batch_number = batch_number
-        item_to_edit.barcode = new_barcode  # NEW: Set barcode
-        item_to_edit.number_of_tabs = number_of_tabs
-        item_to_edit.expiry_date = expiry_date_obj # This is now a datetime.date object or None
-        item_to_edit.is_fixed_price = is_fixed_price
-        item_to_edit.fixed_sale_price = fixed_sale_price
-        item_to_edit.is_active = 'is_active' in request.form # Update is_active based on checkbox
+            sale_price = 0.0
+            unit_price_per_tab = 0.0
 
-        sale_price = 0.0
-        unit_price_per_tab = 0.0
+            if is_fixed_price:
+                sale_price = fixed_sale_price
+                item_to_edit.markup_percentage_pharmacy = 0.0 # Reset if fixed price
+            else:
+                if business_type == 'Pharmacy':
+                    markup_percentage_form_value = float(request.form.get('markup_percentage_pharmacy', 0.0))
+                    item_to_edit.markup_percentage_pharmacy = markup_percentage_form_value
+                    sale_price = purchase_price * (1 + (markup_percentage_form_value / 100))
+                else:
+                    sale_price = purchase_price
+                    item_to_edit.markup_percentage_pharmacy = 0.0 # Ensure it's set to 0 for non-pharmacy
 
-        if is_fixed_price:
-            sale_price = fixed_sale_price
+            # Calculate unit price per tab based on the determined sale_price
             if number_of_tabs > 0:
-                unit_price_per_tab = fixed_sale_price / number_of_tabs
-        else:
-            if business_type == 'Pharmacy':
-                markup_percentage = float(request.form.get('markup_percentage_pharmacy', 0.0)) / 100
-                sale_price = purchase_price + (purchase_price * markup_percentage)
-                if number_of_tabs > 0:
-                    unit_price_per_tab = sale_price / number_of_tabs
-            else: # Hardware, Supermarket, Provision Store
-                sale_price = float(request.form['sale_price']) # Assuming a sale_price field for non-pharmacy
-                if number_of_tabs > 0:
-                    unit_price_per_tab = sale_price / number_of_tabs
-        
-        item_to_edit.sale_price = sale_price
-        item_to_edit.unit_price_per_tab = unit_price_per_tab
+                unit_price_per_tab = sale_price / number_of_tabs
+            else:
+                unit_price_per_tab = sale_price # If 0 tabs, unit price is the pack price (prevents division by zero)
 
-        db.session.commit()
-        flash(f'Inventory item "{product_name}" updated successfully!', 'success')
-        return redirect(url_for('inventory'))
+            item_to_edit.sale_price = sale_price
+            item_to_edit.unit_price_per_tab = unit_price_per_tab
+
+            db.session.commit()
+            flash(f'Inventory item "{product_name}" updated successfully!', 'success')
+            return redirect(url_for('inventory'))
+        except ValueError as e:
+            db.session.rollback() # Rollback on value errors
+            flash(f'Invalid input data. Please check your numbers and dates. Error: {e}', 'danger')
+            # Re-render the form with current request data on validation error
+            # This is crucial for user experience
+            return render_template('add_edit_inventory_item.html', 
+                                   title=f'Edit Inventory Item: {item_to_edit.product_name}',
+                                   item=prepare_error_form_data(
+                                        request.form.get('product_name', ''), 
+                                        request.form.get('category', ''), 
+                                        float(request.form.get('purchase_price', 0.0)), 
+                                        float(request.form.get('current_stock', 0.0)),
+                                        request.form.get('batch_number', ''), 
+                                        request.form.get('barcode', ''),
+                                        int(request.form.get('number_of_tabs', 1)), 
+                                        request.form.get('item_type', ''),
+                                        request.form.get('expiry_date', ''), 
+                                        'is_fixed_price' in request.form, 
+                                        float(request.form.get('fixed_sale_price', 0.0)),
+                                        request.form.get('markup_percentage_pharmacy', 0.0) # Pass markup value here
+                                   ),
+                                   user_role=session.get('role'),
+                                   business_type=business_type, 
+                                   current_year=datetime.now().year)
+        except Exception as e:
+            db.session.rollback()
+            flash(f'An unexpected error occurred: {e}', 'danger')
+            # For general exceptions, it might be better to redirect or show a simpler error
+            return redirect(url_for('inventory'))
 
     # --- GET Request / Initial Render ---
     # Prepare item data for the form, ensuring expiry date is a string for the HTML input
@@ -2684,11 +3059,11 @@ def edit_inventory_item(item_id):
         'product_name': item_to_edit.product_name,
         'category': item_to_edit.category,
         'purchase_price': item_to_edit.purchase_price,
-        'sale_price': item_to_edit.sale_price,
+        'sale_price': item_to_edit.sale_price, # Stored sale_price
         'current_stock': item_to_edit.current_stock,
         'last_updated': item_to_edit.last_updated.isoformat(),
         'batch_number': item_to_edit.batch_number,
-        'barcode': item_to_edit.barcode,  # NEW: Include barcode
+        'barcode': item_to_edit.barcode,
         'number_of_tabs': item_to_edit.number_of_tabs,
         'unit_price_per_tab': item_to_edit.unit_price_per_tab,
         'item_type': item_to_edit.item_type,
@@ -2697,18 +3072,26 @@ def edit_inventory_item(item_id):
         'is_active': item_to_edit.is_active
     }
 
-    # Format expiry_date for the HTML input
     item_data_for_form['expiry_date'] = item_to_edit.expiry_date.strftime('%Y-%m-%d') if item_to_edit.expiry_date else ''
     
-    # Calculate initial markup percentage for display if not fixed price
-    if business_type == 'Pharmacy' and not item_to_edit.is_fixed_price and item_to_edit.purchase_price > 0:
-        markup_percentage = ((item_to_edit.sale_price - item_to_edit.purchase_price) / item_to_edit.purchase_price) * 100
-        item_data_for_form['markup_percentage_pharmacy'] = f"{markup_percentage:.2f}"
+    # Calculate initial markup percentage for display as a float for the template
+    if business_type == 'Pharmacy' and not item_to_edit.is_fixed_price and item_to_edit.purchase_price is not None and item_to_edit.purchase_price > 0:
+        if item_to_edit.markup_percentage_pharmacy is not None:
+            item_data_for_form['markup_percentage_pharmacy'] = float(item_to_edit.markup_percentage_pharmacy)
+        else:
+            markup_percentage = ((item_to_edit.sale_price - item_to_edit.purchase_price) / item_to_edit.purchase_price) * 100
+            item_data_for_form['markup_percentage_pharmacy'] = float(f"{markup_percentage:.2f}") # Ensure float type
     else:
-        item_data_for_form['markup_percentage_pharmacy'] = ""
+        item_data_for_form['markup_percentage_pharmacy'] = 0.0 # Default to float 0.0
+
+    return render_template('add_edit_inventory.html',
+                           title=f'Edit Inventory Item: {item_to_edit.product_name}',
+                           item=item_data_for_form, # Pass the prepared dictionary
+                           business_type=business_type,
+                           user_role=session.get('role'),
+                           current_year=datetime.now().year)
 
 
-    return render_template('add_edit_inventory.html', title=f'Edit Inventory Item: {item_to_edit.product_name}', item=item_data_for_form, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year)
 @app.route('/inventory/delete/<item_id>')
 def delete_inventory_item(item_id):
     # ACCESS CONTROL: Allows admin role
@@ -2726,6 +3109,8 @@ def delete_inventory_item(item_id):
     return redirect(url_for('inventory'))
 
 # --- Sales Records Management ---
+# ... (existing imports, app initialization, and other parts of app.py) ...
+
 
 @app.route('/sales')
 @login_required # Ensure this decorator is present for access control
@@ -2738,111 +3123,134 @@ def sales():
     business_id = get_current_business_id()
     search_query = request.args.get('search', '').strip()
 
-    sales_records_query = SaleRecord.query.filter_by(business_id=business_id)
+    print(f"DEBUG: Sales route - Business ID: {business_id}")
+    print(f"DEBUG: Sales route - Search Query: '{search_query}'")
 
+    sales_records_query = SalesRecord.query.filter_by(business_id=business_id)
+
+    # Initialize current_filters dictionary to be passed to the template
+    current_filters = {
+        'search': search_query,
+        'start_date': request.args.get('start_date'),
+        'end_date': request.args.get('end_date')
+        # Add other filter fields here if you uncomment them in sales.html
+    }
+
+    # Apply filters based on direct columns
     if search_query:
-        # Search by product name, customer phone, sales person name, or transaction ID
         sales_records_query = sales_records_query.filter(
-            SaleRecord.product_name.ilike(f'%{search_query}%') |
-            SaleRecord.customer_phone.ilike(f'%{search_query}%') |
-            SaleRecord.sales_person_name.ilike(f'%{search_query}%') |
-            SaleRecord.transaction_id.ilike(f'%{search_query}%')
+            (SalesRecord.customer_phone.ilike(f'%{search_query}%')) |
+            (SalesRecord.sales_person_name.ilike(f'%{search_query}%')) |
+            (SalesRecord.receipt_number.ilike(f'%{search_query}%'))
         )
 
-    sales_records = sales_records_query.order_by(SaleRecord.sale_date.desc()).all()
+    # Filter by date ranges using 'transaction_date'
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            sales_records_query = sales_records_query.filter(SalesRecord.transaction_date >= start_date)
+            print(f"DEBUG: Sales route - Applying start_date filter: {start_date}")
+        except ValueError:
+            flash('Invalid start date format.', 'warning')
+            print(f"DEBUG: Sales route - Invalid start_date format: {start_date_str}")
+            # If there's an error, we still need to render the page with current_filters
+            sales_records = sales_records_query.order_by(SalesRecord.transaction_date.desc()).all() # Fetch with current valid filters
+            # Proceed to process records and render template at the end
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            sales_records_query = sales_records_query.filter(SalesRecord.transaction_date <= end_date + timedelta(days=1) - timedelta(microseconds=1))
+            print(f"DEBUG: Sales route - Applying end_date filter: {end_date}")
+        except ValueError:
+            flash('Invalid end date format.', 'warning')
+            print(f"DEBUG: Sales route - Invalid end_date format: {end_date_str}")
+            # If there's an error, we still need to render the page with current_filters
+            sales_records = sales_records_query.order_by(SalesRecord.transaction_date.desc()).all() # Fetch with current valid filters
+            # Proceed to process records and render template at the end
+
+
+    # Order by 'transaction_date' descending for most recent sales first
+    sales_records = sales_records_query.order_by(SalesRecord.transaction_date.desc()).all()
     
+    print(f"DEBUG: Sales route - Found {len(sales_records)} sales records after filtering.")
+
     transactions = {}
     today = date.today() # Get today's date for expiry checks
 
     for sale in sales_records:
-        transaction_id = sale.transaction_id if sale.transaction_id else 'N/A'
+        transaction_id = sale.receipt_number if sale.receipt_number else str(sale.id) # Use receipt_number or ID
         
-        # Fetch the associated InventoryItem to get expiry date
-        product_item = InventoryItem.query.filter_by(id=sale.product_id, business_id=business_id).first()
-        
-        # Determine expiry status for the sale item
-        sale_item_expires_soon = False
-        sale_item_expiry_date = None
-        if product_item and product_item.expiry_date:
-            sale_item_expiry_date = product_item.expiry_date
-            time_to_expiry = product_item.expiry_date - today
-            if time_to_expiry.days <= 180 and time_to_expiry.days >= 0:
-                sale_item_expires_soon = True
-            elif time_to_expiry.days < 0:
-                sale_item_expires_soon = 'Expired'
+        items_sold_data = sale.get_items_sold() # Get the list of items from the JSON column
+        print(f"DEBUG: Processing SalesRecord {sale.id} (Receipt: {transaction_id}) with {len(items_sold_data)} items.")
 
-        # Augment the sale record with expiry info and ensure all fields are JSON-serializable
-        sale_data = {
-            'id': str(sale.id),
-            'product_id': str(sale.product_id),
-            'product_name': str(sale.product_name),
-            'quantity_sold': float(sale.quantity_sold), # Convert Numeric to float
-            'sale_unit_type': str(sale.sale_unit_type),
-            'price_at_time_per_unit_sold': float(sale.price_at_time_per_unit_sold), # Convert Numeric to float
-            'total_amount': float(sale.total_amount), # Convert Numeric to float
-            'sale_date': sale.sale_date.isoformat(), # Convert datetime to ISO 8601 string
-            'customer_phone': str(sale.customer_phone) if sale.customer_phone else None,
-            'sales_person_name': str(sale.sales_person_name) if sale.sales_person_name else None,
-            'reference_number': str(sale.reference_number) if hasattr(sale, 'reference_number') and sale.reference_number else None, # Ensure reference_number exists and is string
-            'transaction_id': str(sale.transaction_id) if sale.transaction_id else 'N/A',
-            'expiry_date': sale_item_expiry_date.isoformat() if sale_item_expiry_date else None, # Convert date to ISO 8601 string
-            'expires_soon': sale_item_expires_soon # This is already boolean or string 'Expired'
-        }
+        sale_items_for_transaction = []
+        for item_data in items_sold_data:
+            # Each item_data is a dictionary from the JSON array
+            product_name = item_data.get('product_name', "Unknown Product")
+            product_id = item_data.get('product_id') # Get product_id from the item_data dictionary
+
+            # Fetch the associated InventoryItem to get expiry date if needed
+            product_item = None
+            if product_id:
+                product_item = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
+            
+            sale_item_expires_soon = False
+            sale_item_expiry_date = None
+            if product_item and product_item.expiry_date:
+                sale_item_expiry_date = product_item.expiry_date
+                time_to_expiry = product_item.expiry_date - today
+                if time_to_expiry.days <= 180 and time_to_expiry.days >= 0:
+                    sale_item_expires_soon = True
+                elif time_to_expiry.days < 0:
+                    sale_item_expires_soon = 'Expired'
+
+            # Augment the sale item data
+            sale_items_for_transaction.append({
+                'product_id': str(product_id) if product_id else None,
+                'product_name': str(product_name),
+                'quantity_sold': float(item_data.get('quantity_sold', 0.0)),
+                'sale_unit_type': str(item_data.get('sale_unit_type', 'pack')),
+                'price_at_time_per_unit_sold': float(item_data.get('price_at_time_per_unit_sold', 0.0)),
+                'item_total_amount': float(item_data.get('item_total_amount', 0.0)),
+                'expiry_date': sale_item_expiry_date.isoformat() if sale_item_expiry_date else None,
+                'expires_soon': sale_item_expires_soon
+            })
 
         if transaction_id not in transactions:
-            transactions[transaction_id] = {
-                'id': str(transaction_id),
-                'sale_date': sale.sale_date.isoformat(), # Convert datetime to ISO 8601 string
-                'customer_phone': str(sale.customer_phone) if sale.customer_phone else None,
-                'sales_person_name': str(sale.sales_person_name) if sale.sales_person_name else None,
-                'total_amount': 0.0,
-                'items': [],
-                'reference_number': str(sale.reference_number) if hasattr(sale, 'reference_number') and sale.reference_number else None
-            }
-        transactions[transaction_id]['items'].append(sale_data)
-        transactions[transaction_id]['total_amount'] += float(sale.total_amount) # Ensure addition is with float
+                transactions[transaction_id] = {
+                    'id': str(sale.id), # Original SalesRecord ID
+                    'sale_date': sale.transaction_date.isoformat() if sale.transaction_date else None, 
+                    'customer_phone': str(sale.customer_phone) if sale.customer_phone else None,
+                    'sales_person_name': str(sale.sales_person_name) if sale.sales_person_name else None,
+                    'grand_total_amount': float(sale.grand_total_amount or 0.0), 
+                    'items': sale_items_for_transaction,
+                    'reference_number': str(getattr(sale, 'reference_number', None)),
+                    'receipt_number': transaction_id # Add receipt_number here as well for direct use
+                }
 
-    sorted_transactions = sorted(list(transactions.values()), 
-                                 key=lambda x: datetime.fromisoformat(x['sale_date']), # Use fromisoformat for sorting
-                                 reverse=True)
+    # Ensure sale_date is not None before using it for sorting
+    sorted_transactions = sorted(
+        list(transactions.values()), 
+        key=lambda x: datetime.fromisoformat(x['sale_date']) if x['sale_date'] else datetime.min,
+        reverse=True
+    )
     
-    # Calculate total for currently displayed sales
-    total_displayed_sales = sum(t['total_amount'] for t in sorted_transactions)
-    for transaction in transactions:
-        if 'items' in transaction:
-            for item in transaction['items']:
-                # Convert string dates to datetime objects
-                if 'expiry_date' in item:
-                    if isinstance(item['expiry_date'], str):
-                        try:
-                            # Convert string to datetime object
-                            item['expiry_date'] = datetime.strptime(
-                                item['expiry_date'], 
-                                '%Y-%m-%d'  # Match your date format
-                            )
-                        except (ValueError, TypeError):
-                            # Handle invalid/empty dates
-                            item['expiry_date'] = None
-                    # Ensure existing datetimes are timezone-naive
-                    elif isinstance(item['expiry_date'], datetime):
-                        # Remove timezone info if present
-                        if item['expiry_date'].tzinfo is not None:
-                            item['expiry_date'] = item['expiry_date'].replace(tzinfo=None)
-    
-    return render_template('sales_list.html', 
+    # Calculate total for currently displayed sales (using grand_total_amount from each record)
+    total_displayed_sales = sum(t['grand_total_amount'] for t in sorted_transactions)
+    print(f"DEBUG: Total displayed sales: GH₵{total_displayed_sales:.2f}")
+
+    return render_template('sales.html',
                            transactions=sorted_transactions, 
                            user_role=session.get('role'), 
                            business_type=session.get('business_type'), 
                            search_query=search_query, 
                            total_displayed_sales=total_displayed_sales, 
-                           current_year=datetime.now().year) # Pass current_year
-
-
-# app.py
-
-# ... (Existing imports, Flask app setup, DB_TYPE configuration, models, etc.) ...
-
-# app.py
+                           current_year=datetime.now().year,
+                           current_filters=current_filters # Pass the dictionary consistently
+    )
 
 @app.route('/sales/add', methods=['GET', 'POST'])
 @login_required
@@ -2909,7 +3317,7 @@ def add_sale():
             'email': str(raw_pharmacy_info.get('email', 'N/A')),
             'contact': str(raw_pharmacy_info.get('contact', 'N/A'))
         }
-    else:
+    else: # Fallback to database query if session info is not a dict
         business_details = Business.query.filter_by(id=business_id).first()
         if business_details:
             pharmacy_info = {
@@ -2920,14 +3328,14 @@ def add_sale():
                 'email': str(business_details.email) if hasattr(business_details, 'email') and business_details.email is not None else 'N/A',
                 'contact': str(business_details.contact)
             }
-        else:
+        else: # Default generic info if no business details found
             pharmacy_info = {
                 'name': "Your Enterprise Name",
-                'address': "Your Pharmacy Address",
-                'location': "Your Pharmacy Location",
-                'phone': "Your Pharmacy Contact",
+                'address': "Your Enterprise Address",
+                'location': "Your Enterprise Location",
+                'phone': "Your Enterprise Contact",
                 'email': 'info@example.com',
-                'contact': "Your Pharmacy Contact"
+                'contact': "Your Enterprise Contact"
             }
 
     def clean_cart_items_for_template(raw_cart_items):
@@ -2949,21 +3357,26 @@ def add_sale():
     sale_for_template_items = [] 
     customer_phone_for_template = ''
     sales_person_name_for_template = session.get('username', 'N/A') 
-    print_ready = request.args.get('print_ready', 'false').lower() == 'true'
+    
+    # Receipt related session variables, cleared after display
     last_transaction_details = session.pop('last_transaction_details', [])
     last_transaction_grand_total = session.pop('last_transaction_grand_total', 0.0)
     last_transaction_id = session.pop('last_transaction_id', '')
     last_transaction_customer_phone = session.pop('last_transaction_customer_phone', '')
     last_transaction_sales_person = session.pop('last_transaction_sales_person', '')
     last_transaction_date = session.pop('last_transaction_date', '')
+
+    # This print_ready flag comes from the URL after a successful sale redirect
+    print_ready = request.args.get('print_ready', 'false').lower() == 'true' 
     
-    # Use session.get to prevent the value from being removed.
+    # Use session.get for auto_print to avoid popping it if not needed
     auto_print = session.get('auto_print', False)
-    if DB_TYPE == 'sqlite':
+    if DB_TYPE == 'sqlite': # Example for specific DB type for auto_print
         auto_print = True
 
     if request.method == 'POST':
         customer_phone_for_template = request.form.get('customer_phone', '').strip()
+        send_sms_receipt = 'send_sms_receipt' in request.form
         cart_items_json = request.form.get('cart_items_json')
         
         cart_items = []
@@ -2971,8 +3384,9 @@ def add_sale():
             try:
                 loaded_cart_items = json.loads(cart_items_json)
                 cart_items = clean_cart_items_for_template(loaded_cart_items)
-            except json.JSONDecodeError:
-                flash('Error processing cart data. Please try again.', 'danger')
+            except json.JSONDecodeError as e:
+                flash(f'Error processing cart data: {e}. Please try again.', 'danger')
+                cart_items = [] # Ensure cart_items is empty on error
         
         sale_for_template_items = cart_items
 
@@ -2988,181 +3402,170 @@ def add_sale():
                                 current_year=datetime.now().year,
                                 search_query=search_query,
                                 business_type=business_type,
-                                auto_print=auto_print)
+                                auto_print=auto_print,
+                                # FIX: Pass these variables consistently
+                                last_transaction_details=last_transaction_details,
+                                last_transaction_grand_total=last_transaction_grand_total,
+                                last_transaction_id=last_transaction_id,
+                                last_transaction_customer_phone=last_transaction_customer_phone,
+                                last_transaction_sales_person=last_transaction_sales_person,
+                                last_transaction_date=last_transaction_date)
 
         total_grand_amount = 0.0
-        recorded_sale_details = []
-
+        recorded_sale_details = [] # This will be stored in items_sold_json
+        
+        # Validate stock and calculate total
+        errors = []
         for item_data in cart_items:
-            product_id = item_data['product_id']
-            quantity_sold = item_data['quantity_sold']
+            product_id = item_data.get('product_id')
+            quantity_sold = float(item_data.get('quantity_sold', 0.0))
+            price_at_time_per_unit_sold = float(item_data.get('price_at_time_per_unit_sold', 0.0))
+            item_total_amount = float(item_data.get('item_total_amount', 0.0))
+            sale_unit_type = item_data.get('sale_unit_type', 'pack')
+            product_name = item_data.get('product_name', 'Unknown Product')
+
+            if not product_id:
+                errors.append(f"Invalid product selected for an item. Please select a product from the dropdown.")
+                continue
+            if quantity_sold <= 0:
+                errors.append(f"Quantity for '{product_name}' must be greater than zero.")
+                continue
+
             product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
+
             if not product:
-                flash(f'Product with ID {product_id} not found.', 'danger')
-                return render_template('add_edit_sale.html',
-                                        title='Add Sale Record',
-                                        inventory_items=serialized_inventory_items,
-                                        sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
-                                        user_role=session.get('role'),
-                                        pharmacy_info=pharmacy_info,
-                                        print_ready=False,
-                                        current_year=datetime.now().year,
-                                        search_query=search_query,
-                                        business_type=business_type,
-                                        auto_print=auto_print)
+                errors.append(f"Product '{product_name}' (ID: {product_id}) not found in inventory.")
+                continue
 
-            quantity_for_stock_check = quantity_sold
-            if item_data['sale_unit_type'] == 'pack':
-                quantity_for_stock_check = quantity_sold * product.number_of_tabs
-
-            if product.current_stock < quantity_for_stock_check:
-                flash(f'Insufficient stock for {product.product_name}. Available: {product.current_stock:.2f} units. Tried to sell: {quantity_for_stock_check:.2f} units.', 'danger')
-                return render_template('add_edit_sale.html',
-                                        title='Add Sale Record',
-                                        inventory_items=serialized_inventory_items,
-                                        sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
-                                        user_role=session.get('role'),
-                                        pharmacy_info=pharmacy_info,
-                                        print_ready=False,
-                                        current_year=datetime.now().year,
-                                        search_query=search_query,
-                                        business_type=business_type,
-                                        auto_print=auto_print)
-
-        transaction_id = str(uuid.uuid4())
-        sale_date = datetime.now()
-        for item_data in cart_items:
-            product_id = item_data['product_id']
-            quantity_sold = item_data['quantity_sold']
-            sale_unit_type = item_data['sale_unit_type']
-            price_at_time_per_unit_sold = item_data['price_at_time_per_unit_sold']
-            item_total_amount = item_data['item_total_amount']
-
-            product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
-            
-            quantity_to_deduct = quantity_sold
+            # Convert quantity sold to base units for stock check
+            num_tabs_per_pack = float(product.number_of_tabs or 1.0)
             if sale_unit_type == 'pack':
-                quantity_to_deduct = quantity_sold * product.number_of_tabs
+                quantity_in_base_units = quantity_sold * num_tabs_per_pack
+            elif sale_unit_type == 'piece' or sale_unit_type == 'tab':
+                quantity_in_base_units = quantity_sold # quantity_sold is already in base units
+            else: # Fallback
+                quantity_in_base_units = quantity_sold * num_tabs_per_pack 
+            
+            # Check stock
+            if quantity_in_base_units > (product.current_stock or 0.0):
+                errors.append(f"Insufficient stock for '{product.product_name}'. Available: {product.current_stock or 0.0} units. Tried to sell: {quantity_in_base_units:.2f} units.")
+                continue
 
-            product.current_stock -= quantity_to_deduct
-            product.last_updated = datetime.now()
-
-            new_sale = SaleRecord(
-                id=str(uuid.uuid4()),
-                business_id=business_id,
-                product_id=product.id,
-                product_name=product.product_name,
-                quantity_sold=quantity_sold,
-                sale_unit_type=sale_unit_type,
-                price_at_time_per_unit_sold=price_at_time_per_unit_sold,
-                total_amount=item_total_amount,
-                sale_date=sale_date,
-                customer_phone=customer_phone_for_template,
-                sales_person_name=sales_person_name_for_template,
-                transaction_id=transaction_id,
-                synced_to_remote=False
-            )
-            db.session.add(new_sale)
-            total_grand_amount += item_total_amount
+            # All good, add to recorded sale details and update total
             recorded_sale_details.append({
+                'product_id': str(product.id),
                 'product_name': product.product_name,
                 'quantity_sold': quantity_sold,
                 'sale_unit_type': sale_unit_type,
                 'price_at_time_per_unit_sold': price_at_time_per_unit_sold,
-                'total_amount': item_total_amount
+                'item_total_amount': item_total_amount,
+                # Add any other relevant details for the receipt
             })
+            total_grand_amount += item_total_amount
 
-        db.session.commit()
-        flash('Sale recorded successfully!', 'success')
+            # Update inventory stock
+            product.current_stock -= quantity_in_base_units # Decrement stock in base units
+            db.session.add(product) # Mark product for update
 
-        session['last_transaction_details'] = recorded_sale_details
-        session['last_transaction_grand_total'] = total_grand_amount
-        session['last_transaction_id'] = transaction_id
-        session['last_transaction_customer_phone'] = customer_phone_for_template
-        session['last_transaction_sales_person'] = sales_person_name_for_template
-        session['last_transaction_date'] = sale_date.strftime('%Y-%m-%d %H:%M:%S')
-        session['auto_print'] = auto_print
+        if errors:
+            for error in errors:
+                flash(error, 'danger')
+            db.session.rollback() # Rollback any partial changes
+            return render_template('add_edit_sale.html',
+                                title='Add Sale Record',
+                                inventory_items=serialized_inventory_items,
+                                sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                                user_role=session.get('role'),
+                                pharmacy_info=pharmacy_info,
+                                print_ready=False,
+                                current_year=datetime.now().year,
+                                search_query=search_query,
+                                business_type=business_type,
+                                auto_print=auto_print,
+                                # FIX: Pass these variables consistently
+                                last_transaction_details=last_transaction_details,
+                                last_transaction_grand_total=last_transaction_grand_total,
+                                last_transaction_id=last_transaction_id,
+                                last_transaction_customer_phone=last_transaction_customer_phone,
+                                last_transaction_sales_person=last_transaction_sales_person,
+                                last_transaction_date=last_transaction_date)
 
-        send_sms = 'send_sms_receipt' in request.form
-        if send_sms and customer_phone_for_template:
-            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-            
-            sms_message = (
-                f"{business_name_for_sms} Sales Receipt:\n"
-                f"Transaction ID: {transaction_id[:8].upper()}\n"
-                f"Date: {sale_date.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Total Amount: GH₵{total_grand_amount:.2f}\n"
-                f"Items: " + ", ".join([f"{item['product_name']} ({item['quantity_sold']} {item['sale_unit_type']})" for item in recorded_sale_details]) + "\n"
-                f"Sales Person: {sales_person_name_for_template}\n\n"
-                f"Thank you for your purchase!\n"
-                f"From: {business_name_for_sms}"
+        try:
+            # Generate a unique receipt number
+            current_time_str = datetime.now().strftime('%Y%m%d%H%M%S')
+            random_suffix = uuid.uuid4().hex[:6].upper() # Use first 6 chars of UUID
+            receipt_num = f"RCPT-{current_time_str}-{random_suffix}"
+
+            # CORRECTED: Only pass arguments that are direct columns of SalesRecord
+            new_sale = SalesRecord(
+                business_id=business_id,
+                transaction_date=datetime.now(),
+                customer_phone=customer_phone_for_template,
+                sales_person_name=session.get('username'), # Use the logged-in username
+                grand_total_amount=total_grand_amount,
+                payment_method='Cash', # Default or get from form if you add a payment method field
+                receipt_number=receipt_num,
             )
+            new_sale.set_items_sold(recorded_sale_details) # Set the JSON data after object creation
+            db.session.add(new_sale)
+            db.session.commit()
+
+            flash('Sale recorded successfully!', 'success')
             
-            if check_network_online():
-                try:
-                    sms_payload = {
-                        'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone_for_template,
-                        'from': ARKESEL_SENDER_ID, 'sms': sms_message
-                    }
-                    sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                    sms_response.raise_for_status()
-                    sms_result = sms_response.json()
+            # Store details in session for receipt printing on redirect
+            session['last_transaction_details'] = recorded_sale_details
+            session['last_transaction_grand_total'] = total_grand_amount
+            session['last_transaction_id'] = receipt_num
+            session['last_transaction_customer_phone'] = customer_phone_for_template
+            session['last_transaction_sales_person'] = session.get('username')
+            session['last_transaction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                    if sms_result.get('status') == 'success':
-                        flash(f'SMS receipt sent to customer {customer_phone_for_template} successfully!', 'success')
-                    else:
-                        error_message = sms_result.get('message', 'Unknown error from SMS provider.')
-                        flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
-                except requests.exceptions.HTTPError as http_err:
-                    flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
-                except requests.exceptions.ConnectionError as conn_err:
-                    flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
-                except requests.exceptions.Timeout as timeout_err:
-                    flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
-                except requests.exceptions.RequestException as req_err:
-                    flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
-                except json.JSONDecodeError:
-                    flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
-            else:
-                flash("SMS receipt not sent: You are offline.", 'warning')
+            # Redirect to the same page with print_ready flag
+            return redirect(url_for('add_sale', print_ready=True))
 
-        elif send_sms and not customer_phone_for_template:
-            flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'An error occurred while recording the sale: {e}', 'danger')
+            print(f"ERROR during sale recording: {e}") # Log the full error
+            # Re-render the template with current form data and error
+            return render_template('add_edit_sale.html',
+                                title='Add Sale Record',
+                                inventory_items=serialized_inventory_items,
+                                sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                                user_role=session.get('role'),
+                                pharmacy_info=pharmacy_info,
+                                print_ready=False,
+                                current_year=datetime.now().year,
+                                search_query=search_query,
+                                business_type=business_type,
+                                auto_print=auto_print,
+                                # FIX: Pass these variables consistently
+                                last_transaction_details=last_transaction_details,
+                                last_transaction_grand_total=last_transaction_grand_total,
+                                last_transaction_id=last_transaction_id,
+                                last_transaction_customer_phone=last_transaction_customer_phone,
+                                last_transaction_sales_person=last_transaction_sales_person,
+                                last_transaction_date=last_transaction_date)
 
-        return redirect(url_for('add_sale', print_ready='true'))
-    
-    if print_ready:
-        sale_for_template_items = []
-    else:
-        sale_for_template_items = [] 
+    # GET request
+    return render_template('add_edit_sale.html',
+                            title='Add Sale Record',
+                            inventory_items=serialized_inventory_items,
+                            sale={'customer_phone': customer_phone_for_template, 'sales_person_name': sales_person_name_for_template, 'items': sale_for_template_items},
+                            user_role=session.get('role'),
+                            pharmacy_info=pharmacy_info,
+                            print_ready=print_ready, # Pass print_ready for initial GET after redirect
+                            last_transaction_details=last_transaction_details,
+                            last_transaction_grand_total=last_transaction_grand_total,
+                            last_transaction_id=last_transaction_id,
+                            last_transaction_customer_phone=last_transaction_customer_phone,
+                            last_transaction_sales_person=last_transaction_sales_person,
+                            last_transaction_date=last_transaction_date,
+                            current_year=datetime.now().year,
+                            search_query=search_query,
+                            business_type=business_type,
+                            auto_print=auto_print)
 
-    sale_final_context = {
-        'sales_person_name': sales_person_name_for_template,
-        'customer_phone': customer_phone_for_template,
-        'items': sale_for_template_items
-    }
-
-    try:
-        return render_template('add_edit_sale.html', 
-                               title='Add Sale Record', 
-                               inventory_items=serialized_inventory_items,
-                               sale=sale_final_context,
-                               user_role=session.get('role'),
-                               pharmacy_info=pharmacy_info,
-                               print_ready=print_ready,
-                               auto_print=auto_print,
-                               last_transaction_details=last_transaction_details,
-                               last_transaction_grand_total=last_transaction_grand_total,
-                               last_transaction_id=last_transaction_id,
-                               last_transaction_customer_phone=last_transaction_customer_phone,
-                               last_transaction_sales_person=last_transaction_sales_person,
-                               last_transaction_date=last_transaction_date,
-                               current_year=datetime.now().year,
-                               search_query=search_query,
-                               business_type=business_type)
-    except Exception as e:
-        print(f"ERROR: Exception caught during final render_template (GET): {e}")
-        raise
 @app.route('/sales/edit_transaction/<transaction_id>', methods=['GET', 'POST'])
 def edit_sale_transaction(transaction_id): # Note the parameter name change
     # ACCESS CONTROL: Allows admin and sales roles
@@ -3172,7 +3575,7 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
     
     business_id = get_current_business_id()
     # Fetch all sale records for this transaction ID
-    sales_in_transaction_to_edit = SaleRecord.query.filter_by(
+    sales_in_transaction_to_edit = SalesRecord.query.filter_by(
         transaction_id=transaction_id, # Use transaction_id here
         business_id=business_id
     ).all()
@@ -3479,45 +3882,113 @@ def add_return():
 # --- Reports Route ---
 
 @app.route('/reports')
+@login_required
 def reports():
-    # ACCESS CONTROL: Allows admin, sales, and viewer roles
-    if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
-        flash('You do not have permission to view reports or no business selected.', 'danger')
+    # ACCESS CONTROL: Only admin can view reports
+    if session.get('role') != 'admin':
+        flash('You do not have permission to view reports.', 'danger')
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
+    if not business_id:
+        flash('No business selected. Please select a business to view reports.', 'warning')
+        return redirect(url_for('dashboard'))
+
     business_type = get_current_business_type()
 
-    # Overall Business Metrics
-    total_purchase_value = db.session.query(db.func.sum(InventoryItem.purchase_price * InventoryItem.current_stock)).filter(
-        InventoryItem.business_id == business_id, InventoryItem.is_active == True
-    ).scalar() or 0.0
-
-    total_potential_sale_value = db.session.query(db.func.sum(InventoryItem.sale_price * InventoryItem.current_stock)).filter(
-        InventoryItem.business_id == business_id, InventoryItem.is_active == True
-    ).scalar() or 0.0
+    # Get filters from request arguments for sales-related reports
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
     
-    total_potential_gross_profit = total_potential_sale_value - total_purchase_value
-    overall_stock_profit_margin = (total_potential_gross_profit / total_potential_sale_value) * 100 if total_potential_sale_value > 0 else 0.0
+    # Initialize date filters for sales queries
+    min_date = datetime.min
+    max_date = datetime.max
+    
+    # Parse date filters, handling potential errors
+    if start_date_str:
+        try:
+            min_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        except ValueError:
+            flash('Invalid start date format. Using default.', 'warning')
+            start_date_str = '' # Clear invalid input
+    if end_date_str:
+        try:
+            # Add one day to end_date and subtract a microsecond to include the whole day
+            max_date = datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1) - timedelta(microseconds=1)
+        except ValueError:
+            flash('Invalid end date format. Using default.', 'warning')
+            end_date_str = '' # Clear invalid input
 
-    total_actual_sales_revenue = db.session.query(db.func.sum(SaleRecord.total_amount)).filter(
-        SaleRecord.business_id == business_id
+    # Base query for SalesRecord within the business and date range
+    sales_query = SalesRecord.query.filter(
+        SalesRecord.business_id == business_id,
+        SalesRecord.transaction_date >= min_date,
+        SalesRecord.transaction_date <= max_date
+    )
+
+    # Initialize report data
+    report_data = {}
+    
+    # --- Calculate Total Cost of Current Stock ---
+    total_cost_of_stock = 0.0
+    # --- Calculate Total Sale Value of Current Stock ---
+    total_sale_value_of_stock = 0.0
+
+    inventory_items_for_stock_val = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
+    for item in inventory_items_for_stock_val:
+        current_stock = item.current_stock or 0.0
+        number_of_tabs = item.number_of_tabs or 1.0 # Ensure it's not zero for division
+
+        # Calculate cost value
+        cost_per_base_unit = float(item.purchase_price / number_of_tabs) if number_of_tabs > 0 else 0.0
+        total_cost_of_stock += current_stock * cost_per_base_unit
+
+        # Calculate sale value (potential revenue from current stock)
+        item_type = item.item_type
+        sale_price_per_pack = item.sale_price or 0.0
+        fixed_sale_price = item.fixed_sale_price or 0.0
+        unit_price_per_tab = item.unit_price_per_tab or 0.0
+        
+        sale_value_per_base_unit = 0.0
+        if item.is_fixed_price:
+            sale_value_per_base_unit = float(fixed_sale_price / number_of_tabs) if number_of_tabs > 0 else 0.0
+        else:
+            if item_type == 'Pharmacy': 
+                # Pharmacy items price based on markup on purchase price
+                sale_value_per_base_unit = float(item.purchase_price * (1 + (item.markup_percentage_pharmacy or 0) / 100) / number_of_tabs) if number_of_tabs > 0 else 0.0
+            elif item_type == 'Hardware Material': 
+                # Hardware might sell by piece, so unit_price_per_tab (which is per-piece) is relevant
+                sale_value_per_base_unit = unit_price_per_tab 
+            else: 
+                # Default or other types, consider sale_price for packs, convert to per base unit
+                sale_value_per_base_unit = float(sale_price_per_pack / number_of_tabs) if number_of_tabs > 0 else 0.0
+        
+        total_sale_value_of_stock += current_stock * sale_value_per_base_unit
+
+    total_potential_gross_profit = total_sale_value_of_stock - total_cost_of_stock
+    overall_stock_profit_margin = (total_potential_gross_profit / total_sale_value_of_stock) * 100 if total_sale_value_of_stock > 0 else 0.0
+
+    # --- Total Actual Sales Revenue (overall for the business) ---
+    # Using grand_total_amount as the correct column
+    total_sales_amount = db.session.query(db.func.sum(SalesRecord.grand_total_amount)).filter( # RENAMED THIS VARIABLE
+        SalesRecord.business_id == business_id
     ).scalar() or 0.0
 
-    # Sales by Sales Person (Last 30 days)
+    # --- Sales by Sales Person (Last 30 days) ---
     thirty_days_ago = datetime.now() - timedelta(days=30)
     sales_by_person = db.session.query(
-        SaleRecord.sales_person_name,
-        db.func.sum(SaleRecord.total_amount)
+        SalesRecord.sales_person_name,
+        db.func.sum(SalesRecord.grand_total_amount) # Use grand_total_amount
     ).filter(
-        SaleRecord.business_id == business_id,
-        SaleRecord.sale_date >= thirty_days_ago
-    ).group_by(SaleRecord.sales_person_name).order_by(db.func.sum(SaleRecord.total_amount).desc()).all()
+        SalesRecord.business_id == business_id,
+        SalesRecord.transaction_date >= thirty_days_ago # Use transaction_date
+    ).group_by(SalesRecord.sales_person_name).order_by(db.func.sum(SalesRecord.grand_total_amount).desc()).all()
 
-    # Inventory Stock Summary (all active items)
+
+    # --- Inventory Stock Summary (all active items) ---
     inventory_summary = InventoryItem.query.filter_by(business_id=business_id, is_active=True).order_by(InventoryItem.product_name).all()
 
-    # Pharmacy specific reports
+    # --- Pharmacy specific reports ---
     expired_items = []
     expiring_soon_items = []
     if business_type == 'Pharmacy':
@@ -3539,33 +4010,43 @@ def reports():
             InventoryItem.expiry_date <= three_months_from_now
         ).order_by(InventoryItem.expiry_date).all()
 
-    # Hardware specific reports
+    # --- Hardware specific reports ---
     company_balances = []
     rental_records = [] # Initialize for all business types
     if business_type == 'Hardware':
+        # Assuming Company model exists and has business_id
         company_balances = Company.query.filter_by(business_id=business_id).all()
-        # Also include Rental Records for hardware reports
+        # Assuming RentalRecord model exists and has business_id and date_recorded
         rental_records = RentalRecord.query.filter_by(business_id=business_id).order_by(RentalRecord.date_recorded.desc()).all()
 
 
     return render_template('reports.html',
                            user_role=session.get('role'),
-                           total_purchase_value=total_purchase_value,
-                           total_potential_sale_value=total_potential_sale_value,
+                           business_type=business_type,
+                           
+                           # Overall Stock Metrics
+                           total_cost_of_stock=total_cost_of_stock,
+                           total_sale_value_of_stock=total_sale_value_of_stock,
                            total_potential_gross_profit=total_potential_gross_profit,
                            overall_stock_profit_margin=overall_stock_profit_margin,
-                           total_actual_sales_revenue=total_actual_sales_revenue,
+                           
+                           # Sales Metrics
+                           total_sales_amount=total_sales_amount, # NOW MATCHES TEMPLATE EXPECTATION
                            sales_by_person=sales_by_person,
+                           
+                           # Inventory Details
                            inventory_summary=inventory_summary,
-                           business_type=business_type,
                            expired_items=expired_items,
                            expiring_soon_items=expiring_soon_items,
+                           
+                           # Hardware Specific (if applicable)
                            company_balances=company_balances,
                            rental_records=rental_records,
-                           total_cost_of_stock=total_purchase_value, # Passed as total_cost_of_stock
-                           total_sale_value_of_stock=total_potential_sale_value, # Passed as total_sale_value_of_stock
-                           total_sales_amount=total_actual_sales_revenue,
-                           current_year=datetime.now().year)
+
+                           current_year=datetime.now().year,
+                           start_date=start_date_str, # Passed for filter persistence
+                           end_date=end_date_str      # Passed for filter persistence
+    )
 
 @app.route('/send_daily_sales_sms_report')
 def send_daily_sales_sms_report():
@@ -3632,8 +4113,9 @@ def send_daily_sales_sms_report():
 
 # --- New Hardware Business Routes ---
 
+
 @app.route('/companies')
-# @login_required # Uncomment this if you have a login_required decorator
+@login_required # Make sure this decorator is active if you need login protection
 def companies():
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
@@ -3653,7 +4135,7 @@ def companies():
         companies_query = companies_query.filter(
             Company.name.ilike(f'%{search_query}%') |
             Company.contact_person.ilike(f'%{search_query}%') |
-            Company.phone.ilike(f'%{search_query}%') |
+            Company.phone_number.ilike(f'%{search_query}%') | # Changed from Company.phone to Company.phone_number
             Company.email.ilike(f'%{search_query}%') |
             Company.address.ilike(f'%{search_query}%')
         )
@@ -3665,25 +4147,38 @@ def companies():
     total_debtors_sum = 0.0   # Initialize sum for debtors
 
     for company in companies:
-        # Ensure company.balance is a float, defaulting to 0.0 if None
-        company_balance = float(company.balance) if company.balance is not None else 0.0
+        # Get the balance by calling the method on the Company object
+        # This assumes Company.calculate_current_balance() is correctly defined on the model
+        company_balance = company.calculate_current_balance()
         
         # Calculate total_creditors and total_debtors for each company based on balance
         # A company is a creditor if its balance is negative (we owe them)
         # A company is a debtor if its balance is positive (they owe us)
+        display_creditors = 0.0
+        display_debtors = 0.0
+
         if company_balance < 0:
-            company.display_creditors = abs(company_balance) # Store as positive for display
-            company.display_debtors = 0.0
+            display_creditors = abs(company_balance) # Store as positive for display
             total_creditors_sum += abs(company_balance)
         elif company_balance > 0:
-            company.display_creditors = 0.0
-            company.display_debtors = company_balance
+            display_debtors = company_balance
             total_debtors_sum += company_balance
-        else:
-            company.display_creditors = 0.0
-            company.display_debtors = 0.0
-
-        processed_companies.append(company)
+        
+        # Create a dictionary for the company data to be passed to the template
+        # This prevents directly adding attributes to SQLAlchemy model instances which can be problematic
+        processed_companies.append({
+            'id': company.id,
+            'name': company.name,
+            'contact_person': company.contact_person,
+            'phone_number': company.phone_number, # Ensure this is passed
+            'email': company.email,
+            'address': company.address,
+            'is_active': company.is_active,
+            'date_added': company.date_added,
+            'balance': company_balance, # The actual net balance (can be positive or negative)
+            'display_creditors': display_creditors, # For display purposes
+            'display_debtors': display_debtors     # For display purposes
+        })
 
     return render_template('company_list.html', 
                            companies=processed_companies, 
@@ -3692,8 +4187,6 @@ def companies():
                            current_year=datetime.now().year,
                            total_creditors_sum=total_creditors_sum, # Pass the sum of creditors
                            total_debtors_sum=total_debtors_sum)     # Pass the sum of debtors
-
-
 
 @app.route('/companies/add', methods=['GET', 'POST'])
 def add_company():
@@ -3902,8 +4395,6 @@ def company_transaction(company_id):
 
     last_company_transaction_id = None
     last_company_transaction_details = None
-    # print_ready is no longer passed to this template, it's for the dedicated print route
-
     transactions = [] # Initialize here to ensure it's always defined
 
     if request.method == 'POST':
@@ -3916,67 +4407,50 @@ def company_transaction(company_id):
         new_transaction = CompanyTransaction(
             business_id=business_id,
             company_id=company.id,
-            type=transaction_type,
+            transaction_type=transaction_type, 
             amount=amount,
             description=description,
             recorded_by=recorded_by
         )
         db.session.add(new_transaction)
-
-        if transaction_type == 'Debit':
-            company.balance += amount
-            debtor_record = Debtor.query.filter_by(company_id=company.id, business_id=business_id).first()
-            if not debtor_record:
-                debtor_record = Debtor(company_id=company.id, business_id=business_id, balance=0.0)
-                db.session.add(debtor_record)
-            debtor_record.balance += amount
-        elif transaction_type == 'Credit':
-            company.balance -= amount
-            creditor_record = Creditor.query.filter_by(company_id=company.id, business_id=business_id).first()
-            if not creditor_record:
-                creditor_record = Creditor(company_id=company.id, business_id=business_id, balance=0.0)
-                db.session.add(creditor_record)
-            creditor_record.balance += amount
-            
-        db.session.add(company)
         db.session.commit()
 
-        flash(f'Transaction recorded successfully! Company balance updated to GH₵{company.balance:.2f}', 'success')
+        # Recalculate company balance AFTER the new transaction is committed
+        updated_company_balance = company.calculate_current_balance()
+
+        flash(f'Transaction recorded successfully! Company balance updated to GH₵{updated_company_balance:.2f}', 'success')
 
         last_company_transaction_details = {
             'id': new_transaction.id,
-            'transaction_type': new_transaction.type,
+            'transaction_type': new_transaction.transaction_type, 
             'amount': new_transaction.amount,
             'description': new_transaction.description,
-            'date': new_transaction.date.strftime('%Y-%m-%d %H:%M:%S'),
+            'date': new_transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S'), 
             'recorded_by': new_transaction.recorded_by,
             'company_name': company.name,
             'company_id': company.id,
-            'new_balance': company.balance
+            'new_balance': updated_company_balance 
         }
         session['last_company_transaction_id'] = new_transaction.id
         session['last_company_transaction_details'] = last_company_transaction_details
 
-        if send_sms_receipt and company.phone:
-            message = (f"Dear {company.name}, a {new_transaction.type} transaction of GH₵{new_transaction.amount:.2f} "
-                       f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{company.balance:.2f}. "
+        if send_sms_receipt and company.phone_number: 
+            message = (f"Dear {company.name}, a {new_transaction.transaction_type} transaction of GH₵{new_transaction.amount:.2f} "
+                       f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{updated_company_balance:.2f}. "
                        f"Description: {new_transaction.description or 'N/A'}")
             # Assuming send_sms function exists
-            # sms_success, sms_msg = send_sms(company.phone, message)
+            # sms_success, sms_msg = send_sms(company.phone_number, message) 
             # if sms_success:
-            #     flash(f'SMS receipt sent to {company.phone}.', 'info')
+            #     flash(f'SMS receipt sent to {company.phone_number}.', 'info')
             # else:
             #     flash(f'Failed to send SMS receipt: {sms_msg}', 'warning')
-        elif send_sms_receipt and not company.phone:
+        elif send_sms_receipt and not company.phone_number:
             flash('Cannot send SMS receipt: Company contact number not available.', 'warning')
 
-        # Redirect to the main page, not the print page directly after POST
-        # The print_last_company_transaction_receipt route is for printing after redirect
         return redirect(url_for('company_transaction', company_id=company.id))
 
 
     # --- Logic for GET request and initial page load ---
-    # Base query for transactions
     transactions_query = CompanyTransaction.query.filter_by(
         company_id=company.id,
         business_id=business_id
@@ -3989,14 +4463,14 @@ def company_transaction(company_id):
     if search_query:
         transactions_query = transactions_query.filter(
             (CompanyTransaction.description.ilike(f'%{search_query}%')) |
-            (CompanyTransaction.type.ilike(f'%{search_query}%')) |
+            (CompanyTransaction.transaction_type.ilike(f'%{search_query}%')) | 
             (CompanyTransaction.recorded_by.ilike(f'%{search_query}%'))
         )
 
     if start_date_str:
         try:
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            transactions_query = transactions_query.filter(CompanyTransaction.date >= start_date)
+            transactions_query = transactions_query.filter(CompanyTransaction.transaction_date >= start_date) 
         except ValueError:
             flash('Invalid start date format.', 'danger')
             pass
@@ -4004,28 +4478,39 @@ def company_transaction(company_id):
     if end_date_str:
         try:
             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            transactions_query = transactions_query.filter(CompanyTransaction.date < (end_date + timedelta(days=1)))
+            transactions_query = transactions_query.filter(CompanyTransaction.transaction_date < (end_date + timedelta(days=1))) 
         except ValueError:
             flash('Invalid end date format.', 'danger')
             pass
 
-    transactions = transactions_query.order_by(CompanyTransaction.date.desc()).all()
+    transactions = transactions_query.order_by(CompanyTransaction.transaction_date.desc()).all()
 
-    # --- NEW: Calculate total transactions amount for display on the main page ---
     total_transactions_sum = sum(t.amount for t in transactions)
-    # --- END NEW ---
+    
+    # Calculate the current balance for the company
+    company_current_balance = company.calculate_current_balance()
 
-    return render_template('company_transaction.html',
-                           company=company,
+    # Prepare company data to pass to the template, including the calculated balance
+    company_data_for_template = {
+        'id': company.id,
+        'name': company.name,
+        'contact_person': company.contact_person,
+        'phone_number': company.phone_number,
+        'email': company.email,
+        'address': company.address,
+        'is_active': company.is_active,
+        'date_added': company.date_added,
+        'current_balance': company_current_balance # Pass the calculated balance here
+    }
+
+    return render_template('company_transaction.html', # Template name is company_transactions.html (plural)
+                           company=company_data_for_template, # Pass the dictionary with balance
                            transactions=transactions,
                            search_query=search_query,
                            start_date=start_date_str,
                            end_date=end_date_str,
                            business_info=business_info,
-                           # last_company_transaction_id and last_company_transaction_details
-                           # are only for the dedicated print route now.
-                           # print_ready is also no longer passed to this template.
-                           total_transactions_sum=total_transactions_sum, # NEW: Pass the calculated sum
+                           total_transactions_sum=total_transactions_sum,
                            current_year=datetime.now().year
                            )
 
@@ -4140,6 +4625,7 @@ def send_company_transaction_sms(transaction_id):
         flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
         
     return redirect(url_for('company_transaction', company_id=company.id))
+
 @app.route('/print_company_receipt/<string:transaction_id>')
 @login_required
 def print_company_receipt(transaction_id):
@@ -4147,45 +4633,43 @@ def print_company_receipt(transaction_id):
     Renders a printable receipt for a specific company transaction.
     """
     business_id = get_current_business_id()
+    if not business_id:
+        flash('No business selected.', 'danger')
+        return redirect(url_for('dashboard'))
 
-    transaction = CompanyTransaction.query.filter_by(id=transaction_id, business_id=business_id).first_or_404()
-    company = Company.query.filter_by(id=transaction.company_id, business_id=business_id).first_or_404()
+    transaction = CompanyTransaction.query.filter_by(
+        id=transaction_id,
+        business_id=business_id
+    ).first_or_404()
+
+    company = Company.query.filter_by(
+        id=transaction.company_id,
+        business_id=business_id
+    ).first_or_404()
 
     # Fetch business info for the receipt header/footer
-    business_info = session.get('business_info', {})
-    
-    if not business_info or not business_info.get('name'):
-        business_details = Business.query.filter_by(id=business_id).first()
-        if business_details:
-            business_info = {
-                'name': business_details.name,
-                'address': business_details.address,
-                'location': business_details.location,
-                'phone': business_details.contact,
-                'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
-            }
-        else:
-            business_info = {
-                'name': "Your Enterprise Name", # Replace with actual constant
-                'address': "Your Pharmacy Address", # Replace with actual constant
-                'location': "Your Pharmacy Location", # Replace with actual constant
-                'phone': "Your Pharmacy Contact", # Replace with actual constant
-                'email': 'info@example.com' # Default email
-            }
+    business_details = Business.query.filter_by(id=business_id).first()
+    business_info = {
+        'name': business_details.name if business_details else "Your Enterprise Name",
+        'address': business_details.address if business_details else "Your Address",
+        'location': business_details.location if business_details else "Your Location",
+        'phone': business_details.contact if business_details else "Your Phone",
+        'email': business_details.email if business_details and hasattr(business_details, 'email') else "info@example.com"
+    }
 
     current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # Now access the properties directly from the company object
-    # No need for separate db.session.query for total_creditor_amount/total_debtor_amount here
-    # as they are calculated via @property on the Company model.
+    # The template can now directly access company.calculate_current_balance(),
+    # company.total_creditors_amount, and company.total_debtors_amount as properties.
 
     return render_template('company_receipt_template.html',
                            transaction=transaction,
-                           company=company,
+                           company=company, # Pass the Company object directly
                            business_info=business_info,
                            current_date=current_date,
-                           total_creditor_amount=company.total_creditors_amount, # Use the property
-                           total_debtor_amount=company.total_debtors_amount # Use the property
+                           # No need to explicitly pass total_creditor_amount/total_debtor_amount here,
+                           # as they are now properties on the 'company' object.
+                           # The template can access company.total_creditors_amount directly.
                            )
 
 @app.route('/print_all_company_transactions/<string:company_id>')
@@ -5399,7 +5883,6 @@ with app.app_context():
                     contact="N/A",
                     type="Administration",
                     is_active=True,
-                    last_updated=datetime.utcnow()
                 )
                 db.session.add(super_admin_business)
                 db.session.commit()

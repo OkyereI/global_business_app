@@ -428,8 +428,9 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const searchInput = document.getElementById('search_input');
-            const searchButton = document.getElementById('search_button');
+            // These lines were changed to match the input fields better.
+            const searchInput = document.querySelector('input[name="search"]');
+            const searchButton = document.querySelector('button[type="submit"]');
             const clearButton = document.getElementById('clear_button');
             const salesTableBody = document.getElementById('sales_table_body');
             const totalDisplayedSalesSpan = document.getElementById('total_displayed_sales');
@@ -438,44 +439,57 @@
             function filterSalesRecords() {
                 const searchTerm = searchInput.value.toLowerCase().trim();
                 let totalSales = 0;
-
-                Array.from(salesTableBody.children).forEach(row => {
-                    const searchTerms = row.dataset.searchTerms;
-                    // Ensure we are getting the correct cell for total amount.
-                    // The HTML structure shows total amount in the 6th <td> (index 5)
-                    const totalAmountCell = row.children[5];
-                    if (totalAmountCell) {
-                        const totalAmountText = totalAmountCell.textContent;
-                        const totalAmount = parseFloat(totalAmountText.replace('GH₵', '')) || 0;
-
-                        // Check if the row contains the search term or if search term is empty
-                        // and ensure the row is not a details row
-                        if (!row.id.startsWith('details-') && (searchTerms.includes(searchTerm) || searchTerm === '')) {
+                
+                // If search term is empty, calculate the total from all rows
+                if (searchTerm === '') {
+                    Array.from(salesTableBody.children).forEach(row => {
+                         if (!row.id.startsWith('details-')) {
+                            const totalAmountCell = row.children[4]; // Corrected index for Total Amount
+                            if (totalAmountCell) {
+                                const totalAmountText = totalAmountCell.textContent;
+                                totalSales += parseFloat(totalAmountText.replace('GH₵', '')) || 0;
+                            }
                             row.style.display = '';
-                            totalSales += totalAmount;
-                        } else {
-                            row.style.display = 'none';
+                         }
+                    });
+                } else {
+                    // If there is a search term, filter and calculate total from filtered rows
+                    Array.from(salesTableBody.children).forEach(row => {
+                        const searchTerms = row.dataset.searchTerms;
+                        const totalAmountCell = row.children[4]; // Corrected index for Total Amount
+                        
+                        if (!row.id.startsWith('details-')) {
+                            if (searchTerms && searchTerms.includes(searchTerm)) {
+                                row.style.display = '';
+                                if (totalAmountCell) {
+                                    const totalAmountText = totalAmountCell.textContent;
+                                    totalSales += parseFloat(totalAmountText.replace('GH₵', '')) || 0;
+                                }
+                            } else {
+                                row.style.display = 'none';
+                            }
                         }
-                    } else {
-                        // If it's a details row, hide it always unless explicitly shown by toggle
-                        if (row.id.startsWith('details-')) {
-                            row.style.display = 'none';
-                        }
-                    }
-                });
+                    });
+                }
+
                 totalDisplayedSalesSpan.textContent = `GH₵${totalSales.toFixed(2)}`;
             }
 
             // Event Listeners
-            searchButton.addEventListener('click', filterSalesRecords);
+            searchButton.addEventListener('click', function(event) {
+                event.preventDefault(); // Prevent form from submitting normally
+                filterSalesRecords();
+            });
             searchInput.addEventListener('keyup', function(event) {
                 if (event.key === 'Enter') {
+                    event.preventDefault(); // Prevent form submission
                     filterSalesRecords();
                 }
             });
             clearButton.addEventListener('click', function() {
                 searchInput.value = '';
-                filterSalesRecords(); // Show all records again
+                // Since the form action is GET, this is the best way to clear
+                window.location.href = window.location.origin + window.location.pathname;
             });
 
             // Initial calculation of total displayed sales on page load

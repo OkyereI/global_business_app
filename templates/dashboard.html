@@ -73,8 +73,8 @@
                     </div>
                     <div class="col-sm-6 p-2">
                         <div class="p-3 rounded shadow-sm text-center bg-light">
-                            <p class="small font-weight-medium text-info">Total Users:</p>
-                            <p class="h4 font-weight-bold text-primary">{{ total_users }}</p>
+                            <p class="small font-weight-medium text-info">Total Customers:</p>
+                            <p class="h4 font-weight-bold text-primary">{{ total_customers }}</p>
                         </div>
                     </div>
                 </div>
@@ -84,25 +84,13 @@
                     <div class="col-sm-6 p-2">
                         <div class="p-3 rounded shadow-sm text-center bg-light">
                             <p class="small font-weight-medium text-success">Sales Today:</p>
-                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_today) }}</p>
+                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(total_sales_today) }}</p>
                         </div>
                     </div>
                     <div class="col-sm-6 p-2">
                         <div class="p-3 rounded shadow-sm text-center bg-light">
-                            <p class="small font-weight-medium text-success">Sales This Week:</p>
-                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_this_week) }}</p>
-                        </div>
-                    </div>
-                    <div class="col-sm-6 p-2">
-                        <div class="p-3 rounded shadow-sm text-center bg-light">
-                            <p class="small font-weight-medium text-success">Sales This Month:</p>
-                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_this_month) }}</p>
-                        </div>
-                    </div>
-                    <div class="col-sm-6 p-2">
-                        <div class="p-3 rounded shadow-sm text-center bg-light">
-                            <p class="small font-weight-medium text-success">Sales This Year:</p>
-                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(sales_this_year) }}</p>
+                            <p class="small font-weight-medium text-success">Overall Sales:</p>
+                            <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(total_sales_overall) }}</p>
                         </div>
                     </div>
                 </div>
@@ -127,7 +115,7 @@
         <div id="syncMessage" class="mt-2" style="display: none;"></div>
     </div>
     {% endif %}
-
+    
     {# Low Stock and Expiring Items #}
     <div class="row mb-4">
         <div class="col-lg-6 mb-4">
@@ -137,7 +125,7 @@
                     <ul class="list-group list-group-flush">
                         {% for item in low_stock_items %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
-                                {{ item.product_name }}
+                                {{ item.item_name }}
                                 <span class="badge badge-warning badge-pill">{{ "%.2f" | format(item.current_stock) }}</span>
                             </li>
                         {% endfor %}
@@ -148,21 +136,21 @@
             </div>
         </div>
 
-        {% if business_type in ['Pharmacy', 'Supermarket', 'Provision Store'] %}
+        {% if business_type == 'Pharmacy' %}
         <div class="col-lg-6 mb-4">
             <div class="card p-3">
-                <h3 class="h5 font-weight-semibold text-dark mb-3">Expiring Items (Next 30 Days)</h3>
-                {% if expiring_items %}
+                <h3 class="h5 font-weight-semibold text-dark mb-3">Expiring Items (Next 90 Days)</h3>
+                {% if expiring_soon_items %}
                     <ul class="list-group list-group-flush">
-                        {% for item in expiring_items %}
+                        {% for item in expiring_soon_items %}
                             <li class="list-group-item d-flex justify-content-between align-items-center">
-                                {{ item.product_name }}
-                                <span class="badge badge-danger badge-pill">{{ item.expiry_date.strftime('%Y-%m-%d') }}</span>
+                                {{ item.item_name }}
+                                <span class="badge badge-warning badge-pill">Expires: {{ item.expiry_date.strftime('%Y-%m-%d') }}</span>
                             </li>
                         {% endfor %}
                     </ul>
                 {% else %}
-                    <p class="text-muted">No items expiring soon. All clear! ✨</p>
+                    <p class="text-muted">No items expiring in the next 90 days. All clear! ✨</p>
                 {% endif %}
             </div>
         </div>
@@ -190,53 +178,38 @@
     {% if business_type == 'Hardware' %}
     <div class="card p-3 mb-4">
         <h3 class="h5 font-weight-semibold text-dark mb-3">Hardware Business Metrics</h3>
-        <div class="row no-gutters">
-            <div class="col-sm-4 p-2">
-                <div class="p-3 rounded shadow-sm text-center bg-light">
-                    <p class="small font-weight-medium text-primary">Total Hirable Items:</p>
-                    <p class="h5 font-weight-bold text-primary">{{ business_dashboard_data.total_hirable_items | default(0) }}</p>
-                </div>
-            </div>
-            <div class="col-sm-4 p-2">
-                <div class="p-3 rounded shadow-sm text-center bg-light">
-                    <p class="small font-weight-medium text-warning">Items Currently Rented:</p>
-                    <p class="h5 font-weight-bold text-warning">{{ business_dashboard_data.rented_items | default(0) }}</p>
-                </div>
-            </div>
-            <div class="col-sm-4 p-2">
-                <div class="p-3 rounded shadow-sm text-center bg-light">
-                    <p class="small font-weight-medium text-danger">Overdue Rentals:</p>
-                    <p class="h5 font-weight-bold text-danger">{{ business_dashboard_data.overdue_rentals | default(0) }}</p>
-                </div>
-            </div>
-            <div class="col-sm-6 p-2">
-                <div class="p-3 rounded shadow-sm text-center bg-light">
-                    <p class="small font-weight-medium text-info">Total Companies:</p>
-                    <p class="h5 font-weight-bold text-info">{{ business_dashboard_data.total_companies | default(0) }}</p>
-                </div>
-            </div>
-            <div class="col-sm-6 p-2">
-                <div class="p-3 rounded shadow-sm text-center bg-light">
-                    <p class="small font-weight-medium text-info">Pending Future Orders:</p>
-                    <p class="h5 font-weight-bold text-info">{{ business_dashboard_data.total_future_orders | default(0) }}</p>
-                </div>
-            </div>
-        </div>
+        {% if overdue_rentals %}
+            <p class="text-danger">You have {{ overdue_rentals | length }} overdue rentals!</p>
+            <ul class="list-group list-group-flush">
+                {% for rental in overdue_rentals %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="text-dark">Rental ID: {{ rental.id }}</span>
+                        <span class="badge badge-danger">Due: {{ rental.due_date.strftime('%Y-%m-%d') }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No overdue rentals. All rentals are up to date. 👍</p>
+        {% endif %}
     </div>
     {% endif %}
 
-    {# Recent Activity Card (Placeholder for now) #}
+    {# Recent Activity Card #}
     <div class="card p-3">
         <h3 class="h5 font-weight-semibold text-dark mb-3">Recent Activity</h3>
-        <p class="text-muted mb-3">This section would display a list of recent sales, rentals, or inventory updates.</p>
-        <ul class="list-unstyled text-dark">
-            <li class="mb-2">Sale: Product X, GH₵50.00 (10 mins ago)</li>
-            <li class="mb-2">Inventory Update: Item Y stock adjusted (yesterday)</li>
-            <li class="mb-2">Rental: Tool Z rented by John Doe (2 hours ago)</li>
-            {# You would dynamically populate this list from your backend if 'recent_activity' data is passed #}
-        </ul>
+        {% if recent_activity %}
+            <ul class="list-group list-group-flush">
+                {% for record in recent_activity %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <p class="mb-0">{{ record.sales_person_name }} made a sale for GH₵{{ "%.2f" | format(record.grand_total_amount) }}</p>
+                    <small class="text-muted">{{ record.transaction_date.strftime('%Y-%m-%d %H:%M') }}</small>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No recent activity found.</p>
+        {% endif %}
     </div>
-
 </div>
 {% endblock %}
 
@@ -264,23 +237,18 @@
 
         // Function to display dynamic flash messages on the page
         function displayFlashMessage(category, message) {
-            // Remove any existing dynamic flash messages to avoid clutter
             $('.dynamic-flash-message').remove();
-
             var flashHtml = `
                 <div class="flash-message flash-${category} rounded p-3 mb-3 shadow-sm dynamic-flash-message">
                     ${message}
                 </div>
             `;
-            // Add at the top of the content container, after the welcome alert
-            $('.container.py-4').find('.alert.alert-info').after(flashHtml); 
-            
-            // Optionally, make it disappear after some time
+            $('.container.py-4').find('.alert.alert-info').after(flashHtml);
             setTimeout(function() {
                 $('.dynamic-flash-message').fadeOut('slow', function() {
                     $(this).remove();
                 });
-            }, 5000); // Remove after 5 seconds
+            }, 5000);
         }
 
         // Trigger sync button click handler
@@ -310,7 +278,7 @@
         });
 
         // Initial fetch of sync status when page loads, only if sync card is present
-        if ($('#syncStatusText').length) { // Check if the sync status element exists
+        if ($('#syncStatusText').length) {
             fetchSyncStatus();
         }
 
