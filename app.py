@@ -3582,10 +3582,11 @@ def edit_sale_transaction(transaction_id): # Note the parameter name change
     
     business_id = get_current_business_id()
     # Fetch all sale records for this transaction ID
-    sales_in_transaction_to_edit = SalesRecord.query.filter_by(
-        transaction_id=transaction_id, # Use transaction_id here
-        business_id=business_id
-    ).all()
+    sales_in_transaction = SalesRecord.query.filter_by(
+    receipt_number=transaction_id,
+    business_id=business_id
+).order_by(SalesRecord.transaction_date.asc()).all()
+
 
     if not sales_in_transaction_to_edit:
         flash('Sale transaction not found.', 'danger')
@@ -3764,7 +3765,7 @@ def delete_sale_transaction(transaction_id): # Note the parameter name change
     
     business_id = get_current_business_id()
     # Fetch all sale records for this transaction ID
-    sales_to_delete = SaleRecord.query.filter_by(
+    sales_to_delete = SalesRecord.query.filter_by(
         transaction_id=transaction_id, # Use transaction_id here
         business_id=business_id
     ).all()
@@ -3804,26 +3805,24 @@ def print_sale_receipt(transaction_id):
         return redirect(url_for('dashboard'))
 
     business_id = get_current_business_id()
-    # Fetch all sale records for this specific transaction ID
-    sales_in_transaction = SaleRecord.query.filter_by(
-        transaction_id=transaction_id,
+    
+    # Fetch the SINGLE sales record for this specific transaction ID
+    # Use .first() because each receipt_number is unique
+    sales_record = SalesRecord.query.filter_by(
+        receipt_number=transaction_id,
         business_id=business_id
-    ).order_by(SaleRecord.sale_date.asc()).all()
+    ).first()
 
-    if not sales_in_transaction:
+    if not sales_record:
         flash('Sale transaction not found.', 'danger')
         return redirect(url_for('sales'))
 
-    # Reconstruct the transaction details for the receipt
-    first_sale = sales_in_transaction[0] # Use first item for common transaction details
-    
-    # Prepare items for the receipt
+    # Prepare items for the receipt by getting them from the JSON column
     receipt_items = []
-    total_grand_amount = 0.0
     today = date.today()
 
-    for sale_record in sales_in_transaction:
-        product_item = InventoryItem.query.filter_by(id=sale_record.product_id, business_id=business_id).first()
+    for item in sales_record.get_items_sold():
+        product_item = InventoryItem.query.filter_by(id=item['product_id'], business_id=business_id).first()
         
         sale_item_expires_soon = False
         sale_item_expiry_date = None
@@ -3836,22 +3835,14 @@ def print_sale_receipt(transaction_id):
                 sale_item_expires_soon = 'Expired'
 
         receipt_items.append({
-            'product_name': sale_record.product_name,
-            'quantity_sold': sale_record.quantity_sold,
-            'sale_unit_type': sale_record.sale_unit_type,
-            'price_at_time_per_unit_sold': sale_record.price_at_time_per_unit_sold,
-            'total_amount': sale_record.total_amount,
+            'product_name': item['product_name'],
+            'quantity_sold': item['quantity_sold'],
+            'sale_unit_type': item['sale_unit_type'],
+            'price_at_time_per_unit_sold': item['price_at_time_per_unit_sold'],
+            'total_amount': item['item_total_amount'], # Corrected key
             'expiry_date': sale_item_expiry_date,
             'expires_soon': sale_item_expires_soon
         })
-        total_grand_amount += sale_record.total_amount
-
-    last_transaction_details = receipt_items
-    last_transaction_grand_total = total_grand_amount
-    last_transaction_id = transaction_id
-    last_transaction_customer_phone = first_sale.customer_phone
-    last_transaction_sales_person = first_sale.sales_person_name
-    last_transaction_date = first_sale.sale_date.strftime('%Y-%m-%d %H:%M:%S')
 
     # Get business info for receipts (reusing from session)
     pharmacy_info = session.get('business_info', {
@@ -3863,17 +3854,18 @@ def print_sale_receipt(transaction_id):
 
     return render_template('add_edit_sale.html',
                            title='Sale Receipt',
-                           inventory_items=[], # Not needed for receipt view
-                           sale={}, # Not needed for receipt view
+                           inventory_items=[],
+                           sale={},
                            user_role=session.get('role'),
                            pharmacy_info=pharmacy_info,
-                           print_ready=True, # This flag will trigger receipt display
-                           last_transaction_details=last_transaction_details,
-                           last_transaction_grand_total=last_transaction_grand_total,
-                           last_transaction_id=last_transaction_id,
-                           last_transaction_customer_phone=last_transaction_customer_phone,
-                           last_transaction_sales_person=last_transaction_sales_person,
-                           last_transaction_date=last_transaction_date,
+                           print_ready=True,
+                           auto_print=True,  # This is the new variable that fixes the error
+                           last_transaction_details=receipt_items,
+                           last_transaction_grand_total=sales_record.grand_total_amount,
+                           last_transaction_id=transaction_id,
+                           last_transaction_customer_phone=sales_record.customer_phone,
+                           last_transaction_sales_person=sales_record.sales_person_name,
+                           last_transaction_date=sales_record.transaction_date.strftime('%Y-%m-%d %H:%M:%S'),
                            current_year=datetime.now().year)
 
 # NEW: Add a route for returns. For now, it just redirects to sales list.
