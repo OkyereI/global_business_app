@@ -111,7 +111,7 @@ DB_TYPE = os.getenv('DB_TYPE', 'postgresql') # Default to postgresql for server 
 if DB_TYPE == 'sqlite':
     # Local SQLite database for desktop client
     # This path should be within a writable directory in the bundled app context
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'instance_data.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'mydata.db')
     print(f"Using SQLite database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     # Ensure instance path exists for SQLite
     if not os.path.exists(app.instance_path):
@@ -157,9 +157,20 @@ class Business(db.Model):
     hirable_items = db.relationship('HirableItem', backref='business_hirable_item', lazy=True)
     company_transactions = db.relationship('CompanyTransaction', backref='business_company_transaction', lazy=True)
     future_orders = db.relationship('FutureOrder', backref='business_future_order', lazy=True)
-
+    last_synced_at = db.Column(db.DateTime, default=datetime.utcnow)
+    users = db.relationship('User', backref='business', lazy=True)
+    inventory_items = db.relationship('InventoryItem', backref='business_inventory', lazy=True)
+    sales_records = db.relationship('SalesRecord', backref='business_sales', lazy=True)
+    rental_records = db.relationship('RentalRecord', backref='business_rentals', lazy=True)
+    creditors = db.relationship('Creditor', backref='business_creditor', lazy=True)
+    debtors = db.relationship('Debtor', backref='business_debtor', lazy=True)
+    hirable_items = db.relationship('HirableItem', backref='business_hirable_item', lazy=True)
+    company_transactions = db.relationship('CompanyTransaction', backref='business_company_transaction', lazy=True)
+    future_orders = db.relationship('FutureOrder', backref='business_future_order', lazy=True)
+    remote_id = db.Column(db.String(36), nullable=True, unique=True) # Stores the ID from the online server
     def __repr__(self):
         return f'<Business {self.name} ({self.type})>'
+    
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -235,7 +246,7 @@ class SalesRecord(db.Model):
     is_synced = db.Column(db.Boolean, nullable=False, default=False)
     receipt_number = db.Column(db.String(50), unique=True, nullable=True) # Made nullable true and set default to avoid errors
     reference_number = db.Column(db.String(100), nullable=True) # For external references if any
-
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False) # ADD THIS LINE 👈
     # Foreign key relationship
     business = db.relationship('Business', backref='_sales_records_for_business', lazy=True)
     def set_items_sold(self, items_list):
@@ -722,7 +733,52 @@ PHARMACY_ADDRESS = os.getenv('PHARMACY_ADDRESS', '123 Main St, City')
 PHARMACY_CONTACT = os.getenv('PHARMACY_CONTACT', '+233543169389')
 
 
-# --- Helper function for current business ID ---
+# In your app.py file
+
+# In your app.py file
+# In your app.py file
+# In your app.py file
+
+@app.before_request
+def handle_authentication_and_authorization():
+    # Define a set of endpoints that do NOT require a user session to access.
+    # This includes the login page itself, static files, and all synchronization API endpoints.
+    public_endpoints = {
+        'login',
+        'static',
+        'get_sync_status',
+        'get_users_for_sync',
+        'get_inventory_for_sync',
+        'api_upsert_inventory',
+        'api_record_sales'
+    }
+
+    # If the requested endpoint is in our list of public endpoints, allow access.
+    if request.endpoint in public_endpoints:
+        return
+
+    # For all other routes, check if a user is logged in.
+    if 'username' not in session:
+        return redirect(url_for('login'))
+# def handle_auth():
+#     # Define endpoints and paths that are publicly accessible without a session
+#     public_paths = [
+#         '/login',
+#         '/static',
+#         '/sync_status',
+#     ]
+
+#     # Check if the requested path starts with an API prefix
+#     if request.path.startswith('/api/v1/'):
+#         return
+
+#     # Check if the requested path is in the list of open paths
+#     if request.path in public_paths:
+#         return
+
+#     # For all other routes, check if a user is logged in
+#     if 'username' not in session:
+#         return redirect(url_for('login'))
 def get_current_business_id():
     return session.get('business_id')
 
@@ -969,6 +1025,41 @@ def pull_data_from_remote(remote_business_id, last_synced_at):
     remote_url = get_remote_flask_base_url()
     headers = {} # No special headers for now, relying on session for sync APIs in Flask
 
+    # --- NEW: PULL USER DATA ---
+    try:
+        users_response = requests.get(
+            f"{remote_url}/api/v1/users?business_id={remote_business_id}",
+            headers=headers
+        )
+        users_response.raise_for_status()
+        new_users = users_response.json()
+
+        with app.app_context():
+            for user_data in new_users:
+                user = User.query.filter_by(id=user_data['id']).first()
+                if user:
+                    # Update existing user
+                    user.username = user_data['username']
+                    # ONLY update the password hash if it has changed
+                    user.password_hash = user_data['password_hash']
+                    user.role = user_data['role']
+                    user.is_active = user_data['is_active']
+                else:
+                    # Insert new user
+                    db.session.add(User(
+                        id=user_data['id'],
+                        username=user_data['username'],
+                        password_hash=user_data['password_hash'], # Important: store the hashed password
+                        role=user_data['role'],
+                        business_id=user_data['business_id'],
+                        is_active=user_data['is_active']
+                    ))
+            db.session.commit()
+            print(f"Pulled {len(new_users)} user accounts from remote.")
+    except requests.exceptions.RequestException as e:
+        print(f"Error pulling users: {e}")
+        return False, f"Error pulling users: {e}"
+
     # 1. Pull Inventory
     try:
         inventory_response = requests.get(
@@ -1030,6 +1121,42 @@ def pull_data_from_remote(remote_business_id, last_synced_at):
 
 # Function to push data from local (SQLite) to remote (PostgreSQL)
 def push_data_to_remote(remote_business_id):
+    # This function remains unchanged as we are only pulling user data, not pushing it.
+    remote_url = get_remote_flask_base_url()
+    headers = {'Content-Type': 'application/json'} # API expects JSON
+    
+    # 1. Push pending Sales Records (those not yet marked as synced in local DB)
+    with app.app_context(): # Ensure we are in app context for DB operations
+        pending_sales = SalesRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
+        if pending_sales:
+            sales_data = [serialize_sale_record_api(s) for s in pending_sales]
+            try:
+                sales_response = requests.post(f"{remote_url}/api/v1/sales", json=sales_data, headers=headers)
+                sales_response.raise_for_status()
+                response_json = sales_response.json()
+                if response_json.get('message') == 'Sales records synchronized successfully.':
+                    for sale in pending_sales:
+                        sale.synced_to_remote = True # Mark as synced locally
+                    db.session.commit()
+                    print(f"Pushed {len(pending_sales)} sales to remote. Response: {response_json}")
+                    return True, f"Pushed {len(pending_sales)} sales."
+                else:
+                    print(f"Error pushing sales (remote message): {response_json.get('message')}")
+                    return False, f"Error pushing sales: {response_json.get('message')}"
+            except requests.exceptions.RequestException as e:
+                print(f"Error pushing sales: {e}")
+                db.session.rollback() # Rollback if API call fails
+                return False, f"Error pushing sales: {e}"
+            except Exception as e:
+                print(f"Unexpected error pushing sales: {e}")
+                db.session.rollback()
+                return False, f"Unexpected error pushing sales: {e}"
+        else:
+            print("No pending sales to push.")
+            return True, "No pending sales to push."
+
+# Function to push data from local (SQLite) to remote (PostgreSQL)
+def push_data_to_remote(remote_business_id):
     remote_url = get_remote_flask_base_url()
     headers = {'Content-Type': 'application/json'} # API expects JSON
     
@@ -1067,37 +1194,38 @@ def push_data_to_remote(remote_business_id):
     # push logic for InventoryItem objects here, possibly using a `synced_to_remote` flag
     # on InventoryItem as well. For now, we assume inventory is primarily pulled.
 
-# Main synchronization function
+# In your app.py or wherever your sync logic resides
+
 def perform_sync(business_id):
-    if not check_network_online():
-        print("Offline: Cannot perform synchronization.")
-        return False, "Offline: Cannot perform synchronization."
+    try:
+        # Step 1: Check if the business is registered on the remote server
+        business = Business.query.get(business_id)
+        if not business.remote_id: # Assuming you add a remote_id field to your Business model
+            print("Business not registered remotely. Attempting to register...")
+            register_url = 'http://localhost:5000/api/v1/register_business'
+            payload = {'business_name': business.name, '...': '...'} # Add other business details
+            response = requests.post(register_url, json=payload)
+            response.raise_for_status()
+            
+            # Get the new remote ID from the server's response and save it locally
+            new_remote_id = response.json().get('business_id')
+            business.remote_id = new_remote_id
+            db.session.commit()
+            print(f"Successfully registered business. New remote ID: {new_remote_id}")
 
-    print("Online: Starting synchronization...")
-    
-    # In a desktop app, you'd ideally have a way to securely log in once
-    # and maintain that session or token for API calls.
-    # For this example, we're assuming the desktop app has some way to authenticate
-    # or that the remote Flask app's APIs are accessible without full session login
-    # if using API keys (which is the recommended production approach).
-    # For now, we assume a session is somehow maintained or the remote API is open for sync.
-
-    last_synced_at = get_last_synced_timestamp()
-    print(f"Last synced at: {last_synced_at}")
-    
-    success_push, msg_push = push_data_to_remote(business_id)
-    if not success_push:
-        return False, f"Sync failed during push: {msg_push}"
-
-    success_pull, msg_pull = pull_data_from_remote(business_id, last_synced_at)
-    if not success_pull:
-        return False, f"Sync failed during pull: {msg_pull}"
-
-    current_timestamp = datetime.now().isoformat()
-    set_last_synced_timestamp(current_timestamp)
-    print(f"Synchronization successful at {current_timestamp}")
-    return True, "Synchronization successful!"
-
+        # Step 2: Now that we have a valid remote ID, proceed with sync
+        remote_business_id = business.remote_id if business.remote_id else business.id # Use the remote ID if it exists
+        
+        # Pull users
+        users_url = f'http://localhost:5000/api/v1/users?business_id={remote_business_id}'
+        response = requests.get(users_url)
+        response.raise_for_status() # This will now work correctly
+        
+        # ... proceed to pull inventory, sales, etc. ...
+        
+        return True, "Synchronization successful."
+    except requests.exceptions.RequestException as e:
+        return False, f"Error during synchronization: {e}"
 
 # --- NEW: Desktop-Specific Routes for Sync Management ---
 # These routes would be called from the local UI (renderer.js)
@@ -1106,49 +1234,234 @@ def perform_sync(business_id):
 # Before: @app.route('/sync_status', methods=['GET'])
 # Before: @login_required
 @app.route('/sync_status', methods=['GET'])
-@permission_required(['admin']) # Change this line
+# You can use your custom permission decorator if it supports multiple roles
+@permission_required(['super_admin', 'admin']) 
 def sync_status():
     """Returns the current sync status and last sync time."""
-    current_status = "Online" if check_network_online() else "Offline"
-    last_sync = get_last_synced_timestamp()
+    business_id = session.get('business_id')
+    if not business_id:
+        return jsonify(online=False, last_sync=None)
+
+    business = Business.query.get(business_id)
+    online_status = check_network_online()
+
+    last_sync_utc = business.last_synced_at if business else None
+    last_sync_iso = last_sync_utc.isoformat() if last_sync_utc else None
+
     return jsonify({
-        'online': check_network_online(),
-        'status': current_status,
-        'last_sync': last_sync
+        'online': online_status,
+        'status': "Online" if online_status else "Offline",
+        'last_sync': last_sync_iso
     })
 
-# ---
+# --- Trigger Sync API Endpoint ---
 
-# Before: @app.route('/trigger_sync', methods=['POST'])
-# Before: @login_required
 @app.route('/trigger_sync', methods=['POST'])
-@permission_required(['admin']) # Change this line
+@permission_required(['super_admin', 'admin'])
 def trigger_sync():
     """Endpoint to manually trigger a sync from the desktop UI."""
-    business_id = get_current_business_id()
+    business_id = session.get('business_id')
     if not business_id:
         return jsonify({'success': False, 'message': 'Business ID not found in session for sync.'}), 400
 
-    success, message = perform_sync(business_id)
-    if success:
-        return jsonify({'success': True, 'message': message})
-    else:
-        return jsonify({'success': False, 'message': message}), 500
-# --- Database Initialization (IMPORTANT for SQLite) ---
-# Ensure this block creates tables only if they don't exist for SQLite.
-# For local desktop app, you would run this once to create the local SQLite DB.
-with app.app_context():
-    if DB_TYPE == 'sqlite' and not os.path.exists(os.path.join(app.instance_path, 'instance_data.db')):
-        print("Creating SQLite database tables...")
-        db.create_all() # Create tables for local SQLite DB
-        # You might also want to do an initial pull here to populate the local DB
-        # if the user is online for the very first run.
-    # For PostgreSQL, you'd manage with Alembic, not db.create_all() here.
+    if not check_network_online():
+        return jsonify(success=False, message="Cannot sync. You are currently offline."), 400
 
-# --- NEW: API Endpoints for Data Synchronization ---
+    try:
+        # --- The problem is likely inside this function call ---
+        success, message = perform_sync(business_id)
+        # ------------------------------------------------------
+        
+        if success:
+            # Update the last sync timestamp on the business model
+            business = Business.query.get(business_id)
+            if business:
+                business.last_synced_at = datetime.utcnow()
+                db.session.commit()
+            return jsonify({'success': True, 'message': message}), 200
+        else:
+            # This handles cases where `perform_sync` returns False
+            return jsonify({'success': False, 'message': message}), 500
+            
+    except Exception as e:
+        # This block will catch ANY error and print it
+        db.session.rollback()
+        print("--- FULL TRACEBACK ---")
+        import traceback
+        traceback.print_exc()
+        print("----------------------")
+        return jsonify({'success': False, 'message': f"An error occurred: {str(e)}"}), 500
+
+# --- Database Initialization (IMPORTANT for SQLite) ---
+# DO NOT USE db.create_all() with Alembic.
+# Remove this block or ensure it's commented out as it is unnecessary
+# and conflicts with migrations.
+# with app.app_context():
+#    if DB_TYPE == 'sqlite' and not os.path.exists(os.path.join(app.instance_path, 'instance_data.db')):
+#        print("Creating SQLite database tables...")
+#        db.create_all() 
+
+# Add this new route for fetching users by business_id
+# In your app.py file
+# In your REMOTE/ONLINE app.py file
+# In your LOCAL app.py file
+
+@app.route('/api/v1/register_business_for_sync', methods=['POST'])
+@csrf.exempt # <-- THIS MUST BE HERE
+def register_business_for_sync():
+    data = request.get_json()
+    name = data.get('name')
+    business_type = data.get('type')
+    address = data.get('address')
+    location = data.get('location')
+    contact = data.get('contact')
+    email = data.get('email')
+
+    if not name or not business_type:
+        return jsonify({'message': 'Business name and type are required for registration.'}), 400
+
+    existing_business = Business.query.filter_by(name=name).first()
+    if existing_business:
+        return jsonify({
+            'message': 'Business already registered online.',
+            'business_id': existing_business.id
+        }), 200
+
+    try:
+        new_business = Business(
+            name=name,
+            type=business_type,
+            address=address,
+            location=location,
+            contact=contact,
+            email=email,
+            is_active=True
+        )
+        db.session.add(new_business)
+        db.session.commit()
+        return jsonify({
+            'message': 'Business registered successfully online.',
+            'business_id': new_business.id
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error registering business online: {e}")
+        return jsonify({'message': f'Failed to register business online: {str(e)}'}), 500
+# In app.py or your sync module
+
+# Placeholder for your remote server URL (e.g., your deployed app's URL)
+REMOTE_SERVER_URL = os.getenv('REMOTE_SERVER_URL', 'http://localhost:5000')
+
+
+def perform_sync(local_business_id):
+    if not check_network_online():
+        print("Offline: Cannot perform synchronization.")
+        return False, "Offline: Cannot perform synchronization."
+
+    print("Online: Starting synchronization...")
+    
+    local_business = Business.query.get(local_business_id)
+    if not local_business:
+        return False, "Error: Local business not found."
+
+    # --- NEW: Check and Register Business Remotely ---
+    if not local_business.remote_id:
+        print(f"Local business '{local_business.name}' not yet linked to remote server. Attempting registration...")
+        registration_url = f"{REMOTE_SERVER_URL}/api/v1/register_business_for_sync"
+        try:
+            # Send the local business's name and other details to register it remotely
+            # The remote server will create it and return its new remote_id
+            registration_payload = {
+                'name': local_business.name,
+                'address': local_business.address,
+                'location': local_business.location,
+                'contact': local_business.contact,
+                'email': local_business.email,
+                'type': local_business.type, 
+                # Do NOT send local 'id' as remote will generate its own
+            }
+            response = requests.post(registration_url, json=registration_payload)
+            response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
+
+            remote_registration_data = response.json()
+            new_remote_id = remote_registration_data.get('business_id')
+
+            if new_remote_id:
+                local_business.remote_id = new_remote_id
+                db.session.commit()
+                print(f"Successfully registered local business '{local_business.name}' on remote server. Remote ID: {new_remote_id}")
+            else:
+                return False, f"Remote registration failed: No business_id returned. Message: {remote_registration_data.get('message', 'Unknown error')}"
+        
+        except requests.exceptions.HTTPError as e:
+            # This block specifically catches HTTP errors (like 400 Bad Request)
+            print(f"Failed to register business remotely (HTTP Error): {e}")
+            try:
+                error_details = e.response.json()
+                print(f"Remote Server Error Details: {error_details}")
+                # Return the specific error message from the remote server
+                return False, f"Remote registration failed: {error_details.get('message', 'Unknown error')}"
+            except json.JSONDecodeError:
+                # If the response isn't JSON, return the raw text
+                print(f"Remote Server Raw Response: {e.response.text}")
+                return False, f"Remote registration failed: {e.response.text}"
+        except requests.exceptions.RequestException as e:
+            # This catches other request errors (e.g., network issues)
+            db.session.rollback()
+            return False, f"Failed to register business remotely: {e}"
+    # --- END NEW BUSINESS REGISTRATION LOGIC ---
+
+    # Use the remote_id for all subsequent API calls
+    effective_business_id = local_business.remote_id
+
+    # Make sure get_last_synced_timestamp is configured to retrieve a timestamp for the specific business
+    last_synced_at = local_business.last_synced_at.isoformat() if local_business.last_synced_at else "1970-01-01T00:00:00Z"
+    print(f"Last synced at: {last_synced_at}")
+
+    # Push data to remote using the effective_business_id
+    success_push, msg_push = push_data_to_remote(effective_business_id)
+    if not success_push:
+        return False, f"Sync failed during push: {msg_push}"
+
+    # Pull data from remote using the effective_business_id and its last_synced_at
+    # Ensure pull_data_from_remote takes the correct timestamp (UTC)
+    success_pull, msg_pull = pull_data_from_remote(effective_business_id, local_business.last_synced_at.isoformat() if local_business.last_synced_at else "1970-01-01T00:00:00Z")
+    if not success_pull:
+        return False, f"Sync failed during pull: {msg_pull}"
+
+    # Update local business's last_synced_at
+    local_business.last_synced_at = datetime.utcnow()
+    db.session.commit()
+    print(f"Synchronization successful at {local_business.last_synced_at.isoformat()}")
+    return True, "Synchronization successful!"
+@app.route('/api/v1/users', methods=['GET'])
+def get_users_for_sync():
+    try:
+        business_id = request.args.get('business_id')
+        if not business_id:
+            return jsonify({'error': 'business_id is a required query parameter'}), 400
+
+        users = User.query.filter_by(business_id=business_id).all()
+        user_list = []
+        for user in users:
+            user_list.append({
+                'id': user.id,
+                'username': user.username,
+                'role': user.role,
+                'is_active': user.is_active,
+                'business_id': user.business_id,
+                # ADD THIS LINE to include the password hash
+                'password_hash': user.password_hash 
+            })
+
+        return jsonify(user_list)
+
+    except Exception as e:
+        print(f"Error fetching users for sync: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}),
 
 @app.route('/api/v1/businesses', methods=['GET'])
-@login_required # Temporary: Should be API-specific auth in production
+# @login_required # Temporary: Should be API-specific auth in production
 def api_get_businesses():
     """
     API endpoint to fetch a list of businesses.
@@ -1177,7 +1490,7 @@ def api_get_businesses():
 
 
 @app.route('/api/v1/inventory', methods=['GET'])
-@login_required # Temporary: Should be API-specific auth in production
+# @login_required # Temporary: Should be API-specific auth in production
 def api_get_inventory():
     """
     API endpoint to fetch inventory items for a business.
@@ -1206,7 +1519,7 @@ def api_get_inventory():
 
 
 @app.route('/api/v1/inventory', methods=['POST'])
-@login_required # Temporary: Should be API-specific auth in production
+# @login_required # Temporary: Should be API-specific auth in production
 def api_upsert_inventory():
     """
     API endpoint to create or update inventory items in batch.
@@ -1306,9 +1619,54 @@ def api_upsert_inventory():
         'errors': errors
     })
 
+# In your app.py file
 
+# In your app.py file
+
+@app.route('/api/v1/inventory', methods=['GET'])
+def get_inventory_for_sync():
+    print("DEBUG: Accessing inventory endpoint.") # ADD THIS LINE
+    
+    print("DEBUG: Inside get_inventory_for_sync() function.")
+    try:
+        business_id = request.args.get('business_id')
+        if not business_id:
+            return jsonify({'error': 'business_id is a required query parameter'}), 400
+        
+        # Pull inventory items for the given business
+        inventory_items = InventoryItem.query.filter_by(business_id=business_id).all()
+        
+        inventory_list = []
+        for item in inventory_items:
+            inventory_list.append({
+                'id': item.id,
+                'business_id': item.business_id,
+                'product_name': item.product_name,
+                'category': item.category,
+                'purchase_price': item.purchase_price,
+                'sale_price': item.sale_price,
+                'current_stock': item.current_stock,
+                'last_updated': item.last_updated.isoformat(),
+                'batch_number': item.batch_number,
+                'number_of_tabs': item.number_of_tabs,
+                'unit_price_per_tab': item.unit_price_per_tab,
+                'item_type': item.item_type,
+                'expiry_date': item.expiry_date.isoformat() if item.expiry_date else None,
+                'is_fixed_price': item.is_fixed_price,
+                'fixed_sale_price': item.fixed_sale_price,
+                'is_active': item.is_active,
+                'barcode': item.barcode,
+                'markup_percentage_pharmacy': item.markup_percentage_pharmacy,
+                'synced_to_remote': item.synced_to_remote,
+            })
+        
+        return jsonify(inventory_list)
+
+    except Exception as e:
+        print(f"Error fetching inventory for sync: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
 @app.route('/api/v1/sales', methods=['POST'])
-@login_required # Temporary: Should be API-specific auth in production
+# @login_required # Temporary: Should be API-specific auth in production
 def api_record_sales():
     """
     API endpoint to record new sales in batch.
@@ -1389,7 +1747,7 @@ def api_record_sales():
 # ... (existing imports and other code) ...
 
 @app.route('/api/get_product_by_barcode', methods=['POST'])
-@login_required
+# @login_required
 def get_product_by_barcode():
     """
     API endpoint to fetch product details by barcode or product name.
@@ -1480,6 +1838,7 @@ def get_product_by_barcode():
             'success': False,
             'message': message
         }), 404
+    
 @app.route('/')
 def index():
     if 'username' in session:
@@ -1496,13 +1855,13 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        # Note: The 'is_active=True' check here is for the USER, not the business.
-        # We need to check the business's active status separately.
-        user = User.query.filter_by(username=username).first() # User.is_active is handled by login_required generally.
+        
+        user = User.query.filter_by(username=username, is_active=True).first() # Added is_active=True here for user status
 
-        if user and user.verify_password(password): # Using verify_password as per your model
+        if user and user.verify_password(password):
             business = Business.query.get(user.business_id)
-            # NEW: Check if the associated business is active
+            
+            # Check if the associated business is active
             if not business or not business.is_active:
                 flash('Your business account is currently inactive. Please contact support.', 'danger')
                 return render_template('login.html', current_year=datetime.now().year)
@@ -1511,25 +1870,38 @@ def login():
             session['role'] = user.role
             session['business_id'] = user.business_id
             session['business_name'] = business.name 
-            # Fetch business info and store in session
-            session['business_type'] = business.type # Changed from business.business_type to business.type
+            session['business_type'] = business.type
             session['business_info'] = {
                 'name': business.name,
                 'address': business.address,
                 'location': business.location,
                 'contact': business.contact,
-                # 'email' field seems to be missing in your Business model. If you add it, uncomment below:
-                # 'email': business.email
-                'business_type': business.type # Ensure consistency with type
+                'business_type': business.type
             }
             
-            flash('Login successful!', 'success')
+            # --- NEW: Trigger Data Synchronization on successful login if online ---
+            if check_network_online():
+                print(f"User '{username}' logged in. Initiating data sync for business '{business.name}'...")
+                sync_success, sync_message = perform_sync(user.business_id)
+                if sync_success:
+                    flash(f'Login successful! {sync_message}', 'success')
+                    # Update the business's last_synced_at after a successful pull
+                    # (assuming Business model has a last_synced_at field)
+                    business.last_synced_at = datetime.utcnow()
+                    db.session.commit()
+                else:
+                    flash(f'Login successful, but data synchronization failed: {sync_message}', 'warning')
+            else:
+                flash('Login successful! You are currently working offline.', 'info')
+            # --- END NEW SYNC LOGIC ---
+
             if session.get('role') == 'super_admin':
                 return redirect(url_for('super_admin_dashboard'))
             return redirect(url_for('dashboard'))
         else:
             flash('Invalid username or password.', 'danger')
     return render_template('login.html', current_year=datetime.now().year)
+
 @app.route('/logout')
 def logout():
     session.pop('username', None)
@@ -1590,7 +1962,7 @@ def business_selection():
 
 
 @app.route('/dashboard')
-@login_required
+# @login_required
 def dashboard():
     # ACCESS CONTROL: Specific redirects first
     if 'username' not in session:
@@ -2086,7 +2458,7 @@ def upload_inventory_csv_super_admin(business_id):
 
 # NEW ROUTE: Export all registered businesses to CSV
 @app.route('/super_admin/download_businesses_csv')
-@login_required
+# @login_required
 def download_businesses_csv():
     # ACCESS CONTROL: Only super_admin or admin can export business data
     if session.get('role') not in ['super_admin', 'admin']:
@@ -2119,7 +2491,7 @@ def download_businesses_csv():
 
 # NEW ROUTE: Transfer Inventory Between Businesses
 @app.route('/admin/transfer_inventory', methods=['GET', 'POST'])
-@login_required
+# @login_required
 def transfer_inventory():
     # ACCESS CONTROL: Only super_admin or admin can transfer inventory
     if session.get('role') not in ['super_admin', 'admin']:
@@ -2401,7 +2773,7 @@ def inventory():
 
 # NEW ROUTE: Download CSV for current business's inventory
 @app.route('/inventory/download_current_csv')
-@login_required
+# @login_required
 def download_current_inventory_csv():
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
@@ -2452,7 +2824,7 @@ def download_current_inventory_csv():
 
 # NEW ROUTE: Admin can upload inventory to their current business
 @app.route('/inventory/upload_csv', methods=['GET', 'POST'])
-@login_required
+# @login_required
 def upload_current_inventory_csv():
     # ACCESS CONTROL: Only admin can upload inventory to their current business
     if session.get('role') not in ['admin'] or not get_current_business_id():
@@ -2886,7 +3258,7 @@ def add_inventory_item():
 
 
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
-@login_required
+# @login_required
 def edit_inventory_item(item_id):
     # ACCESS CONTROL: Allows admin role
     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
@@ -3145,7 +3517,7 @@ def delete_inventory_item(item_id):
 
 
 @app.route('/sales')
-@login_required # Ensure this decorator is present for access control
+# @login_required # Ensure this decorator is present for access control
 def sales():
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
@@ -3285,7 +3657,7 @@ def sales():
     )
 
 @app.route('/sales/add', methods=['GET', 'POST'])
-@login_required
+# @login_required
 def add_sale():
     
     # ACCESS CONTROL: Allows admin and sales roles
@@ -3865,7 +4237,7 @@ def delete_sale_transaction(transaction_id): # Note the parameter name change
     return redirect(url_for('sales'))
 
 @app.route('/sales/print_receipt/<transaction_id>')
-@login_required
+# @login_required
 def print_sale_receipt(transaction_id):
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
@@ -3938,7 +4310,7 @@ def print_sale_receipt(transaction_id):
 
 # NEW: Add a route for returns. For now, it just redirects to sales list.
 @app.route('/sales/add_return', methods=['GET', 'POST'])
-@login_required
+# @login_required
 @permission_required(['admin', 'sales']) # Adjust permissions as needed
 def add_return():
     flash('This is the Add Return page. Functionality to be implemented.', 'info')
@@ -3949,7 +4321,7 @@ def add_return():
 # --- Reports Route ---
 
 @app.route('/reports')
-@login_required
+# @login_required
 def reports():
     # ACCESS CONTROL: Only admin can view reports
     if session.get('role') != 'admin':
@@ -4180,7 +4552,7 @@ def send_daily_sales_sms_report():
 
 
 @app.route('/companies')
-@login_required # Make sure this decorator is active if you need login protection
+# @login_required # Make sure this decorator is active if you need login protection
 def companies():
     # ACCESS CONTROL: Allows admin, sales, and viewer roles
     if 'username' not in session or session.get('role') not in ['admin', 'viewer', 'sales'] or not get_current_business_id():
@@ -4428,7 +4800,7 @@ def delete_company(company_id):
     return redirect(url_for('companies'))
 
 @app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
-@login_required
+# @login_required
 def company_transaction(company_id):
     """
     Handles company transactions, including recording new transactions,
@@ -4580,7 +4952,7 @@ def company_transaction(company_id):
                            )
 
 @app.route('/company/print_last_receipt')
-@login_required
+# @login_required
 def print_last_company_transaction_receipt():
     """
     Renders a dedicated, minimal page for printing the last recorded company transaction receipt.
@@ -4632,7 +5004,7 @@ def print_last_company_transaction_receipt():
 
 # NEW ROUTE: Send SMS for a specific Company Transaction
 @app.route('/companies/transaction/send_sms/<string:transaction_id>')
-@login_required
+# @login_required
 def send_company_transaction_sms(transaction_id):
     # ACCESS CONTROL: Allows admin, sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
@@ -4692,7 +5064,7 @@ def send_company_transaction_sms(transaction_id):
     return redirect(url_for('company_transaction', company_id=company.id))
 
 @app.route('/print_company_receipt/<string:transaction_id>')
-@login_required
+# @login_required
 def print_company_receipt(transaction_id):
     """
     Renders a printable receipt for a specific company transaction.
@@ -4738,7 +5110,7 @@ def print_company_receipt(transaction_id):
                            )
 
 @app.route('/print_all_company_transactions/<string:company_id>')
-@login_required
+# @login_required
 def print_all_company_transactions(company_id):
     """
     Renders a printable list of all transactions for a specific company,
@@ -5534,7 +5906,7 @@ def add_rental_record():
                            current_year=datetime.now().year)
 
 @app.route('/rental_records/print/<record_id>')
-@login_required
+# @login_required
 def print_rental_receipt(record_id):
     if get_current_business_type() != 'Hardware':
         flash('This feature is only available for Hardware businesses.', 'warning')
@@ -5618,7 +5990,7 @@ def mark_rental_returned(record_id):
 # app.py - New route for importing inventory from another business
 
 @app.route('/inventory/import_from_business', methods=['GET', 'POST'])
-@login_required
+# @login_required
 def import_inventory_from_business():
     # ACCESS CONTROL: Only admin can import inventory from another business
     if session.get('role') not in ['admin'] or not get_current_business_id():
@@ -5768,7 +6140,7 @@ def cancel_rental_record(record_id):
     return redirect(url_for('rental_records'))
 
 @app.route('/manage_businesses')
-@login_required
+# @login_required
 def manage_businesses():
     # Access control: Only 'super_admin' or 'admin' role can view this page
     if session.get('role') not in ['super_admin', 'admin']:
@@ -5785,7 +6157,7 @@ def manage_businesses():
                            current_year=datetime.now().year)
 
 @app.route('/manage_businesses/toggle_active/<string:business_id>', methods=['POST'])
-@login_required
+# @login_required
 def toggle_business_active(business_id):
     # Access control: Only 'admin' role can toggle business status
     if session.get('role') not in ['super_admin', 'admin']:
@@ -5807,7 +6179,7 @@ def toggle_business_active(business_id):
     return redirect(url_for('manage_businesses'))
 
 @app.route('/manage_businesses/send_sms_warning/<string:business_id>', methods=['POST'])
-@login_required
+# @login_required
 def send_payment_due_sms(business_id):
     """
     Sends an SMS warning message (e.g., payment due) to the contact number of a specific business.
@@ -5882,7 +6254,7 @@ def send_payment_due_sms(business_id):
 # ... (existing imports, app initialization, and other routes) ...
 
 @app.route('/get_all_active_products', methods=['GET'])
-@login_required
+# @login_required
 def get_all_active_products():
     """
     Returns a list of all active inventory items for the current business.
@@ -5929,54 +6301,6 @@ def format_date(value, format='%Y-%m-%d'):
 # --- Database Initialization (run once to create tables) ---
 # IMPORTANT: Once Alembic is set up and working, you should remove or comment out
 # db.create_all() from here, as Alembic will manage your schema migrations.
-with app.app_context():
-    try:
-        # Check if any user exists at all
-        if User.query.first() is None:
-            print("No users found in the database. Attempting to create initial super admin...")
-            
-            super_admin_username = os.getenv('SUPER_ADMIN_USERNAME', 'superadmin')
-            super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD', 'superpassword') 
-
-            # Create a dummy business for the super admin if none exists
-            super_admin_business = Business.query.filter_by(name="SuperAdmin Global Business").first()
-            if not super_admin_business:
-                super_admin_business = Business(
-                    name="SuperAdmin Global Business",
-                    address="Global Admin HQ",
-                    location="Global",
-                    contact="N/A",
-                    type="Administration",
-                    is_active=True,
-                )
-                db.session.add(super_admin_business)
-                db.session.commit()
-                print("Created 'SuperAdmin Global Business' for initial super admin.")
-            else:
-                print("'SuperAdmin Global Business' already exists.")
-
-            # Now create the super admin user
-            existing_super_admin = User.query.filter_by(username=super_admin_username).first()
-            if not existing_super_admin:
-                new_super_admin = User(
-                    username=super_admin_username,
-                    password=super_admin_password, # The setter will hash it
-                    role='super_admin',
-                    business_id=super_admin_business.id,
-                    is_active=True
-                    # REMOVED: last_password_update=datetime.utcnow()
-                    # SQLAlchemy's default will handle this if defined in the model
-                )
-                db.session.add(new_super_admin)
-                db.session.commit()
-                print(f"Initial super admin '{super_admin_username}' created successfully!")
-            else:
-                print(f"Super admin '{super_admin_username}' already exists. Skipping creation.")
-        else:
-            print("Users already exist in the database. Skipping initial super admin creation.")
-    except Exception as e:
-        print(f"Error during initial super admin creation: {e}")
-        db.session.rollback()
 
 # --- Database Initialization (This part should generally be managed by Alembic) ---
 # Keep this pass statement or remove it if db.create_all() is truly not needed.
@@ -5985,4 +6309,53 @@ with app.app_context():
     pass
 
 if __name__ == '__main__':
+    with app.app_context():
+        try:
+            # Check if any user exists at all
+            if User.query.first() is None:
+                print("No users found in the database. Attempting to create initial super admin...")
+                
+                super_admin_username = os.getenv('SUPER_ADMIN_USERNAME', 'superadmin')
+                super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD', 'superpassword') 
+
+                # Create a dummy business for the super admin if none exists
+                super_admin_business = Business.query.filter_by(name="SuperAdmin Global Business").first()
+                if not super_admin_business:
+                    super_admin_business = Business(
+                        name="SuperAdmin Global Business",
+                        address="Global Admin HQ",
+                        location="Global",
+                        contact="N/A",
+                        type="Administration",
+                        is_active=True,
+                    )
+                    db.session.add(super_admin_business)
+                    db.session.commit()
+                    print("Created 'SuperAdmin Global Business' for initial super admin.")
+                else:
+                    print("'SuperAdmin Global Business' already exists.")
+
+                # Now create the super admin user
+                existing_super_admin = User.query.filter_by(username=super_admin_username).first()
+                if not existing_super_admin:
+                    new_super_admin = User(
+                        username=super_admin_username,
+                        password=super_admin_password, # The setter will hash it
+                        role='super_admin',
+                        business_id=super_admin_business.id,
+                        is_active=True
+                    )
+                    db.session.add(new_super_admin)
+                    db.session.commit()
+                    print(f"Initial super admin '{super_admin_username}' created successfully!")
+                else:
+                    print(f"Super admin '{super_admin_username}' already exists. Skipping creation.")
+            else:
+                print("Users already exist in the database. Skipping initial super admin creation.")
+        except Exception as e:
+            print(f"Error during initial super admin creation: {e}")
+            db.session.rollback()
+
+    # The app.run() command should be at the very end
     app.run(debug=True, host='0.0.0.0', port=os.getenv('PORT', 5000))
+
