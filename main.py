@@ -3285,7 +3285,7 @@ def sales():
 
 @app.route('/sales/add', methods=['GET', 'POST'])
 @login_required
-def add_sale():
+def smse():
     
     # ACCESS CONTROL: Allows admin and sales roles
     if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
@@ -3550,6 +3550,55 @@ def add_sale():
             session['last_transaction_customer_phone'] = customer_phone_for_template
             session['last_transaction_sales_person'] = session.get('username')
             session['last_transaction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            send_sms_receipt = 'send_sms_receipt' in request.form
+            if send_sms_receipt and customer_phone_for_template:
+                business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+                
+                # Compose the SMS message
+                sms_message = (
+                    f"{business_name_for_sms} Sales Receipt:\n"
+                    f"Transaction ID: {receipt_num}\n"
+                    f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Total Amount: GH₵{total_grand_amount:.2f}\n"
+                    f"Items: " + ", ".join([f"{item['product_name']} ({item['quantity_sold']} {item['sale_unit_type']})" for item in recorded_sale_details]) + "\n"
+                    f"Sales Person: {session.get('username')}\n\n"
+                    f"Thank you for your purchase!\n"
+                    f"From: {business_name_for_sms}"
+                )
+                
+                # Check if online before attempting to send SMS
+                if check_network_online():
+                    try:
+                        sms_payload = {
+                            'action': 'send-sms',
+                            'api_key': ARKESEL_API_KEY,
+                            'to': customer_phone_for_template,
+                            'from': ARKESEL_SENDER_ID,
+                            'sms': sms_message
+                        }
+                        sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+                        sms_response.raise_for_status()
+                        sms_result = sms_response.json()
+
+                        if sms_result.get('status') == 'success':
+                            flash(f'SMS receipt sent to customer {customer_phone_for_template} successfully!', 'success')
+                        else:
+                            error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+                            flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
+                    except Exception as e:
+                        flash(f'Error sending SMS receipt: {str(e)}', 'danger')
+                else:
+                    flash("SMS receipt not sent: You are offline.", 'warning')
+            elif send_sms_receipt and not customer_phone_for_template:
+                flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
+
+            # Redirect to the same page with print_ready flag
+            return redirect(url_for('add_sale', print_ready=True))
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'An error occurred while recording the sale: {e}', 'danger')
+            print(f"ERROR during sale recording: {e}")
 
             # Redirect to the same page with print_ready flag
             return redirect(url_for('add_sale', print_ready=True))

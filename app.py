@@ -3551,10 +3551,11 @@ def add_sale():
             session['last_transaction_customer_phone'] = customer_phone_for_template
             session['last_transaction_sales_person'] = session.get('username')
             session['last_transaction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            send_sms = 'send_sms_receipt' in request.form
-            if send_sms and customer_phone_for_template:
+            send_sms_receipt = 'send_sms_receipt' in request.form
+            if send_sms_receipt and customer_phone_for_template:
                 business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
                 
+                # Compose the SMS message
                 sms_message = (
                     f"{business_name_for_sms} Sales Receipt:\n"
                     f"Transaction ID: {receipt_num}\n"
@@ -3566,11 +3567,15 @@ def add_sale():
                     f"From: {business_name_for_sms}"
                 )
                 
+                # Check if online before attempting to send SMS
                 if check_network_online():
                     try:
                         sms_payload = {
-                            'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone_for_template,
-                            'from': ARKESEL_SENDER_ID, 'sms': sms_message
+                            'action': 'send-sms',
+                            'api_key': ARKESEL_API_KEY,
+                            'to': customer_phone_for_template,
+                            'from': ARKESEL_SENDER_ID,
+                            'sms': sms_message
                         }
                         sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
                         sms_response.raise_for_status()
@@ -3581,24 +3586,21 @@ def add_sale():
                         else:
                             error_message = sms_result.get('message', 'Unknown error from SMS provider.')
                             flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
-                    except requests.exceptions.HTTPError as http_err:
-                        flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
-                    except requests.exceptions.ConnectionError as conn_err:
-                        flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
-                    except requests.exceptions.Timeout as timeout_err:
-                        flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
-                    except requests.exceptions.RequestException as req_err:
-                        flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
-                    except json.JSONDecodeError:
-                        flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+                    except Exception as e:
+                        flash(f'Error sending SMS receipt: {str(e)}', 'danger')
                 else:
                     flash("SMS receipt not sent: You are offline.", 'warning')
-
-            elif send_sms and not customer_phone_for_template:
+            elif send_sms_receipt and not customer_phone_for_template:
                 flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
 
             # Redirect to the same page with print_ready flag
             return redirect(url_for('add_sale', print_ready=True))
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'An error occurred while recording the sale: {e}', 'danger')
+            print(f"ERROR during sale recording: {e}")
+
 
         except Exception as e:
             db.session.rollback()
