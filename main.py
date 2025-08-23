@@ -1106,7 +1106,7 @@ def perform_sync(business_id):
 # Before: @login_required
 @app.route('/sync_status', methods=['GET'])
 @permission_required(['admin']) # Change this line
-def sync_status():
+class Business
     """Returns the current sync status and last sync time."""
     current_status = "Online" if check_network_online() else "Offline"
     last_sync = get_last_synced_timestamp()
