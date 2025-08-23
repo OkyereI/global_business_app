@@ -16,7 +16,7 @@ from sqlalchemy import func,cast # Import func for aggregate functions
 from flask_wtf.csrf import CSRFProtect # Add this line
 import sys
 from sqlalchemy import Index 
-from sqlalchemy.exc import IntegrityError
+
 # --- Flask-Login setup (if you are using it, otherwise remove these lines) ---
 # For simplicity, I'll define a basic login_required if Flask-Login is not explicitly used.
 def login_required(f):
@@ -299,19 +299,6 @@ class HirableItem(db.Model):
 
     def __repr__(self):
         return f'<HirableItem {self.item_name} (Stock: {self.current_stock})>'
-
-class Category(db.Model):
-    __tablename__ = 'categories'
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    # Ensure that category names are unique per business
-    __table_args__ = (db.UniqueConstraint('name', 'business_id', name='_category_name_business_uc'),)
-
-    def __repr__(self):
-        return f'<Category {self.name}>'
-
 
 class RentalRecord(db.Model):
     __tablename__ = 'rental_records'
@@ -727,6 +714,7 @@ csrf = CSRFProtect(app) # Add this line to initialize CSRFProtect
 ARKESEL_API_KEY = os.getenv('ARKESEL_API_KEY', 'b0FrYkNNVlZGSmdrendVT3hwUHk')
 ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'uniquebence')
 ARKESEL_SMS_URL = "https://sms.arkesel.com/sms/api" # Define Arkesel SMS URL
+
 ADMIN_PHONE_NUMBER = os.getenv('ADMIN_PHONE_NUMBER', '233543169389')
 ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME','Global Business')
 PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Accra, Ghana')
@@ -1365,12 +1353,12 @@ def api_record_sales():
             # For now, we assume stock was handled locally and just record the sale.
             
             # Check if this exact sale record (by ID and transaction_id) already exists to prevent duplicates on sync
-            existing_sale = SaleRecord.query.filter_by(id=sale_id, business_id=business_id, transaction_id=transaction_id).first()
+            existing_sale = SalesRecord.query.filter_by(id=sale_id, business_id=business_id, transaction_id=transaction_id).first()
             if existing_sale:
                 errors.append(f"Sale record with ID '{sale_id}' and transaction ID '{transaction_id}' already exists. Skipping.")
                 continue # Skip adding duplicate
 
-            new_sale = SaleRecord(
+            new_sale = SalesRecord(
                 id=sale_id, # Use provided ID for idempotency
                 business_id=business_id,
                 product_id=product_id,
@@ -2592,7 +2580,7 @@ def upload_current_inventory_csv():
     return render_template('upload_current_inventory.html', business_name=business_name, user_role=session.get('role'), current_year=datetime.now().year)
 
 
-
+# app.py (your add_inventory_item route)
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def add_inventory_item():
     # ACCESS CONTROL: Allows admin role
@@ -2603,15 +2591,24 @@ def add_inventory_item():
     business_id = get_current_business_id()
     business_type = get_current_business_type()
 
+    # Determine which item types are relevant for the current business type
+   
     relevant_item_types = []
     if business_type == 'Pharmacy':
         relevant_item_types = ['Pharmacy']
     elif business_type == 'Hardware':
         relevant_item_types = ['Hardware Material']
+
     elif business_type in ['Supermarket', 'Provision Store']:
-        relevant_item_types = ['Supermarket', 'Provision Store']
+        relevant_item_types = ['Provision Store']
+    # The following two elifs are redundant with the one above, but kept for direct mapping to original.
+    elif business_type == 'Supermarket':
+        relevant_item_types = ['Supermarket']
+    elif business_type == 'Provision Store':
+        relevant_item_types = ['Provision Store']
     else:
-        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store']
+        # Fallback or general type if none matches. Consider if a business can have diverse types.
+        relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
 
     available_inventory_items = InventoryItem.query.filter(
         InventoryItem.business_id == business_id,
@@ -2620,7 +2617,8 @@ def add_inventory_item():
     ).all()
     # Assuming serialize_inventory_item_api exists for consistent serialization with API needs
     serialized_inventory_items = [serialize_inventory_item_api(item) for item in available_inventory_items]
-
+    
+    # Get pharmacy info for receipts (ensure it's clean for template rendering)
     raw_pharmacy_info = session.get('business_info', {})
     if isinstance(raw_pharmacy_info, dict):
         pharmacy_info = {
@@ -2632,6 +2630,7 @@ def add_inventory_item():
             'contact': str(raw_pharmacy_info.get('contact', 'N/A'))
         }
     else:
+        # Fallback if session['business_info'] is not a dict
         business_details = Business.query.filter_by(id=business_id).first()
         if business_details:
             pharmacy_info = {
@@ -2648,11 +2647,13 @@ def add_inventory_item():
                 'phone': "N/A", 'email': "N/A", 'contact': "N/A"
             }
 
+    # Fetch other businesses for the import section
     other_businesses = []
     if session.get('role') == 'admin':
+        # Filter businesses of the same type, excluding the current business
         other_businesses_query = Business.query.filter(
             Business.id != business_id,
-            Business.type == business_type
+            Business.type == business_type # Only show businesses of the same type for import
         )
         other_businesses = other_businesses_query.all()
 
@@ -2661,12 +2662,14 @@ def add_inventory_item():
         product_name = request.form.get('product_name', '').strip()
         category = request.form.get('category', '').strip()
         
+        # Safely get numerical inputs, default to 0.0 or 1 if conversion fails or missing
         try:
             purchase_price = float(request.form.get('purchase_price', 0.0))
             current_stock = float(request.form.get('current_stock', 0.0))
             number_of_tabs = int(request.form.get('number_of_tabs', 1))
         except ValueError:
             flash('Invalid input for numerical fields (Price, Stock, Units per Pack). Please enter valid numbers.', 'danger')
+            # Re-render with existing form data to preserve user input
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': request.form.get('purchase_price', '0.00'),
@@ -2686,15 +2689,18 @@ def add_inventory_item():
 
 
         batch_number = request.form.get('batch_number', '').strip()
-        raw_barcode = request.form.get('barcode', '').strip()
+        raw_barcode = request.form.get('barcode', '').strip() # Get the barcode string
+        
+        # Set barcode to None if it's an empty string, otherwise keep the value
         barcode_to_save = raw_barcode if raw_barcode else None
 
+        # Validate required string fields
         if not product_name or not category:
             flash('Product Name and Category are required fields.', 'danger')
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': raw_barcode,
+                'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                 'number_of_tabs': number_of_tabs,
                 'item_type': request.form.get('item_type', business_type),
                 'expiry_date': request.form.get('expiry_date', ''),
@@ -2707,8 +2713,32 @@ def add_inventory_item():
                                    pharmacy_info=pharmacy_info, other_businesses=other_businesses)
 
 
+        # Check if barcode is unique if provided and not None
+        if barcode_to_save: # Only check uniqueness if barcode_to_save is not None/empty
+            existing_barcode_item = InventoryItem.query.filter_by(
+                business_id=business_id,
+                barcode=barcode_to_save
+            ).first()
+            if existing_barcode_item:
+                flash('Barcode already in use for another product.', 'danger')
+                item_data_for_form_on_error = {
+                    'product_name': product_name, 'category': category,
+                    'purchase_price': purchase_price, 'current_stock': current_stock,
+                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
+                    'number_of_tabs': number_of_tabs,
+                    'item_type': request.form.get('item_type', business_type),
+                    'expiry_date': request.form.get('expiry_date', ''),
+                    'is_fixed_price': 'is_fixed_price' in request.form,
+                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
+                }
+                return render_template('add_edit_inventory.html', title='Add Inventory Item',
+                                       item=item_data_for_form_on_error, user_role=session.get('role'),
+                                       business_type=business_type, current_year=datetime.now().year,
+                                       pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+        
         expiry_date_str = request.form.get('expiry_date', '').strip()
-        expiry_date_obj = None
+        
+        expiry_date_obj = None 
         if expiry_date_str:
             try:
                 expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
@@ -2717,7 +2747,7 @@ def add_inventory_item():
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': raw_barcode,
+                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                     'number_of_tabs': number_of_tabs,
                     'item_type': request.form.get('item_type', business_type),
                     'expiry_date': '',
@@ -2734,7 +2764,7 @@ def add_inventory_item():
             item_data_for_form_on_error = {
                 'product_name': product_name, 'category': category,
                 'purchase_price': purchase_price, 'current_stock': current_stock,
-                'batch_number': batch_number, 'barcode': raw_barcode,
+                'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                 'number_of_tabs': number_of_tabs,
                 'item_type': request.form.get('item_type', business_type),
                 'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2744,57 +2774,43 @@ def add_inventory_item():
             return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year, pharmacy_info=pharmacy_info, other_businesses=other_businesses)
 
 
-        # Check for existing item with the same name or barcode within the current business
-        if barcode_to_save:
-            # Check for existing item with the same barcode in the current business
-            existing_item = InventoryItem.query.filter_by(
-                business_id=business_id,
-                barcode=barcode_to_save,
-                is_active=True
-            ).first()
-        else:
-            # If no barcode is provided, check for existing item with the same product name
-            existing_item = InventoryItem.query.filter_by(
-                business_id=business_id,
-                product_name=product_name,
-                barcode=None,
-                is_active=True
-            ).first()
-
-        if existing_item:
-            # If an item exists, update its stock
-            existing_item.current_stock += current_stock
-            existing_item.last_updated = datetime.now()
-            db.session.add(existing_item)
-            try:
-                db.session.commit()
-                flash(f'Stock updated for "{existing_item.product_name}". Added {current_stock} units. New total stock: {existing_item.current_stock}.', 'success')
-            except IntegrityError as e:
-                db.session.rollback()
-                flash(f'An error occurred while updating stock for {existing_item.product_name}: {e.orig}', 'danger')
-            return redirect(url_for('inventory'))
-
-
-        # Handle sale_price and unit_price_per_tab calculation
+        if InventoryItem.query.filter_by(product_name=product_name, business_id=business_id).first():
+            flash('Product with this name already exists for this business.', 'danger')
+            item_data_for_form_on_error = {
+                'product_name': product_name, 'category': category,
+                'purchase_price': purchase_price, 'current_stock': current_stock,
+                'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
+                'number_of_tabs': number_of_tabs,
+                'item_type': request.form.get('item_type', business_type),
+                'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
+                'is_fixed_price': 'is_fixed_price' in request.form,
+                'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
+            }
+            return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year, pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+        
         sale_price = 0.0
         unit_price_per_tab = 0.0
         
         is_fixed_price = 'is_fixed_price' in request.form
-        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
+        fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0)) # Ensure it's always a float
 
         if is_fixed_price:
             sale_price = fixed_sale_price
             if number_of_tabs > 0:
-                unit_price_per_tab = round(fixed_sale_price / number_of_tabs, 2)
+                unit_price_per_tab = fixed_sale_price / number_of_tabs
         else:
+            # If not fixed price and not pharmacy, assume a sale_price input field is needed
+            # Since the form doesn't have it, we must ensure it's provided or handled
             if business_type != 'Pharmacy':
+                # This field is MISSING from your HTML template
+                # You need to add an input for name="sale_price" if you want to use this logic
                 input_sale_price = request.form.get('sale_price')
                 if input_sale_price is None or input_sale_price.strip() == '':
                     flash('Sale Price is required for non-fixed price items in this business type.', 'danger')
                     item_data_for_form_on_error = {
                         'product_name': product_name, 'category': category,
                         'purchase_price': purchase_price, 'current_stock': current_stock,
-                        'batch_number': batch_number, 'barcode': raw_barcode,
+                        'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                         'number_of_tabs': number_of_tabs,
                         'item_type': request.form.get('item_type', business_type),
                         'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2812,7 +2828,7 @@ def add_inventory_item():
                     item_data_for_form_on_error = {
                         'product_name': product_name, 'category': category,
                         'purchase_price': purchase_price, 'current_stock': current_stock,
-                        'batch_number': batch_number, 'barcode': raw_barcode,
+                        'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
                         'number_of_tabs': number_of_tabs,
                         'item_type': request.form.get('item_type', business_type),
                         'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
@@ -2825,14 +2841,14 @@ def add_inventory_item():
                                            pharmacy_info=pharmacy_info, other_businesses=other_businesses)
                 
                 if number_of_tabs > 0:
-                    unit_price_per_tab = round(sale_price / number_of_tabs, 2)
+                    unit_price_per_tab = sale_price / number_of_tabs
             else: # Business type is Pharmacy, and not fixed price
                 markup_percentage = float(request.form.get('markup_percentage_pharmacy', 0.0)) / 100
                 sale_price = purchase_price + (purchase_price * markup_percentage)
                 if number_of_tabs > 0:
-                    unit_price_per_tab = round(sale_price / number_of_tabs, 2)
+                    unit_price_per_tab = sale_price / number_of_tabs
 
-        # If we reach here, no existing item was found, so we create a new one.
+
         new_item = InventoryItem(
             business_id=business_id,
             product_name=product_name,
@@ -2841,37 +2857,33 @@ def add_inventory_item():
             sale_price=sale_price,
             current_stock=current_stock,
             batch_number=batch_number,
-            barcode=barcode_to_save, 
+            barcode=barcode_to_save, # Use the processed barcode_to_save here
             number_of_tabs=number_of_tabs,
             unit_price_per_tab=unit_price_per_tab,
-            item_type=request.form.get('item_type', business_type), 
+            item_type=request.form.get('item_type', business_type), # Use the selected item_type from form
             expiry_date=expiry_date_obj,
             is_fixed_price=is_fixed_price,
             fixed_sale_price=fixed_sale_price,
             is_active=True
         )
         db.session.add(new_item)
-        try:
-            db.session.commit()
-            flash(f'New inventory item "{product_name}" added successfully!', 'success')
-        except IntegrityError as e:
-            db.session.rollback()
-            flash(f'An error occurred while adding the item: {e.orig}', 'danger')
+        db.session.commit()
+        flash(f'Inventory item "{product_name}" added successfully!', 'success')
         return redirect(url_for('inventory'))
     
     # GET request / Initial render
-    categories_query = Category.query.filter_by(business_id=business_id).all()
-    categories_list = [cat.name for cat in categories_query]
-
+    # Ensure all context variables are passed on GET for initial form rendering
     return render_template('add_edit_inventory.html',
                            title='Add Inventory Item',
-                           item={}, 
+                           item={}, # Empty item for new form
                            user_role=session.get('role'),
                            business_type=business_type,
                            current_year=datetime.now().year,
                            pharmacy_info=pharmacy_info,
-                           other_businesses=other_businesses,
-                           categories=categories_list)
+                           other_businesses=other_businesses)
+
+
+
 
 @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
 @login_required
@@ -3539,6 +3551,51 @@ def add_sale():
             session['last_transaction_customer_phone'] = customer_phone_for_template
             session['last_transaction_sales_person'] = session.get('username')
             session['last_transaction_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            send_sms = 'send_sms_receipt' in request.form
+            if send_sms and customer_phone_for_template:
+                business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+                
+                sms_message = (
+                    f"{business_name_for_sms} Sales Receipt:\n"
+                    f"Transaction ID: {receipt_num}\n"
+                    f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Total Amount: GH₵{total_grand_amount:.2f}\n"
+                    f"Items: " + ", ".join([f"{item['product_name']} ({item['quantity_sold']} {item['sale_unit_type']})" for item in recorded_sale_details]) + "\n"
+                    f"Sales Person: {session.get('username')}\n\n"
+                    f"Thank you for your purchase!\n"
+                    f"From: {business_name_for_sms}"
+                )
+                
+                if check_network_online():
+                    try:
+                        sms_payload = {
+                            'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone_for_template,
+                            'from': ARKESEL_SENDER_ID, 'sms': sms_message
+                        }
+                        sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+                        sms_response.raise_for_status()
+                        sms_result = sms_response.json()
+
+                        if sms_result.get('status') == 'success':
+                            flash(f'SMS receipt sent to customer {customer_phone_for_template} successfully!', 'success')
+                        else:
+                            error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+                            flash(f'Failed to send SMS receipt to customer. Error: {error_message}', 'danger')
+                    except requests.exceptions.HTTPError as http_err:
+                        flash(f'HTTP error sending SMS receipt: {http_err}. Please check API key or sender ID.', 'danger')
+                    except requests.exceptions.ConnectionError as conn_err:
+                        flash(f'Network connection error sending SMS receipt: {conn_err}. Please check your internet connection.', 'danger')
+                    except requests.exceptions.Timeout as timeout_err:
+                        flash(f'SMS request timed out: {timeout_err}. Please try again later.', 'danger')
+                    except requests.exceptions.RequestException as req_err:
+                        flash(f'An unexpected error occurred while sending SMS receipt: {req_err}', 'danger')
+                    except json.JSONDecodeError:
+                        flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+                else:
+                    flash("SMS receipt not sent: You are offline.", 'warning')
+
+            elif send_sms and not customer_phone_for_template:
+                flash(f'SMS receipt not sent: No customer phone number provided.', 'warning')
 
             # Redirect to the same page with print_ready flag
             return redirect(url_for('add_sale', print_ready=True))
