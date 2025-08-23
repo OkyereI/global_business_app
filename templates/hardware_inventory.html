@@ -254,7 +254,6 @@
         .action-buttons .btn.bg-red-500:hover {
             background-color: #dc2626; /* hover:bg-red-600 */
         }
-
         /* Expiry date badges */
         .expiry-badge {
             margin-left: 0.5rem; /* ml-2 */
@@ -281,6 +280,9 @@
         }
         footer .main-container {
             text-align: center; /* text-center */
+        }
+        .delete-form {
+            display: inline;
         }
     </style>
 </head>
@@ -318,9 +320,8 @@
             </div>
         </div>
 
-        <!-- Search Form -->
         <form action="{{ url_for('inventory') }}" method="GET" class="mb-6 flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 search-form">
-            <input type="text" name="search" placeholder="Search by name, category, batch..."
+            {{ csrf_token }} <input type="text" name="search" placeholder="Search by name, category, batch..."
                    class="flex-grow shadow appearance-none border rounded-lg w-full sm:w-auto py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline search-input"
                    value="{{ search_query if search_query else '' }}">
             <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200 w-full sm:w-auto search-button">
@@ -374,9 +375,11 @@
                                 <a href="{{ url_for('edit_inventory_item', item_id=item.id) }}" class="bg-blue-500 hover:bg-blue-600 text-white btn">
                                     <i class="fas fa-edit"></i> Edit
                                 </a>
-                                <a href="{{ url_for('delete_inventory_item', item_id=item.id) }}" onclick="return confirm('Are you sure you want to mark {{ item.product_name }} as inactive (soft delete)?');" class="bg-red-500 hover:bg-red-600 text-white btn">
-                                    <i class="fas fa-trash"></i> Inactive
-                                </a>
+                                <form action="{{ url_for('delete_inventory_item', item_id=item.id) }}" method="POST" class="delete-form">
+                                    {{ csrf_token }} <button type="submit" onclick="return confirm('Are you sure you want to mark {{ item.product_name }} as inactive (soft delete)?');" class="bg-red-500 hover:bg-red-600 text-white btn">
+                                        <i class="fas fa-trash"></i> Inactive
+                                    </button>
+                                </form>
                                 {% else %}
                                     <span class="text-gray-500">No actions</span>
                                 {% endif %}
