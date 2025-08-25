@@ -15,6 +15,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import Index, create_engine, text, func, cast # Import func and cast for dashboard queries
 from dotenv import load_dotenv
 from flask import current_app
+from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
 
 # Load environment variables
 load_dotenv()
@@ -113,38 +114,38 @@ def create_app():
     #         return f(*args, **kwargs)
     #     return decorated_function
 
-    def admin_required(f):
-        from functools import wraps
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if session.get('role') != 'admin':
-                flash('Access denied: Admins only.', 'danger')
-                return redirect(url_for('dashboard'))
-            return f(*args, **kwargs)
-        return decorated_function
+    # def admin_required(f):
+    #     from functools import wraps
+    #     @wraps(f)
+    #     def decorated_function(*args, **kwargs):
+    #         if session.get('role') != 'admin':
+    #             flash('Access denied: Admins only.', 'danger')
+    #             return redirect(url_for('dashboard'))
+    #         return f(*args, **kwargs)
+    #     return decorated_function
 
-    def super_admin_required(f):
-        from functools import wraps
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if session.get('role') != 'super_admin':
-                flash('Access denied: Super Admin only.', 'danger')
-                return redirect(url_for('dashboard'))
-            return f(*args, **kwargs)
-        return decorated_function
+    # def super_admin_required(f):
+    #     from functools import wraps
+    #     @wraps(f)
+    #     def decorated_function(*args, **kwargs):
+    #         if session.get('role') != 'super_admin':
+    #             flash('Access denied: Super Admin only.', 'danger')
+    #             return redirect(url_for('dashboard'))
+    #         return f(*args, **kwargs)
+    #     return decorated_function
 
-    # Permissions based on roles (can be extended)
-    def permission_required(roles):
-        from functools import wraps
-        def wrapper(f): # 'f' is the function being decorated (e.g., dashboard, inventory)
-            @wraps(f)
-            def decorated_function(*args, **kwargs):
-                if session.get('role') not in roles:
-                    flash(f'Access denied. Required roles: {", ".join(roles)}.', 'danger')
-                    return redirect(url_for('dashboard'))
-                return f(*args, **kwargs)
-            return decorated_function
-        return wrapper
+    # # Permissions based on roles (can be extended)
+    # def permission_required(roles):
+    #     from functools import wraps
+    #     def wrapper(f): # 'f' is the function being decorated (e.g., dashboard, inventory)
+    #         @wraps(f)
+    #         def decorated_function(*args, **kwargs):
+    #             if session.get('role') not in roles:
+    #                 flash(f'Access denied. Required roles: {", ".join(roles)}.', 'danger')
+    #                 return redirect(url_for('dashboard'))
+    #             return f(*args, **kwargs)
+    #         return decorated_function
+    #     return wrapper
 
     def roles_required(*roles):
         """
