@@ -8,3 +8,4 @@ Flask-Migrate
 Werkzeug
 flask_wtf
 Flask-Login
+pandas
