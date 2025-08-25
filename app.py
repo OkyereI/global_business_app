@@ -1749,128 +1749,230 @@ def create_app():
                             user_role=session.get('role'), 
                             current_year=datetime.now().year)
 
-    @app.route('/super_admin/add_business', methods=['GET', 'POST'])
+    
+    @app.route('/super_admin/add_business', methods=['GET', 'POST']) # Ensure this route path is correct if you changed it
+    @login_required
+    @roles_required('super_admin')
     def add_business():
-        # Allow 'admin' role to add businesses
-        if session.get('role') not in ['super_admin']:
-            flash('Access denied. Super Admin or Admin role required.', 'danger')
-            return redirect(url_for('login'))
-        
+        print(f"DEBUG: User '{current_user.username}' (ID: {current_user.id}) is accessing /add_business. Role: {current_user.role}")
+        # --- END TEMPORARY DEBUG PRINT ---
+
+        business_types = ['Pharmacy', 'Supermarket', 'Hardware', 'Provision Store', 'Other'] # Define business_types for GET request/error rendering
+
         if request.method == 'POST':
-            business_name = request.form['business_name'].strip()
-            business_address = request.form['business_address'].strip()
-            business_location = request.form['business_location'].strip()
-            business_contact = request.form['business_contact'].strip()
-            business_type = request.form['business_type'].strip() # New: Get business type
-            initial_admin_username = request.form['initial_admin_username'].strip()
-            initial_admin_password = request.form['initial_admin_password'].strip()
-
-            if Business.query.filter_by(name=business_name).first():
-                flash('Business with this name already exists.', 'danger')
-                return render_template('add_edit_business.html', title='Add New Business', business={
-                    'name': business_name, 'address': business_address, 'location': business_location,
-                    'contact': business_contact, 'type': business_type, # Pass type back to form
-                    'initial_admin_username': initial_admin_username, 'initial_admin_password': initial_admin_password
-                }, business_types=['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'], current_year=datetime.now().year) # Pass types to template
+            business_name = request.form.get('business_name', '').strip()
+            address = request.form.get('business_address', '').strip() # Changed from 'address' to 'business_address' for consistency
+            location = request.form.get('business_location', '').strip() # Changed from 'location' to 'business_location' for consistency
+            contact = request.form.get('business_contact', '').strip() # Changed from 'contact' to 'business_contact' for consistency
+            business_type = request.form.get('business_type', '').strip()
             
-            new_business = Business(
-                name=business_name, address=business_address, location=business_location,
-                contact=business_contact, type=business_type, # Save business type
-                is_active=True
-            )
-            db.session.add(new_business)
-            db.session.commit()
+            admin_username = request.form.get('admin_username', '').strip()
+            admin_password = request.form.get('admin_password', '').strip()
 
-            initial_admin_user = User(
-                username=initial_admin_username, password=initial_admin_password, # Use .password setter which hashes
-                role='admin', business_id=new_business.id
-            )
-            db.session.add(initial_admin_user)
-            db.session.commit()
+            if not all([business_name, business_type, admin_username, admin_password]):
+                flash('All fields (Business Name, Type, Admin Username, Password) are required!', 'danger')
+                return render_template('add_edit_business.html', title='Add New Business', business_types=business_types,
+                                       business={
+                                           'name': business_name, 'address': address, 'location': location,
+                                           'contact': contact, 'type': business_type, 'initial_admin_username': admin_username
+                                       }) # Pass data back for sticky form
 
-            flash(f'Business "{business_name}" added successfully with initial admin "{initial_admin_username}".', 'success')
-            return redirect(url_for('super_admin_dashboard'))
-        
-        return render_template('add_edit_business.html', title='Add New Business', business={}, business_types=['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'], current_year=datetime.now().year)
+            # Check if business name already exists
+            existing_business = Business.query.filter_by(name=business_name).first()
+            if existing_business:
+                flash('A business with this name already exists.', 'danger')
+                return render_template('add_edit_business.html', title='Add New Business', business_types=business_types,
+                                       business={
+                                           'name': business_name, 'address': address, 'location': location,
+                                           'contact': contact, 'type': business_type, 'initial_admin_username': admin_username
+                                       })
+
+            # Check if the desired admin username already exists
+            existing_admin_user = User.query.filter_by(username=admin_username).first()
+            if existing_admin_user:
+                flash(f'The username "{admin_username}" is already taken. Please choose another.', 'danger')
+                return render_template('add_edit_business.html', title='Add New Business', business_types=business_types,
+                                       business={
+                                           'name': business_name, 'address': address, 'location': location,
+                                           'contact': contact, 'type': business_type, 'initial_admin_username': admin_username
+                                       })
+
+            try:
+                new_business = Business(
+                    id=str(uuid.uuid4()),
+                    name=business_name,
+                    type=business_type,
+                    address=address,
+                    location=location,
+                    contact=contact,
+                    # email=email, # Add email field to form if needed in the future
+                    is_active=True,
+                    # REMOVED: date_added=datetime.utcnow(),
+                    # REMOVED: last_updated=datetime.utcnow()
+                    # These should be handled by the model's default values
+                )
+                db.session.add(new_business)
+                db.session.commit() # Commit to get business.id for the user
+
+                # Create the admin user for this new business
+                hashed_password = generate_password_hash(admin_password, method='pbkdf2:sha256')
+                new_admin_user = User(
+                    id=str(uuid.uuid4()),
+                    username=admin_username,
+                    _password_hash=hashed_password,
+                    role='admin', # Assign 'admin' role to this user
+                    business_id=new_business.id, # Link to the new business
+                    is_active=True,
+                    created_at=datetime.utcnow()
+                )
+                db.session.add(new_admin_user)
+                db.session.commit()
+
+                flash(f'Business "{business_name}" and admin user "{admin_username}" created successfully!', 'success')
+                return redirect(url_for('super_admin_dashboard'))
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error adding business and admin user: {e}")
+                flash(f'Error creating business: {str(e)}', 'danger')
+                # Re-render form with current data on error
+                return render_template('add_edit_business.html', title='Add New Business', business_types=business_types,
+                                       business={
+                                           'name': business_name, 'address': address, 'location': location,
+                                           'contact': contact, 'type': business_type, 'initial_admin_username': admin_username
+                                       })
+
+        return render_template('add_edit_business.html', title='Add New Business', business_types=business_types)
+
+
+
     @app.route('/super_admin/edit_business/<string:business_id>', methods=['GET', 'POST'])
+    @login_required # Ensure user is logged in
+    @roles_required('super_admin', 'admin') # Allow both super_admin and admin to access
     def edit_business(business_id):
-        # Allow 'admin' role to edit businesses, but only super_admin can edit username
-        if session.get('role') not in ['super_admin', 'admin']:
-            flash('Access denied. Super Admin or Admin role required.', 'danger')
-            return redirect(url_for('login'))
+        # The custom session.get('role') check can be removed now that roles_required is used.
+        # if session.get('role') not in ['super_admin', 'admin']:
+        #     flash('Access denied. Super Admin or Admin role required.', 'danger')
+        #     return redirect(url_for('login')) # This will be handled by roles_required
 
         business_to_edit = Business.query.get_or_404(business_id)
-        initial_admin = User.query.filter_by(business_id=business_id, role='admin').first()
+        # Find the admin user associated with this business (assuming one primary admin per business)
+        initial_admin_user = User.query.filter_by(business_id=business_id, role='admin').first()
+
+        # Define business_types for the dropdown
+        business_types = ['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store', 'Other']
 
         if request.method == 'POST':
-            new_business_name = request.form['business_name'].strip()
-            new_business_address = request.form['business_address'].strip()
-            new_business_location = request.form['business_location'].strip()
-            new_business_contact = request.form['business_contact'].strip()
-            new_business_type = request.form['business_type'].strip()
+            # Retrieve form data using .get() for safety and correct field names
+            new_business_name = request.form.get('business_name', '').strip()
+            new_business_address = request.form.get('business_address', '').strip()
+            new_business_location = request.form.get('business_location', '').strip()
+            new_business_contact = request.form.get('business_contact', '').strip()
+            new_business_type = request.form.get('business_type', '').strip()
             
-            # Get username from form (will be present for super_admin)
-            new_initial_admin_username = request.form['initial_admin_username'].strip() 
-            new_initial_admin_password = request.form['initial_admin_password'].strip()
+            # --- CORRECTED KEYS HERE (from 'initial_admin_username' to 'admin_username') ---
+            admin_username_from_form = request.form.get('admin_username', '').strip()
+            admin_password_from_form = request.form.get('admin_password', '').strip()
+            # --- END CORRECTED KEYS ---
 
-            # Check for duplicate business name
-            if Business.query.filter(Business.name == new_business_name, Business.id != business_id).first():
-                flash('Business with this name already exists.', 'danger')
-                return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit.name}', business={
+            # Basic validation
+            if not new_business_name or not new_business_type:
+                flash('Business name and type are required!', 'danger')
+                # Repopulate form fields on error
+                business_data_for_form = {
                     'name': new_business_name, 'address': new_business_address, 'location': new_business_location,
                     'contact': new_business_contact, 'type': new_business_type,
-                    'initial_admin_username': new_initial_admin_username, 'initial_admin_password': new_initial_admin_password
-                }, business_types=['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'], current_year=datetime.now().year)
+                    'initial_admin_username': admin_username_from_form, # Pass back for sticky form
+                    # Password field should not be repopulated for security
+                }
+                return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit.name}', 
+                                    business=business_data_for_form, business_types=business_types, 
+                                    current_year=datetime.now().year, user_role=current_user.role)
+
+            # Check for duplicate business name (excluding current business)
+            if Business.query.filter(Business.name == new_business_name, Business.id != business_id).first():
+                flash('A business with this name already exists.', 'danger')
+                # Repopulate form fields on error
+                business_data_for_form = {
+                    'name': new_business_name, 'address': new_business_address, 'location': new_business_location,
+                    'contact': new_business_contact, 'type': new_business_type,
+                    'initial_admin_username': admin_username_from_form,
+                }
+                return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit.name}', 
+                                    business=business_data_for_form, business_types=business_types, 
+                                    current_year=datetime.now().year, user_role=current_user.role)
             
+            # Update business details
             business_to_edit.name = new_business_name
             business_to_edit.address = new_business_address
             business_to_edit.location = new_business_location
             business_to_edit.contact = new_business_contact
             business_to_edit.type = new_business_type
-            
-            if initial_admin:
-                # --- NEW LOGIC FOR USERNAME EDITING ---
-                if session.get('role') == 'super_admin':
-                    # Only super_admin can change the username
-                    if new_initial_admin_username != initial_admin.username:
-                        # Check if the new username already exists for another user (globally)
-                        if User.query.filter(User.username == new_initial_admin_username, User.id != initial_admin.id).first():
-                            flash(f"Username '{new_initial_admin_username}' is already taken by another user. Admin username not changed.", 'danger')
-                        else:
-                            initial_admin.username = new_initial_admin_username
-                            flash('Admin username updated.', 'info')
-                else:
-                    # For regular 'admin', ensure username is not changed (even if attempted via dev tools)
-                    new_initial_admin_username = initial_admin.username # Force it back to original
-                # --- END NEW LOGIC ---
+            business_to_edit.last_updated = datetime.utcnow() # Update timestamp
 
-                # Update password if provided
-                if new_initial_admin_password:
-                    initial_admin.password = new_initial_admin_password # Use .password setter which hashes
+            # Handle admin user updates (only if an initial admin exists)
+            if initial_admin_user:
+                # Username can only be changed by super_admin (as per original logic and template design)
+                if current_user.role == 'super_admin':
+                    if admin_username_from_form and admin_username_from_form != initial_admin_user.username:
+                        # Check if new username is already taken by another user (globally)
+                        if User.query.filter(User.username == admin_username_from_form, User.id != initial_admin_user.id).first():
+                            flash(f"Username '{admin_username_from_form}' is already taken by another user. Admin username not changed.", 'danger')
+                            # Keep current username in form for re-render
+                            business_data_for_form = {
+                                'name': new_business_name, 'address': new_business_address, 'location': new_business_location,
+                                'contact': new_business_contact, 'type': new_business_type,
+                                'initial_admin_username': initial_admin_user.username, # Keep old username if update failed
+                            }
+                            return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit.name}', 
+                                                business=business_data_for_form, business_types=business_types, 
+                                                current_year=datetime.now().year, user_role=current_user.role)
+                        else:
+                            initial_admin_user.username = admin_username_from_form
+                            flash('Admin username updated.', 'info')
+                # If a non-super_admin tries to change username, it will be ignored as per template readonly.
+                # However, for robustness, we explicitly ensure the user object's username isn't modified
+                # if the current_user is not super_admin.
+                # else: admin_username_from_form is ignored for regular 'admin' role.
+
+                # Update password if provided (not blank)
+                if admin_password_from_form: # Check if the field was filled
+                    initial_admin_user.password = admin_password_from_form # Use .password setter which hashes
+                    initial_admin_user.last_password_update = datetime.utcnow() # Optional: track password changes
                     flash('Admin password updated.', 'info')
-            
+                
+                db.session.add(initial_admin_user) # Add updated user to session for commit
+
             try:
+                db.session.add(business_to_edit) # Add updated business to session
                 db.session.commit()
                 flash(f'Business "{new_business_name}" details updated successfully!', 'success')
                 return redirect(url_for('super_admin_dashboard'))
             except Exception as e:
                 db.session.rollback()
+                print(f"Error updating business or admin user: {e}")
                 flash(f'Error updating information: {str(e)}', 'danger')
                 return redirect(url_for('edit_business', business_id=business_to_edit.id))
 
+        # GET request: Render the form with existing business data
         business_data_for_form = {
-            'name': business_to_edit.name, 'address': business_to_edit.address, 'location': business_to_edit.location,
-            'contact': business_to_edit.contact, 'type': business_to_edit.type,
-            'initial_admin_username': initial_admin.username if initial_admin else '',
-            'initial_admin_password': '' # Always leave password field empty for security
+            'id': business_to_edit.id, # Ensure ID is passed back for URL if needed
+            'name': business_to_edit.name,
+            'address': business_to_edit.address,
+            'location': business_to_edit.location,
+            'contact': business_to_edit.contact,
+            'type': business_to_edit.type,
+            # Pass the admin username to pre-fill the field (will be readonly in template if 'business' object exists)
+            'initial_admin_username': initial_admin_user.username if initial_admin_user else '',
+            # Password field is always empty for security on GET
+            'initial_admin_password': '' 
         }
-        # Pass the current user's role to the template
+        # Pass the current user's role to the template for conditional rendering logic
         return render_template('add_edit_business.html', title=f'Edit Business: {business_to_edit.name}', 
                             business=business_data_for_form, 
-                            business_types=['Pharmacy', 'Hardware', 'Supermarket', 'Provision Store'], 
+                            business_types=business_types, 
                             current_year=datetime.now().year,
-                            user_role=session.get('role')) # Pass user_role to the template
-
+                            user_role=current_user.role) # Pass current_user.role, not session.get('role')
 
     @app.route('/super_admin/view_business_details/<string:business_id>')
     def view_business_details(business_id):

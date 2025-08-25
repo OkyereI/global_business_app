@@ -84,39 +84,8 @@ class User(UserMixin,db.Model):
         return f'<User {self.username}>'
 
 #
+# models.py (locate your InventoryItem model)
 
-class InventoryItem(db.Model):
-    __tablename__ = 'inventory_items'
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    product_name = db.Column(db.String(255), nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    purchase_price = db.Column(db.Float, nullable=False)
-    sale_price = db.Column(db.Float, nullable=False)
-    current_stock = db.Column(db.Float, nullable=False)
-    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
-    batch_number = db.Column(db.String(100), nullable=True)
-    number_of_tabs = db.Column(db.Integer, default=1, nullable=False)
-    unit_price_per_tab = db.Column(db.Float, default=0.0, nullable=False)
-    item_type = db.Column(db.String(50), nullable=False)
-    expiry_date = db.Column(db.Date, nullable=True)
-    is_fixed_price = db.Column(db.Boolean, default=False, nullable=False)
-    fixed_sale_price = db.Column(db.Float, default=0.0, nullable=False)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    barcode = db.Column(db.String(100), nullable=True)
-    markup_percentage_pharmacy = db.Column(db.Float, default=0.0, nullable=False)
-    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
-    
-    # --- ADD THIS RELATIONSHIP ---
-    business = db.relationship('Business', back_populates='inventory_items')
-
-    __table_args__ = (
-        db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),
-        db.Index('idx_unique_active_barcode', 'barcode', unique=True, postgresql_where=db.text('barcode IS NOT NULL')),
-    )
-
-    def __repr__(self):
-        return f'<InventoryItem {self.product_name} ({self.current_stock})>'
 class SalesRecord(db.Model):
     __tablename__ = 'sales_records'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -147,6 +116,39 @@ class SalesRecord(db.Model):
 
     def __repr__(self):
         return f'<SalesRecord {self.receipt_number or self.id} - GH₵{self.grand_total_amount:.2f}>'
+class InventoryItem(db.Model):
+    __tablename__ = 'inventory_items'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    product_name = db.Column(db.String(255), nullable=False)
+    category = db.Column(db.String(100), nullable=False)
+    purchase_price = db.Column(db.Float, nullable=False)
+    sale_price = db.Column(db.Float, nullable=False)
+    current_stock = db.Column(db.Float, nullable=False)
+    last_updated = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+    batch_number = db.Column(db.String(100), nullable=True)
+    number_of_tabs = db.Column(db.Integer, default=1, nullable=False)
+    unit_price_per_tab = db.Column(db.Float, default=0.0, nullable=False)
+    item_type = db.Column(db.String(50), nullable=False)
+    expiry_date = db.Column(db.Date, nullable=True)
+    is_fixed_price = db.Column(db.Boolean, default=False, nullable=False)
+    fixed_sale_price = db.Column(db.Float, default=0.0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    barcode = db.Column(db.String(100), nullable=True)
+    markup_percentage_pharmacy = db.Column(db.Float, default=0.0, nullable=False)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+    
+    business = db.relationship('Business', back_populates='inventory_items')
+
+    __table_args__ = (
+        db.UniqueConstraint('product_name', 'business_id', name='_product_name_business_uc'),
+        # CORRECTED LINE: Composite unique index on business_id and barcode
+        db.Index('idx_unique_active_barcode', 'business_id', 'barcode', unique=True, postgresql_where=db.text('barcode IS NOT NULL')),
+    )
+
+    def __repr__(self):
+        return f'<InventoryItem {self.product_name} ({self.current_stock})>'
+
 
 
 
