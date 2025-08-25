@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register Business</title>
+</head>
+<body>
+
+    <h1>Register Business for Sync</h1>
+    <form action="/api/v1/register_business_for_sync" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="name">Business Name:</label><br>
+        <input type="text" id="name" name="name" required><br><br>
+
+        <label for="type">Business Type:</label><br>
+        <input type="text" id="type" name="type" required><br><br>
+
+        <label for="address">Address:</label><br>
+        <input type="text" id="address" name="address"><br><br>
+
+        <label for="location">Location:</label><br>
+        <input type="text" id="location" name="location"><br><br>
+
+        <label for="contact">Contact:</label><br>
+        <input type="text" id="contact" name="contact"><br><br>
+
+        <label for="email">Email:</label><br>
+        <input type="email" id="email" name="email"><br><br>
+
+        <button type="submit">Register</button>
+    </form>
+
+</body>
+</html>
