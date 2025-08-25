@@ -8,161 +8,44 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f4f7f6;
-            color: #333;
-        }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        .card {
-            background-color: #ffffff;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            padding: 2rem;
-        }
-        .btn {
-            padding: 0.6rem 1.2rem;
-            border-radius: 0.5rem;
-            font-weight: 500;
-            transition: all 0.2s ease-in-out;
-        }
-        .btn-primary {
-            background-color: #10B981; /* Emerald 500 */
-            color: white;
-        }
-        .btn-primary:hover {
-            background-color: #059669; /* Emerald 600 */
-        }
-        .btn-secondary {
-            background-color: #6B7280; /* Gray 500 */
-            color: white;
-        }
-        .btn-secondary:hover {
-            background-color: #4B5563; /* Gray 600 */
-        }
-        .flash-message {
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-        }
-        .flash-success {
-            background-color: #D1FAE5; /* Green 100 */
-            color: #065F46; /* Green 800 */
-            border: 1px solid #34D399; /* Green 400 */
-        }
-        .flash-danger {
-            background-color: #FEE2E2; /* Red 100 */
-            color: #991B1B; /* Red 800 */
-            border: 1px solid #F87171; /* Red 400 */
-        }
-        .flash-warning {
-            background-color: #FFFBEB; /* Yellow 100 */
-            color: #92400E; /* Yellow 800 */
-            border: 1px solid #FCD34D; /* Yellow 400 */
-        }
-        .flash-info {
-            background-color: #DBEAFE; /* Blue 100 */
-            color: #1E40AF; /* Blue 800 */
-            border: 1px solid #60A5FA; /* Blue 400 */
-        }
-        .flash-message i {
-            margin-right: 0.75rem;
-        }
-        .table-container {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch; /* For smoother scrolling on iOS */
-        }
-        table {
-            width: 100%;
-            min-width: 700px; /* Ensure table is not too narrow on small screens */
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 0.75rem;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        th {
-            background-color: #f8f9fa;
-            font-weight: 600;
-            color: #4a5568;
-            text-transform: uppercase;
-            font-size: 0.875rem;
-        }
-        tr:hover {
-            background-color: #f0f4f8;
-        }
-        .action-buttons {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap; /* Allows wrapping on smaller screens */
-            justify-content: flex-end; /* Align right */
-        }
-        .action-buttons .btn {
-            padding: 0.4rem 0.8rem;
-            font-size: 0.875rem;
-        }
-
-        /* Styles for status badges and toggle/sms buttons */
-        .status-badge {
-            padding: 0.25rem 0.5rem;
-            border-radius: 9999px; /* Tailwind rounded-full */
-            font-size: 0.75rem; /* Tailwind text-xs */
-            font-weight: 600; /* Tailwind font-semibold */
-            display: inline-block;
-        }
-        .status-active {
-            background-color: #d1fae5; /* Tailwind bg-green-100 */
-            color: #065f46; /* Tailwind text-green-800 */
-        }
-        .status-inactive {
-            background-color: #fee2e2; /* Tailwind bg-red-100 */
-            color: #991b1b; /* Tailwind text-red-800 */
-        }
-        .btn-toggle {
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            transition: all 0.2s ease-in-out;
-            cursor: pointer;
-            border: none;
-            white-space: nowrap; /* Prevent button text from wrapping */
-        }
-        .btn-activate {
-            background-color: #28a745; /* Green */
-            color: #fff;
-        }
-        .btn-activate:hover {
-            background-color: #218838;
-        }
-        .btn-deactivate {
-            background-color: #dc3545; /* Red */
-            color: #fff;
-        }
-        .btn-deactivate:hover {
-            background-color: #c82333;
-        }
-        .btn-sms {
-            background-color: #007bff; /* Blue */
-            color: #fff;
-        }
-        .btn-sms:hover {
-            background-color: #0069d9;
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 2rem; }
+        .card { background-color: #ffffff; border-radius: 0.75rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 2rem; }
+        .btn { padding: 0.6rem 1.2rem; border-radius: 0.5rem; font-weight: 500; transition: all 0.2s ease-in-out; }
+        .btn-primary { background-color: #10B981; color: white; }
+        .btn-primary:hover { background-color: #059669; }
+        .btn-secondary { background-color: #6B7280; color: white; }
+        .btn-secondary:hover { background-color: #4B5563; }
+        .flash-message { padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; font-weight: 500; display: flex; align-items: center; }
+        .flash-success { background-color: #D1FAE5; color: #065F46; border: 1px solid #34D399; }
+        .flash-danger { background-color: #FEE2E2; color: #991B1B; border: 1px solid #F87171; }
+        .flash-warning { background-color: #FFFBEB; color: #92400E; border: 1px solid #FCD34D; }
+        .flash-info { background-color: #DBEAFE; color: #1E40AF; border: 1px solid #60A5FA; }
+        .flash-message i { margin-right: 0.75rem; }
+        .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        table { width: 100%; min-width: 700px; border-collapse: collapse; }
+        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background-color: #f8f9fa; font-weight: 600; color: #4a5568; text-transform: uppercase; font-size: 0.875rem; }
+        tr:hover { background-color: #f0f4f8; }
+        .action-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+        .action-buttons .btn { padding: 0.4rem 0.8rem; font-size: 0.875rem; }
+        .status-badge { padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
+        .status-active { background-color: #d1fae5; color: #065f46; }
+        .status-inactive { background-color: #fee2e2; color: #991b1b; }
+        .btn-toggle { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; transition: all 0.2s ease-in-out; cursor: pointer; border: none; white-space: nowrap; }
+        .btn-activate { background-color: #28a745; color: #fff; }
+        .btn-activate:hover { background-color: #218838; }
+        .btn-deactivate { background-color: #dc3545; color: #fff; }
+        .btn-deactivate:hover { background-color: #c82333; }
+        .btn-sms { background-color: #007bff; color: #fff; }
+        .btn-sms:hover { background-color: #0069d9; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container py-8">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="mb-6 flash-messages-container"> {# Added class for JS targeting #}
+                <div class="mb-6 flash-messages-container">
                     {% for category, message in messages %}
                         <div class="flash-message flash-{{ category }}">
                             <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
@@ -202,24 +85,22 @@
                 <p class="text-gray-600">This panel provides administrative controls over businesses and their data.</p>
                 {% if user_role == 'admin' %}
                 <p class="text-sm text-gray-500 mt-2">As an 'Admin', you have full control over your assigned business and limited access to super admin features.</p>
-                {% else %} {# Assuming 'super_admin' is the other case here #}
+                {% else %}
                 <p class="text-sm text-gray-500 mt-2">As a 'Super Admin', you have full control over all businesses and system settings.</p>
                 {% endif %}
             </div>
 
-            {# NEW: Data Synchronization Card #}
-            <div class="card md:col-span-2"> {# This card spans two columns for better layout #}
+            <div class="card md:col-span-2">
                 <h2 class="text-2xl font-semibold mb-4 text-gray-700">Data Synchronization</h2>
                 <p class="text-gray-600 mb-4">Pull latest data from your online deployment to your local offline database, or push local sales/updates to the online system. Ensure your online Flask app is running and accessible.</p>
-                <div class="flex flex-wrap items-center gap-4">
-                    <button id="syncButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out flex items-center justify-center">
+                <form action="{{ url_for('sync_businesses') }}" method="POST" id="syncForm" class="flex flex-wrap items-center gap-4">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" id="syncButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out flex items-center justify-center">
                         <i class="fas fa-sync-alt mr-2"></i> Start Synchronization
                     </button>
-                    <span id="syncStatus" class="text-gray-600 text-sm italic">Status: Checking... | Last Sync: Never</span>
-                </div>
+                    <span id="syncStatus" class="text-gray-600 text-sm italic">Status: Offline | Last Sync: Never</span>
+                </form>
             </div>
-            {# END NEW #}
-
         </div>
 
         <div class="card table-container">
@@ -233,7 +114,7 @@
                         <th class="py-2 px-4 border-b">Location</th>
                         <th class="py-2 px-4 border-b">Contact</th>
                         <th class="py-2 px-4 border-b">Status</th>
-                        <th class="py-2 px-4 border-b text-right">Actions</th> {# Align header right as well #}
+                        <th class="py-2 px-4 border-b text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -248,9 +129,8 @@
                                 {{ "Active" if business.is_active else "Inactive" }}
                             </span>
                         </td>
-                        <td class="py-2 px-4 border-b text-right"> {# Align actions right #}
+                        <td class="py-2 px-4 border-b text-right">
                             <div class="action-buttons">
-                                {# CORRECTED: Explicitly define hidden input for csrf_token #}
                                 <form action="{{ url_for('toggle_business_active', business_id=business.id) }}" method="POST" class="inline-block" onsubmit="return confirm('Are you sure you want to {{ 'deactivate' if business.is_active else 'activate' }} this business?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn-toggle {% if business.is_active %}btn-deactivate{% else %}btn-activate{% endif %}">
@@ -258,26 +138,24 @@
                                         {{ "Deactivate" if business.is_active else "Activate" }}
                                     </button>
                                 </form>
-
-                                {# CORRECTED: Explicitly define hidden input for csrf_token #}
                                 <form action="{{ url_for('send_payment_due_sms', business_id=business.id) }}" method="POST" class="inline-block" onsubmit="return confirm('Send a payment due SMS to {{ business.name }}?');">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn-sms">
                                         <i class="fas fa-sms mr-1"></i> Send SMS
                                     </button>
                                 </form>
-
-                                {# Existing buttons - make sure URLs match your app.py routes #}
                                 <a href="{{ url_for('view_business_details', business_id=business.id) }}" class="bg-gray-300 hover:bg-gray-400 text-gray-800 btn">
                                     <i class="fas fa-eye"></i> View
                                 </a>
                                 <a href="{{ url_for('edit_business', business_id=business.id) }}" class="bg-blue-500 hover:bg-blue-600 text-white btn">
                                     <i class="fas fa-edit"></i> Edit
                                 </a>
-                                {# IMPORTANT: For delete, consider using POST to be RESTful and secure #}
-                                <a href="{{ url_for('delete_business', business_id=business.id) }}" onclick="return confirm('Are you sure you want to delete {{ business.name }} and ALL its associated data? This action cannot be undone.');" class="bg-red-500 hover:bg-red-600 text-white btn">
-                                    <i class="fas fa-trash"></i> Delete
-                                </a>
+                                <form action="{{ url_for('delete_business', business_id=business.id) }}" method="POST" class="inline-block" onsubmit="return confirm('Are you sure you want to delete {{ business.name }} and ALL its associated data? This action cannot be undone.');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="bg-red-500 hover:bg-red-600 text-white btn">
+                                        <i class="fas fa-trash"></i> Delete
+                                    </button>
+                                </form>
                                 <a href="{{ url_for('download_inventory_csv', business_id=business.id) }}" class="bg-green-500 hover:bg-green-600 text-white btn">
                                     <i class="fas fa-file-csv"></i> Inventory CSV
                                 </a>
@@ -292,46 +170,21 @@
             {% endif %}
         </div>
     </div>
-
+    
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const syncButton = document.getElementById('syncButton');
             const syncStatusSpan = document.getElementById('syncStatus');
-            const flashMessageContainer = document.querySelector('.flash-messages-container');
-
-            // Function to display flash messages via JavaScript
-            function flashMessage(message, category) {
-                if (flashMessageContainer) {
-                    const alertDiv = document.createElement('div');
-                    alertDiv.className = `flash-message flash-${category}`;
-                    alertDiv.innerHTML = `<i class="fas ${getIconClass(category)} mr-3"></i>${message}`;
-                    flashMessageContainer.appendChild(alertDiv);
-                    // Remove message after 5 seconds
-                    setTimeout(() => alertDiv.remove(), 5000);
-                } else {
-                    console.warn("Flash message container not found. Message:", message);
-                }
-            }
-
-            // Helper to get Font Awesome icon based on category
-            function getIconClass(category) {
-                switch (category) {
-                    case 'success': return 'fa-check-circle';
-                    case 'danger': return 'fa-times-circle';
-                    case 'warning': return 'fa-exclamation-triangle';
-                    case 'info': return 'fa-info-circle';
-                    default: return 'fa-info-circle';
-                }
-            }
-
-            // Function to update sync status display
+            const syncButton = document.getElementById('syncButton');
+            
+            // This function checks the online status and updates the button
             async function updateSyncStatus() {
                 try {
-                    const response = await fetch('/sync_status'); // Flask endpoint to get status
+                    const response = await fetch('/sync_status');
                     const data = await response.json();
-                    syncStatusSpan.textContent = `Status: ${data.online ? 'Online' : 'Offline'} | Last Sync: ${data.last_sync ? new Date(data.last_sync).toLocaleString() : 'Never'}`;
                     
-                    // Only enable sync button if online
+                    const statusText = `Status: ${data.online ? 'Online' : 'Offline'} | Last Sync: ${data.last_sync ? new Date(data.last_sync).toLocaleString() : 'Never'}`;
+                    syncStatusSpan.textContent = statusText;
+
                     if (data.online) {
                         syncButton.classList.remove('bg-gray-400', 'cursor-not-allowed');
                         syncButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
@@ -349,43 +202,21 @@
                 }
             }
 
-            // Initial status update when the page loads
+            // Initial status check on page load
             updateSyncStatus();
-            // Optional: Periodically update status (e.g., every 30 seconds)
-            setInterval(updateSyncStatus, 30000); 
+            // Check status every 30 seconds
+            setInterval(updateSyncStatus, 30000);
 
-            syncButton.addEventListener('click', async function() {
-                // Confirm with the user before starting sync
+            // Add an event listener to the form to confirm sync
+            const syncForm = document.getElementById('syncForm');
+            syncForm.addEventListener('submit', function(event) {
                 if (!confirm('Starting data synchronization. This will fetch new data from online and push local unsynced sales. This might take a moment. Do you want to proceed?')) {
-                    return; // User cancelled
-                }
-
-                syncButton.disabled = true;
-                syncButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Syncing...';
-                syncStatusSpan.textContent = 'Syncing data, please wait... This may take a while for large datasets.';
-                flashMessage('Synchronization started. Please wait...', 'info');
-
-                try {
-                    const response = await fetch('/trigger_sync', { // Flask endpoint to trigger sync
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token() }}' // Include CSRF token for security
-                        },
-                        body: JSON.stringify({}) // Empty body for a simple trigger
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                        flashMessage(`Sync successful: ${data.message}`, 'success');
-                    } else {
-                        flashMessage(`Sync failed: ${data.message}`, 'danger');
-                    }
-                } catch (error) {
-                    console.error('Error during sync:', error);
-                    flashMessage(`An error occurred during synchronization: ${error.message || error}`, 'danger');
-                } finally {
-                    syncButton.innerHTML = '<i class="fas fa-sync-alt mr-2"></i> Start Synchronization';
-                    updateSyncStatus(); // Update status after sync attempt
+                    event.preventDefault(); // Prevent form submission if user cancels
+                } else {
+                    // Display a temporary message to the user while the sync is processing
+                    syncStatusSpan.textContent = 'Syncing data, please wait...';
+                    syncButton.disabled = true;
+                    syncButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Syncing...';
                 }
             });
         });
