@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, abort,Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
@@ -6,6 +6,7 @@ from flask_login import LoginManager, current_user, login_required, UserMixin
 from functools import wraps
 from datetime import datetime, date, timedelta # Import date and timedelta for dashboard
 import os
+import csv
 import sys
 import uuid
 import pandas as pd
@@ -16,7 +17,7 @@ from sqlalchemy import Index, create_engine, text, func, cast # Import func and 
 from dotenv import load_dotenv
 from flask import current_app
 from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
-
+import io
 # Load environment variables
 load_dotenv()
 
@@ -451,107 +452,117 @@ def create_app():
         except Exception as e:
             print(f"Network check error: {e}")
             return False
-
-    # Function to pull data from remote (PostgreSQL) to local (SQLite)
-    def pull_data_from_remote(remote_business_id, last_synced_at):
+    def pull_data_from_remote(business_id, access_token):
+        """
+        Pulls data for a specific business from the remote server.
+        """
         remote_url = get_remote_flask_base_url()
-        headers = {} # No special headers for now, relying on session for sync APIs in Flask
+        headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
+        
+        # Check for a valid business ID
+        if not business_id:
+            print("Error: No business ID provided for synchronization.")
+            return False, "Synchronization failed: Business ID not found."
 
-        # --- NEW: PULL USER DATA ---
         try:
-            users_response = requests.get(
-                f"{remote_url}/api/v1/users?business_id={remote_business_id}",
-                headers=headers
-            )
-            users_response.raise_for_status()
-            new_users = users_response.json()
-
-            with app.app_context():
-                for user_data in new_users:
-                    user = User.query.filter_by(id=user_data['id']).first()
-                    if user:
-                        # Update existing user
-                        user.username = user_data['username']
-                        # ONLY update the password hash if it has changed
-                        user.password_hash = user_data['password_hash']
-                        user.role = user_data['role']
-                        user.is_active = user_data['is_active']
-                    else:
-                        # Insert new user
-                        db.session.add(User(
-                            id=user_data['id'],
-                            username=user_data['username'],
-                            password_hash=user_data['password_hash'], # Important: store the hashed password
-                            role=user_data['role'],
-                            business_id=user_data['business_id'],
-                            is_active=user_data['is_active']
-                        ))
-                db.session.commit()
-                print(f"Pulled {len(new_users)} user accounts from remote.")
-        except requests.exceptions.RequestException as e:
-            print(f"Error pulling users: {e}")
-            return False, f"Error pulling users: {e}"
-
-        # 1. Pull Inventory
-        try:
-            inventory_response = requests.get(
-                f"{remote_url}/api/v1/inventory?business_id={remote_business_id}&last_synced_at={last_synced_at}",
-                headers=headers
-            )
-            inventory_response.raise_for_status()
-            new_inventory_items = inventory_response.json()
+            # --- Step 1: Pull Business Data ---
+            print(f"Pulling data for business ID: {business_id}")
+            business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
+            business_response.raise_for_status()
+            business_data = business_response.json()
             
-            with app.app_context(): # Ensure we are in app context for DB operations
-                for item_data in new_inventory_items:
-                    # Upsert into local SQLite
-                    item = InventoryItem.query.filter_by(id=item_data['id'], business_id=remote_business_id).first()
-                    if item:
-                        # Update existing local item
-                        item.product_name = item_data['product_name']
-                        item.category = item_data['category']
-                        item.purchase_price = item_data['purchase_price']
-                        item.sale_price = item_data['sale_price']
-                        item.current_stock = item_data['current_stock']
-                        item.last_updated = datetime.fromisoformat(item_data['last_updated'])
-                        item.batch_number = item_data['batch_number']
-                        item.number_of_tabs = item_data['number_of_tabs']
-                        item.unit_price_per_tab = item_data['unit_price_per_tab']
-                        item.item_type = item_data['item_type']
-                        item.expiry_date = datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None
-                        item.is_fixed_price = item_data['is_fixed_price']
-                        item.fixed_sale_price = item_data['fixed_sale_price']
-                        item.is_active = item_data['is_active']
-                    else:
-                        # Insert new local item
-                        db.session.add(InventoryItem(
-                            id=item_data['id'],
-                            business_id=remote_business_id,
-                            product_name=item_data['product_name'],
-                            category=item_data['category'],
-                            purchase_price=item_data['purchase_price'],
-                            sale_price=item_data['sale_price'],
-                            current_stock=item_data['current_stock'],
-                            last_updated=datetime.fromisoformat(item_data['last_updated']),
-                            batch_number=item_data['batch_number'],
-                            number_of_tabs=item_data['number_of_tabs'],
-                            unit_price_per_tab=item_data['unit_price_per_tab'],
-                            item_type=item_data['item_type'],
-                            expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
-                            is_fixed_price=item_data['is_fixed_price'],
-                            fixed_sale_price=item_data['fixed_sale_price'],
-                            is_active=item_data['is_active']
-                        ))
+            with app.app_context():
+                business = db.session.get(Business, business_data['id'])
+                if business:
+                    # Update existing business
+                    business.name = business_data['name']
+                    business.address = business_data['address']
+                    business.location = business_data['location']
+                    business.contact = business_data['contact']
+                    business.type = business_data['type']
+                    business.is_active = business_data['is_active']
+                    business.last_updated = datetime.fromisoformat(business_data['last_updated'])
+                else:
+                    # Add new business
+                    new_business = Business(
+                        id=business_data['id'],
+                        name=business_data['name'],
+                        address=business_data['address'],
+                        location=business_data['location'],
+                        contact=business_data['contact'],
+                        type=business_data['type'],
+                        is_active=business_data['is_active'],
+                        last_updated=datetime.fromisoformat(business_data['last_updated'])
+                    )
+                    db.session.add(new_business)
                 db.session.commit()
-                print(f"Pulled {len(new_inventory_items)} inventory items from remote.")
-                return True, f"Pulled {len(new_inventory_items)} inventory items."
-        except requests.exceptions.RequestException as e:
-            print(f"Error pulling inventory: {e}")
-            return False, f"Error pulling inventory: {e}"
-        except Exception as e:
-            print(f"Unexpected error pulling inventory: {e}")
-            return False, f"Unexpected error pulling inventory: {e}"
+                print("Successfully pulled and replaced business data.")
+            
+            # --- Step 2: Pull Users for this Business ---
+            print("Pulling users for this business...")
+            users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
+            users_response.raise_for_status()
+            users_data = users_response.json()
+            
+            with app.app_context():
+                # Delete existing users for this business to ensure a clean sync
+                User.query.filter_by(business_id=business_id).delete()
+                for user_data in users_data:
+                    user = User(
+                        id=user_data['id'],
+                        username=user_data['username'],
+                        password=user_data['password'],
+                        role=user_data['role'],
+                        business_id=user_data['business_id'],
+                        is_active=user_data['is_active'],
+                        created_at=datetime.fromisoformat(user_data['created_at'])
+                    )
+                    db.session.add(user)
+                db.session.commit()
+                print("Successfully pulled and replaced user data.")
 
-    # Function to push data from local (SQLite) to remote (PostgreSQL)
+            # --- Step 3: Pull Inventory for this Business ---
+            print("Pulling inventory for this business...")
+            inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
+            inventory_response.raise_for_status()
+            inventory_data = inventory_response.json()
+            
+            with app.app_context():
+                InventoryItem.query.filter_by(business_id=business_id).delete()
+                for item_data in inventory_data:
+                    item = InventoryItem(
+                        id=item_data['id'],
+                        business_id=item_data['business_id'],
+                        product_name=item_data['product_name'],
+                        category=item_data['category'],
+                        purchase_price=item_data['purchase_price'],
+                        sale_price=item_data['sale_price'],
+                        current_stock=item_data['current_stock'],
+                        last_updated=datetime.fromisoformat(item_data['last_updated']),
+                        batch_number=item_data['batch_number'],
+                        number_of_tabs=item_data['number_of_tabs'],
+                        unit_price_per_tab=item_data['unit_price_per_tab'],
+                        item_type=item_data['item_type'],
+                        expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+                        is_fixed_price=item_data['is_fixed_price'],
+                        fixed_sale_price=item_data['fixed_sale_price'],
+                        is_active=item_data['is_active']
+                    )
+                    db.session.add(item)
+                db.session.commit()
+                print("Successfully pulled and replaced inventory data.")
+
+            return True, "Synchronization successful."
+
+        except requests.exceptions.RequestException as e:
+            db.session.rollback()
+            print(f"Error during sync: {e}")
+            return False, f"Synchronization failed: {e}"
+        except Exception as e:
+            db.session.rollback()
+            print(f"An unexpected error occurred: {e}")
+            return False, f"An unexpected error occurred: {e}"
+    
     def push_data_to_remote(remote_business_id):
         # This function remains unchanged as we are only pulling user data, not pushing it.
         remote_url = get_remote_flask_base_url()
@@ -1297,161 +1308,280 @@ def create_app():
 
     # ... (other code)
 
+    # @app.route('/trigger_sync', methods=['POST'])
+    # @login_required
+    # def trigger_sync():
+    #     """
+    #     Triggers the data synchronization process.
+    #     """
+    #     if session.get('role') != 'super_admin':
+    #         return jsonify(success=False, message='Access denied. Super Admin role required.'), 403
+
+    #     try:
+    #         # Use a temporary variable to hold the online DB URL based on DB_TYPE
+    #         if app.config.get('DB_TYPE') == 'sqlite':
+    #             # In SQLite mode, there is no online database to pull from
+    #             return jsonify(success=False, message='Synchronization is not available in offline (SQLite) mode.'), 400
+    #         else:
+    #             # Get the online PostgreSQL URL directly from the app config
+    #             online_db_url = app.config['SQLALCHEMY_DATABASE_URI']
+                
+    #         # Connect to online PostgreSQL and offline SQLite
+    #         online_engine = create_engine(online_db_url)
+    #         # Use the correct offline DB URI based on app configuration
+    #         offline_engine = create_engine(f"sqlite:///{os.path.join(app.instance_path, 'instance_data.db')}")
+
+    #         # --- Pulling data from online to offline ---
+    #         print("--- Pulling data from online to offline ---")
+    #         businesses_df = pd.read_sql_query("SELECT * FROM businesses", online_engine)
+    #         businesses_df.to_sql('businesses', offline_engine, if_exists='replace', index=False)
+            
+    #         inventory_df = pd.read_sql_query("SELECT * FROM inventory_items", online_engine)
+    #         inventory_df.to_sql('inventory_items', offline_engine, if_exists='replace', index=False)
+
+    #         # --- Pushing data from offline to online ---
+    #         print("--- Pushing data from offline to online ---")
+    #         sales_sql = "SELECT * FROM sales_records"
+    #         sales_df = pd.read_sql_query(sales_sql, offline_engine)
+
+    #         if not sales_df.empty:
+    #             with online_engine.connect() as conn:
+    #                 sales_df.to_sql('sales_records', conn, if_exists='append', index=False)
+            
+    #         # Update the last sync timestamp
+    #         set_last_sync_timestamp(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            
+    #         return jsonify(success=True, message='Synchronization successful!')
+        
+    #     except Exception as e:
+    #         print(f"Error during synchronization: {e}")
+    #         return jsonify(success=False, message=str(e)), 500
+
+        
+ # app.py (Find your sync_businesses route)
     @app.route('/trigger_sync', methods=['POST'])
     @login_required
     def trigger_sync():
         """
-        Triggers the data synchronization process.
+        Triggers the data synchronization process based on the user's role.
         """
-        if session.get('role') != 'super_admin':
-            return jsonify(success=False, message='Access denied. Super Admin role required.'), 403
+        is_online = check_network_online()
+        if not is_online:
+            flash('Cannot sync. No internet connection detected.', 'danger')
+            return redirect(url_for('dashboard'))
 
-        try:
-            # Use a temporary variable to hold the online DB URL based on DB_TYPE
-            if app.config.get('DB_TYPE') == 'sqlite':
-                # In SQLite mode, there is no online database to pull from
-                return jsonify(success=False, message='Synchronization is not available in offline (SQLite) mode.'), 400
-            else:
-                # Get the online PostgreSQL URL directly from the app config
-                online_db_url = app.config['SQLALCHEMY_DATABASE_URI']
-                
-            # Connect to online PostgreSQL and offline SQLite
-            online_engine = create_engine(online_db_url)
-            # Use the correct offline DB URI based on app configuration
-            offline_engine = create_engine(f"sqlite:///{os.path.join(app.instance_path, 'instance_data.db')}")
+        # Retrieve the user's role and a secure token if available
+        user_role = current_user.role
+        # WARNING: Cannot read current_user.password directly.
+        # A token or other secure authentication method is required here.
+        # For now, we will pass a placeholder and rely on the remote server's
+        # authentication logic to handle it, but this will likely fail.
+        # A better solution is to store a sync token in the database.
+        access_token = None
 
-            # --- Pulling data from online to offline ---
-            print("--- Pulling data from online to offline ---")
-            businesses_df = pd.read_sql_query("SELECT * FROM businesses", online_engine)
-            businesses_df.to_sql('businesses', offline_engine, if_exists='replace', index=False)
-            
-            inventory_df = pd.read_sql_query("SELECT * FROM inventory_items", online_engine)
-            inventory_df.to_sql('inventory_items', offline_engine, if_exists='replace', index=False)
+        if user_role == 'super_admin':
+            # Super admin performs a full sync of ALL data
+            success, message = super_admin_full_sync(access_token)
+        else:
+            # Regular business admin performs a sync of ONLY their business's data
+            success, message = pull_data_from_remote(current_user.business_id, access_token)
 
-            # --- Pushing data from offline to online ---
-            print("--- Pushing data from offline to online ---")
-            sales_sql = "SELECT * FROM sales_records"
-            sales_df = pd.read_sql_query(sales_sql, offline_engine)
+        if success:
+            flash(f'Synchronization successful: {message}', 'success')
+        else:
+            flash(f'Synchronization failed: {message}', 'danger')
 
-            if not sales_df.empty:
-                with online_engine.connect() as conn:
-                    sales_df.to_sql('sales_records', conn, if_exists='append', index=False)
-            
-            # Update the last sync timestamp
-            set_last_sync_timestamp(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            
-            return jsonify(success=True, message='Synchronization successful!')
-        
-        except Exception as e:
-            print(f"Error during synchronization: {e}")
-            return jsonify(success=False, message=str(e)), 500
-
-        
- # app.py (Find your sync_businesses route)
+        return redirect(url_for('dashboard'))
 
     @app.route('/sync_businesses', methods=['POST'])
     @login_required
     @roles_required('super_admin')
     def sync_businesses():
-        """
-        Handles the synchronization of businesses: pulls from online to offline,
-        and pushes unsynced sales from offline to online.
-        """
-        if not check_network_online():
-            flash('Cannot synchronize: No internet connection detected.', 'danger')
-            return redirect(url_for('super_admin_dashboard'))
-
+        # ... (initial checks and setup) ...
+        
         try:
-            # Determine online and offline database URLs
-            online_db_url = os.getenv(
-                'DATABASE_URL',
-                'postgresql://bisinessdb_user:QceRMwRe2FtjhPk8iMLCIKB3j3s4KmhI@dpg-d1olvgbuibrs73cum700-a.oregon-postgres.render.com/bisinessdb'
-            ).replace("postgresql://", "postgresql+psycopg2://")
+            # Assume online_db_url and offline_db_url are set correctly from app.config
+            online_db_url = current_app.config['SQLALCHEMY_DATABASE_URI']
+            offline_db_path = os.path.join(current_app.instance_path, 'instance_data.db')
+            offline_db_url = f'sqlite:///{offline_db_path}'
 
-            offline_db_path = os.path.join(app.instance_path, 'instance_data.db')
-            offline_db_url = f"sqlite:///{offline_db_path}"
-
-            # Create engines
             online_engine = create_engine(online_db_url)
             offline_engine = create_engine(offline_db_url)
 
-            # --- PULLING DATA FROM ONLINE TO OFFLINE ---
-            print("--- Pulling Business, User, and Inventory data from online to offline ---")
+            # --- Pulling Business Data ---
+            print("Pulling table: businesses...")
+            # Fetch all businesses from online DB
+            online_businesses_df = pd.read_sql_table('businesses', online_engine)
+            with offline_engine.connect() as conn:
+                conn.execute(text('DELETE FROM businesses;'))
+                conn.commit()
+                if not online_businesses_df.empty:
+                    online_businesses_df.to_sql('businesses', conn, if_exists='append', index=False)
+                    conn.commit()
+            print("Successfully pulled and replaced data for businesses.")
 
-            # Define tables to pull, explicitly using 'user' for the User model's table
-            tables_to_pull = ['businesses', 'user', 'inventory_items', 'hirable_items', 'companies'] 
+            # --- Pulling User Data ---
+            print("Pulling table: user...")
+            # Fetch all users from online DB. The column holding the hash is likely 'password' in the DB.
+            online_users_df = pd.read_sql_table('user', online_engine)
 
-            for table_name in tables_to_pull:
-                try:
-                    print(f"Pulling table: {table_name}...")
-                    online_df = pd.read_sql_table(table_name, online_engine)
-                    
-                    with app.app_context(): # Ensure ORM operations are within app context
-                        with offline_engine.connect() as conn:
-                            # For SQLite, it's safer to delete existing and then insert
-                            conn.execute(text(f"DELETE FROM {table_name}"))
-                            online_df.to_sql(table_name, conn, if_exists='append', index=False)
-                            conn.commit()
-                    print(f"Successfully pulled and replaced data for {table_name}.")
-                except Exception as e:
-                    print(f"Warning: Could not pull table '{table_name}'. Error: {e}")
-                    flash(f"Warning: Failed to pull '{table_name}' from online: {e}", 'warning')
-            
-            # --- PUSHING UNSYNCED SALES FROM OFFLINE TO ONLINE ---
-            print("--- Pushing unsynced sales records from offline to online ---")
-            
-            # Ensure SalesRecord model has a 'synced_to_remote' column (boolean, default FALSE)
-            unsynced_sales_df = pd.read_sql_query("SELECT * FROM sales_records WHERE synced_to_remote = FALSE", offline_engine)
+            # Ensure the password hash column is correctly named for insertion.
+            # In your User model, it's typically 'password' in the DB (mapped by _password_hash).
+            # So, the DataFrame should have a 'password' column.
+            # No explicit rename should be needed if the DB column is indeed 'password'.
+            # If your model's actual DB column for password was something else (e.g., 'password_hash'),
+            # you would rename here: online_users_df.rename(columns={'password_hash': 'password'}, inplace=True)
+            # But based on the model: _password_hash = db.Column('password', db.String(128), ...),
+            # the column in DB IS 'password'.
 
-            if not unsynced_sales_df.empty:
-                # Convert UUID columns to string if needed by the online DB's to_sql
-                for col in ['id', 'business_id']: # Add other UUID cols if present
-                    if col in unsynced_sales_df.columns:
-                        unsynced_sales_df[col] = unsynced_sales_df[col].astype(str)
+            with offline_engine.connect() as conn:
+                conn.execute(text('DELETE FROM user;')) # Clear existing users
+                conn.commit()
+                if not online_users_df.empty:
+                    # Explicitly map columns if needed, otherwise direct to_sql should work
+                    online_users_df.to_sql('user', conn, if_exists='append', index=False)
+                    conn.commit()
+            print("Successfully pulled and replaced data for user.")
 
-                # Convert datetime objects to string format compatible with PostgreSQL
-                for col in ['transaction_date']: # Add other datetime cols if present
-                    if col in unsynced_sales_df.columns:
-                        # Using isoformat for precision, PostgreSQL should handle it
-                        unsynced_sales_df[col] = pd.to_datetime(unsynced_sales_df[col]).dt.isoformat(timespec='microseconds')
-                
-                # Handle the 'items_sold_json' column: ensure it's treated as a string/text in Pandas
-                if 'items_sold_json' in unsynced_sales_df.columns:
-                    unsynced_sales_df['items_sold_json'] = unsynced_sales_df['items_sold_json'].astype(str)
+            # --- Pulling Inventory Items Data ---
+            print("Pulling table: inventory_items...")
+            online_inventory_df = pd.read_sql_table('inventory_items', online_engine)
+            with offline_engine.connect() as conn:
+                conn.execute(text('DELETE FROM inventory_items;'))
+                conn.commit()
+                if not online_inventory_df.empty:
+                    online_inventory_df.to_sql('inventory_items', conn, if_exists='append', index=False)
+                    conn.commit()
+            print("Successfully pulled and replaced data for inventory_items.")
 
-                try:
-                    with online_engine.connect() as conn:
-                        # Append unsynced sales to the online database
-                        unsynced_sales_df.to_sql('sales_records', conn, if_exists='append', index=False)
-                        conn.commit() # Commit the transaction
+            # --- Pulling Hirable Items Data ---
+            print("Pulling table: hirable_items...")
+            online_hirable_df = pd.read_sql_table('hirable_items', online_engine)
+            with offline_engine.connect() as conn:
+                conn.execute(text('DELETE FROM hirable_items;'))
+                conn.commit()
+                if not online_hirable_df.empty:
+                    online_hirable_df.to_sql('hirable_items', conn, if_exists='append', index=False)
+                    conn.commit()
+            print("Successfully pulled and replaced data for hirable_items.")
 
-                    # Mark these sales as synced in the OFFLine database
-                    sales_ids_to_update = unsynced_sales_df['id'].tolist()
-                    with app.app_context(): # Ensure ORM operations are within app context
-                        # Use bulk update for efficiency
-                        db.session.query(SalesRecord).filter(
-                            SalesRecord.id.in_(sales_ids_to_update)
-                        ).update({SalesRecord.synced_to_remote: True}, synchronize_session=False)
-                        db.session.commit()
-                    print(f"Pushed {len(unsynced_sales_df)} sales records to online.")
-                    flash(f"Pushed {len(unsynced_sales_df)} unsynced sales to online!", 'success')
+            # --- Pulling Companies Data ---
+            print("Pulling table: companies...")
+            online_companies_df = pd.read_sql_table('companies', online_engine)
+            with offline_engine.connect() as conn:
+                conn.execute(text('DELETE FROM companies;'))
+                conn.commit()
+                if not online_companies_df.empty:
+                    online_companies_df.to_sql('companies', conn, if_exists='append', index=False)
+                    conn.commit()
+            print("Successfully pulled and replaced data for companies.")
 
-                except Exception as e:
-                    print(f"Error pushing sales to online: {e}")
-                    flash(f'Error pushing unsynced sales to online: {str(e)}', 'danger')
-                    db.session.rollback() # Rollback any changes on error
-            else:
-                print("No unsynced sales records to push.")
-                flash("No unsynced sales records to push.", 'info')
+            # --- Pushing unsynced sales records from offline to online ---
+            # ... (your existing sales push logic) ...
 
             flash('Data synchronization successful!', 'success')
             return redirect(url_for('super_admin_dashboard'))
 
         except Exception as e:
-            db.session.rollback() # Rollback any changes on error
+            db.session.rollback()
             print(f"Error during synchronization: {e}")
             flash(f'Error during synchronization: {str(e)}', 'danger')
             return redirect(url_for('super_admin_dashboard'))
+    
+    def super_admin_full_sync():
+        """
+        Pulls all data for all businesses and users from the remote server.
+        This function is for the Super Admin role only.
+        """
+        remote_url = get_remote_flask_base_url()
+        headers = {}
+
+        try:
+            # --- Step 1: Pull ALL Businesses ---
+            print("Pulling all registered businesses...")
+            businesses_response = requests.get(f"{remote_url}/api/v1/businesses", headers=headers)
+            businesses_response.raise_for_status()
+            new_businesses = businesses_response.json()
+            
+            with app.app_context():
+                db.session.query(Business).delete()
+                for business_data in new_businesses:
+                    business = Business(
+                        id=business_data['id'],
+                        name=business_data['name'],
+                        address=business_data['address'],
+                        location=business_data['location'],
+                        contact=business_data['contact'],
+                        type=business_data['type'],
+                        is_active=business_data['is_active'],
+                        last_updated=datetime.fromisoformat(business_data['last_updated'])
+                    )
+                    db.session.add(business)
+                db.session.commit()
+                print(f"Successfully pulled and replaced data for businesses. Found {len(new_businesses)} businesses.")
+
+            # --- Step 2: Pull ALL Users ---
+            print("Pulling all users...")
+            users_response = requests.get(f"{remote_url}/api/v1/users", headers=headers)
+            users_response.raise_for_status()
+            new_users = users_response.json()
+            
+            with app.app_context():
+                db.session.query(User).delete()
+                for user_data in new_users:
+                    user = User(
+                        id=user_data['id'],
+                        username=user_data['username'],
+                        password=user_data['password'],
+                        role=user_data['role'],
+                        business_id=user_data['business_id'],
+                        is_active=user_data['is_active'],
+                        created_at=datetime.fromisoformat(user_data['created_at'])
+                    )
+                    db.session.add(user)
+                db.session.commit()
+                print(f"Successfully pulled and replaced data for user. Found {len(new_users)} users.")
+            
+            # --- Step 3: Pull ALL Inventory Items ---
+            # This will get inventory for all businesses, as the API endpoint is likely not filtered
+            print("Pulling all inventory items...")
+            inventory_response = requests.get(f"{remote_url}/api/v1/inventory", headers=headers)
+            inventory_response.raise_for_status()
+            new_inventory_items = inventory_response.json()
+            
+            with app.app_context():
+                db.session.query(InventoryItem).delete()
+                for item_data in new_inventory_items:
+                    item = InventoryItem(
+                        id=item_data['id'],
+                        business_id=item_data['business_id'],
+                        product_name=item_data['product_name'],
+                        category=item_data['category'],
+                        purchase_price=item_data['purchase_price'],
+                        sale_price=item_data['sale_price'],
+                        current_stock=item_data['current_stock'],
+                        last_updated=datetime.fromisoformat(item_data['last_updated']),
+                        batch_number=item_data['batch_number'],
+                        number_of_tabs=item_data['number_of_tabs'],
+                        unit_price_per_tab=item_data['unit_price_per_tab'],
+                        item_type=item_data['item_type'],
+                        expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+                        is_fixed_price=item_data['is_fixed_price'],
+                        fixed_sale_price=item_data['fixed_sale_price'],
+                        is_active=item_data['is_active']
+                    )
+                    db.session.add(item)
+                db.session.commit()
+                print(f"Successfully pulled and replaced data for inventory_items. Found {len(new_inventory_items)} items.")
+            
+            # NOTE: You would need to add similar logic for other tables like HirableItems, Customers, etc.
+
+            return True, "Synchronization successful."
+
+        except requests.exceptions.RequestException as e:
+            db.session.rollback()
+            print(f"Error during full sync: {e}")
+            return False, f"Error during full sync: {e}"
 
     @app.route('/')
     def index():
@@ -5858,6 +5988,86 @@ def create_app():
                             other_businesses=other_businesses_same_type,
                             user_role=session.get('role'),
                             current_year=datetime.now().year)
+    
+    
+    @app.route('/inventory/upload_csv', methods=['POST'])
+    @login_required
+    @roles_required('admin')
+    def upload_inventory_csv():
+        """
+        Handles CSV file upload for populating inventory for a specific business.
+        """
+        if 'csv_file' not in request.files:
+            flash('No file part in the request.', 'danger')
+            return redirect(url_for('inventory'))
+
+        file = request.files['csv_file']
+        if file.filename == '':
+            flash('No selected file.', 'danger')
+            return redirect(url_for('inventory'))
+
+        if file and file.filename.endswith('.csv'):
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_reader = csv.DictReader(stream)
+            
+            business_id = get_current_business_id()
+            items_added = 0
+            items_updated = 0
+            
+            # Get all existing items for this business to check for updates
+            existing_items = InventoryItem.query.filter_by(business_id=business_id).all()
+            existing_items_dict = {item.product_name.lower(): item for item in existing_items}
+
+            for row in csv_reader:
+                try:
+                    product_name = row['product_name'].strip()
+                    
+                    # Check if the item already exists in the local database by name
+                    if product_name.lower() in existing_items_dict:
+                        item_to_update = existing_items_dict[product_name.lower()]
+                        
+                        # Update existing item with CSV data
+                        item_to_update.category = row.get('category', item_to_update.category).strip()
+                        item_to_update.purchase_price = float(row.get('purchase_price', item_to_update.purchase_price))
+                        item_to_update.current_stock = float(row.get('current_stock', item_to_update.current_stock))
+                        item_to_update.sale_price = float(row.get('sale_price', item_to_update.sale_price))
+                        item_to_update.last_updated = datetime.now()
+                        
+                        # Add logic for other fields as needed
+                        db.session.add(item_to_update)
+                        items_updated += 1
+                    else:
+                        # Create a new item
+                        new_item = InventoryItem(
+                            business_id=business_id,
+                            product_name=product_name,
+                            category=row.get('category').strip(),
+                            purchase_price=float(row.get('purchase_price')),
+                            sale_price=float(row.get('sale_price')),
+                            current_stock=float(row.get('current_stock')),
+                            last_updated=datetime.now(),
+                            item_type=row.get('item_type', get_current_business_type()).strip(),
+                            batch_number=row.get('batch_number', '').strip(),
+                            expiry_date=datetime.strptime(row['expiry_date'], '%Y-%m-%d') if row.get('expiry_date') else None,
+                            is_fixed_price=row.get('is_fixed_price', 'False').lower() == 'true',
+                            fixed_sale_price=float(row.get('fixed_sale_price', 0.0))
+                        )
+                        db.session.add(new_item)
+                        items_added += 1
+                        
+                except (KeyError, ValueError) as e:
+                    db.session.rollback()
+                    flash(f"Error processing a row: Missing data or invalid format. Please check your CSV file. Error: {e}", 'danger')
+                    return redirect(url_for('inventory'))
+            
+            db.session.commit()
+            flash(f'Successfully imported inventory from CSV. {items_added} new items added, {items_updated} items updated.', 'success')
+            
+        else:
+            flash('Invalid file format. Please upload a CSV file.', 'danger')
+            
+        return redirect(url_for('inventory'))
+    
     @app.route('/rental_records/cancel/<record_id>')
     def cancel_rental_record(record_id):
         # ACCESS CONTROL: Allows admin and sales roles

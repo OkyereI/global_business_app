@@ -158,7 +158,6 @@
 </head>
 <body>
     <div class="wrapper">
-        <!-- Sidebar -->
         <nav id="sidebar" class="sidebar">
             <div class="sidebar-header">
                 <h3>{{ session.get('business_name', 'Admin Panel') }}</h3>
@@ -202,7 +201,6 @@
             </ul>
         </nav>
 
-        <!-- Page Content -->
         <div id="content" class="content">
             <nav class="navbar navbar-expand-lg navbar-light bg-light">
                 <button type="button" id="sidebarCollapse" class="btn btn-info">
@@ -256,7 +254,6 @@
                             <input type="text" class="form-control" id="batch_number" name="batch_number" value="{{ item.batch_number if item else '' }}">
                         </div>
                         
-                        <!-- NEW: Barcode field -->
                         <div class="form-group">
                             <label for="barcode">Barcode (Optional)</label>
                             <div class="barcode-input-group">
@@ -311,7 +308,29 @@
                 </div>
             </div>
 
-            {% if title == 'Add New Inventory Item' and user_role == 'admin' and other_businesses %}
+            {% if title == 'Add New Inventory Item' and user_role == 'admin' %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    Import Inventory from CSV
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('upload_inventory_csv') }}" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="form-group">
+                            <label for="csv_file">Upload CSV File</label>
+                            <input type="file" class="form-control-file" id="csv_file" name="csv_file" accept=".csv" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-upload"></i> Upload Inventory
+                        </button>
+                    </form>
+                    <small class="form-text text-muted mt-2">
+                        The CSV file must have the following columns: `product_name`, `category`, `purchase_price`, `sale_price`, `current_stock`, `item_type`, `batch_number`, `expiry_date`, `is_fixed_price`, `fixed_sale_price`.
+                    </small>
+                </div>
+            </div>
+            
+            {% if other_businesses %}
             <div class="import-section mt-4">
                 <h4>Import Products from Other Businesses (Same Type)</h4>
                 <form action="{{ url_for('import_products_from_other_businesses') }}" method="POST">
@@ -334,7 +353,9 @@
                 </form>
             </div>
             {% endif %}
-
+            
+            {% endif %}
+            
         </div>
     </div>
 
