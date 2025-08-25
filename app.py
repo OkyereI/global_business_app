@@ -14,6 +14,7 @@ import json # Import json for API responses and handling
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import Index, create_engine, text, func, cast # Import func and cast for dashboard queries
 from dotenv import load_dotenv
+from flask import current_app
 
 # Load environment variables
 load_dotenv()
@@ -1731,19 +1732,21 @@ def create_app():
                             recent_activity=recent_activity,
                             current_year=datetime.now().year)
     # In your app.py file
-
     @app.route('/super_admin_dashboard')
     @login_required
     @roles_required('super_admin')
     def super_admin_dashboard():
-        # Fetch all businesses from the database
+        # Fetch ALL businesses from the database (your offline database after sync)
         all_businesses = Business.query.all()
+        # Fetch ALL users from the database (your offline database after sync)
+        all_users = User.query.all() 
         
         # Pass user_role from session to the template
         return render_template('super_admin_dashboard.html', 
-                            businesses=all_businesses,
-                            user_role=session.get('role'), # <<< ADD THIS LINE
-                            current_year=datetime.now().year) # Ensure current_year is also passed
+                            businesses=all_businesses, # Ensure this is passed
+                            users=all_users,           # Ensure this is passed
+                            user_role=session.get('role'), 
+                            current_year=datetime.now().year)
 
     @app.route('/super_admin/add_business', methods=['GET', 'POST'])
     def add_business():
