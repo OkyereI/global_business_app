@@ -55,7 +55,7 @@ class User(UserMixin,db.Model):
     __tablename__ = 'user'
     id = db.Column(db.String, primary_key=True, default=lambda: str(uuid.uuid4()))
     username = db.Column(db.String(80), unique=True, nullable=False)
-    _password_hash = db.Column('password', db.String(128), nullable=False)
+    _password_hash = db.Column('password', db.String(225), nullable=False)
     role = db.Column(db.String(50), default='user')
     business_id = db.Column(db.String, db.ForeignKey('businesses.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
@@ -261,6 +261,7 @@ class RentalRecord(db.Model):
 class Company(db.Model):
     __tablename__ = 'companies'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False)
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
     name = db.Column(db.String(100), unique=True, nullable=False)
     contact_person = db.Column(db.String(100), nullable=True)

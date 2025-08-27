@@ -79,8 +79,8 @@ def create_app():
     from models import User, Business, SalesRecord, InventoryItem, HirableItem, RentalRecord, Creditor, Debtor, CompanyTransaction, FutureOrder, Company, Customer
     @login_manager.user_loader
     def load_user(user_id):
-        # Use db.session.get() for SQLAlchemy 2.0 compatibility
-        return db.session.get(User, user_id) # <<< UPDATED LINE
+        # This function is called after tables are created, so it will work.
+        return db.session.get(User, user_id)
 
 
     
@@ -1286,6 +1286,13 @@ def create_app():
 
     # app.py
 
+    def create_database_if_not_exists(app):
+        """Creates the database and its tables if they don't exist."""
+        db_path = os.path.join(app.instance_path, 'instance_data.db')
+        if not os.path.exists(db_path):
+            with app.app_context():
+                db.create_all()
+                print("Database tables created successfully.")
 
     # Ensure the instance directory exists for the offline database
     # os.makedirs(os.path.dirname(OFFLINE_DB_PATH), exist_ok=True)
@@ -4538,10 +4545,10 @@ def create_app():
                 business_id=business_id,
                 name=name,
                 contact_person=contact_person,
-                phone=phone,
+                phone_number=phone,
                 email=email,
                 address=address,
-                balance=0.0            # New company starts with 0 balance
+                # balance=0.0            # New company starts with 0 balance
                 # IMPORTANT: REMOVE total_creditors and total_debtors here.
                 # They are calculated properties, not direct columns.
                 # total_creditors=0.0,
@@ -6249,7 +6256,37 @@ def create_app():
         
         return jsonify({'success': True, 'products': products_data})
 
-    # ... (rest of your app.py code) ...
+
+    # with app.app_context():
+    #     # Step 1: Create all database tables
+    #     print("Creating database tables...")
+    #     db.create_all()
+    #     print("Database tables created successfully.")
+
+    #     # Step 2: Check for and create the superadmin user
+    #     super_admin_username = os.getenv('SUPER_ADMIN_USERNAME') or 'superadmin'
+    #     super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD') or 'superpassword'
+
+    #     existing_super_admin = User.query.filter_by(username=super_admin_username).first()
+    #     if not existing_super_admin:
+    #         print("Superadmin user not found. Creating new superadmin...")
+    #         hashed_password = generate_password_hash(super_admin_password, method='scrypt')
+            
+    #         super_admin = User(
+    #             id='superadmin',
+    #             username=super_admin_username,
+    #             _password_hash=hashed_password,
+    #             role='super_admin',
+    #             business_id='super_admin_business',
+    #             is_active=True,
+    #             created_at=datetime.utcnow()
+    #         )
+    #         db.session.add(super_admin)
+    #         db.session.commit()
+    #         print(f"Superadmin user '{super_admin_username}' created successfully.")
+    #     else:
+    #         print(f"Superadmin user '{super_admin_username}' already exists. No new user created.")
+
 
     # NEW: Jinja2 filter to safely format a date or datetime object
     @app.template_filter('format_date')

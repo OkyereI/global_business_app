@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}"> {# Used for CSRF protection with AJAX #}
-    <title>Zion Ventures (Admin) - Dashboard</title>
+    <title>{{business_name}} (Admin) - Dashboard</title>
     
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     
@@ -149,7 +149,7 @@
     <div class="wrapper">
         <nav id="sidebar">
             <div class="sidebar-header">
-                <h3 class="h5">zion ventures <br><small>(Hardware)</small></h3>
+                <h3 class="h5">{{business_name}} <br><small>{{business_type}}</small></h3>
                 <p>Logged in as: {{ username }}</p>
                 <button type="button" id="sidebarCollapse" class="btn btn-dark btn-sm mt-2">
                     <i class="fas fa-bars"></i> <span>Toggle Sidebar</span>
