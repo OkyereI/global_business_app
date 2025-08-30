@@ -380,13 +380,21 @@
                                 <tr>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.item_name }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.description if item.description else 'N/A' }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">GH₵{{ "%.2f"|format(item.daily_hire_price) }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">GH₵{{ "%.2f"|format(item.rental_price_per_day) }}</td>
+
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.current_stock }}</td>
                                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.last_updated.strftime('%Y-%m-%d %H:%M:%S') }}</td>
                                     {% if user_role == 'admin' %}
                                         <td class="px-6 py-4 whitespace-nowrap text-left text-sm font-medium action-buttons-td">
                                             <a href="{{ url_for('edit_hirable_item', item_id=item.id) }}" class="btn btn-edit">Edit</a>
-                                            <a href="{{ url_for('delete_hirable_item', item_id=item.id) }}" class="btn btn-delete" onclick="return confirm('Are you sure you want to mark this hirable item as inactive? This cannot be undone.')">Delete</a>
+                                            <!--
+                                                This form is a correct way to handle a POST request for a delete action.
+                                                It includes the CSRF token and a confirmation message.
+                                            -->
+                                            <form method="POST" action="{{ url_for('delete_hirable_item', item_id=item.id) }}" class="inline-block" onsubmit="return confirm('Are you sure you want to mark this hirable item as inactive? This cannot be undone.')">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <button type="submit" class="btn btn-delete">Delete</button>
+                                            </form>
                                         </td>
                                     {% endif %}
                                 </tr>

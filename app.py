@@ -3644,24 +3644,43 @@ def create_app():
                             user_role=session.get('role'),
                             current_year=datetime.now().year)
 
-    @app.route('/inventory/delete/<item_id>')
+    # @app.route('/inventory/delete/<item_id>')
+    # def delete_inventory_item(item_id):
+    #     # ACCESS CONTROL: Allows admin role
+    #     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+    #         flash('You do not have permission to delete inventory items or no business selected.', 'danger')
+    #         return redirect(url_for('dashboard'))
+        
+    #     business_id = get_current_business_id()
+    #     item_to_delete = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
+        
+    #     item_to_delete.is_active = False # Soft delete
+    #     db.session.commit()
+
+    #     flash(f'Inventory item "{item_to_delete.product_name}" marked as inactive successfully!', 'success')
+    #     return redirect(url_for('inventory'))
+
+    @app.route('/inventory/delete/<item_id>', methods=['GET', 'POST'])
+    @login_required
     def delete_inventory_item(item_id):
-        # ACCESS CONTROL: Allows admin role
-        if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+        """Marks an inventory item as inactive."""
+        if session.get('role') not in ['admin'] or not get_current_business_id():
             flash('You do not have permission to delete inventory items or no business selected.', 'danger')
             return redirect(url_for('dashboard'))
         
         business_id = get_current_business_id()
         item_to_delete = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
         
-        item_to_delete.is_active = False # Soft delete
-        db.session.commit()
-
-        flash(f'Inventory item "{item_to_delete.product_name}" marked as inactive successfully!', 'success')
+        # Check if the request is a POST (from the delete form)
+        if request.method == 'POST':
+            # Soft delete the item
+            item_to_delete.is_active = False
+            db.session.commit()
+            flash(f'Inventory item "{item_to_delete.product_name}" marked as inactive successfully!', 'success')
+            return redirect(url_for('inventory'))
+        
+        # If the request is a GET, just redirect back. This allows url_for to build the link.
         return redirect(url_for('inventory'))
-
-    # --- Sales Records Management ---
-    # ... (existing imports, app initialization, and other parts of app.py) ...
 
 
     @app.route('/sales')
@@ -6236,6 +6255,7 @@ def create_app():
 
     # NEW: Routes for Hirable Items
     @app.route('/hirable_items')
+    @csrf.exempt
     def hirable_items():
         # ACCESS CONTROL: Allows admin, sales, and viewer roles
         if 'username' not in session or session.get('role') not in ['admin', 'sales', 'viewer'] or not get_current_business_id():
@@ -6251,6 +6271,7 @@ def create_app():
         return render_template('hirable_item_list.html', hirable_items=items, user_role=session.get('role'), current_year=datetime.now().year)
 
     @app.route('/hirable_items/add', methods=['GET', 'POST'])
+    @csrf.exempt
     def add_hirable_item():
         # ACCESS CONTROL: Allows admin role
         if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
@@ -6276,9 +6297,11 @@ def create_app():
                 business_id=business_id,
                 item_name=item_name,
                 description=description,
-                daily_hire_price=daily_hire_price,
-                current_stock=current_stock
+                rental_price_per_day=daily_hire_price, # This keyword has been corrected.
+                current_stock=current_stock,
+                is_active=True
             )
+
             db.session.add(new_item)
             db.session.commit()
             flash(f'Hirable item "{item_name}" added successfully!', 'success')
@@ -6287,6 +6310,7 @@ def create_app():
         return render_template('add_edit_hirable_item.html', title='Add Hirable Item', item={}, user_role=session.get('role'), current_year=datetime.now().year)
 
     @app.route('/hirable_items/edit/<item_id>', methods=['GET', 'POST'])
+    @csrf.exempt
     def edit_hirable_item(item_id):
         # ACCESS CONTROL: Allows admin role
         if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
@@ -6340,23 +6364,48 @@ def create_app():
                             current_year=datetime.now().year)
 
 
-    @app.route('/hirable_items/delete/<item_id>')
-    def delete_hirable_item(item_id):
-        # ACCESS CONTROL: Allows admin role
-        if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-            flash('You do not have permission to delete hirable items or no business selected.', 'danger')
-            return redirect(url_for('dashboard'))
+    # @app.route('/hirable_items/delete/<item_id>')
+    # @csrf.exempt
+    # def delete_hirable_item(item_id):
+    #     # ACCESS CONTROL: Allows admin role
+    #     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+    #         flash('You do not have permission to delete hirable items or no business selected.', 'danger')
+    #         return redirect(url_for('dashboard'))
         
-        if get_current_business_type() != 'Hardware':
-            flash('This feature is only available for Hardware businesses.', 'warning')
-            return redirect(url_for('dashboard'))
+    #     if get_current_business_type() != 'Hardware':
+    #         flash('This feature is only available for Hardware businesses.', 'warning')
+    #         return redirect(url_for('dashboard'))
 
-        business_id = get_current_business_id()
-        item_to_delete = HirableItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
+    #     business_id = get_current_business_id()
+    #     item_to_delete = HirableItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
         
-        item_to_delete.is_active = False # Soft delete
-        db.session.commit()
-        flash(f'Hirable item "{item_to_delete.item_name}" marked as inactive successfully!', 'success')
+    #     item_to_delete.is_active = False # Soft delete
+    #     db.session.commit()
+    #     flash(f'Hirable item "{item_to_delete.item_name}" marked as inactive successfully!', 'success')
+    #     return redirect(url_for('hirable_items'))
+
+    @app.route('/hirable_items/delete/<item_id>', methods=['POST'])
+    @login_required
+    def delete_hirable_item(item_id):
+        """Marks a hirable item as inactive."""
+        if session.get('role') != 'admin':
+            flash('You do not have permission to perform this action.', 'danger')
+            return redirect(url_for('hirable_items'))
+
+        item = HirableItem.query.get_or_404(item_id)
+        if item.business_id != session.get('business_id'):
+            flash('You can only manage items for your own business.', 'danger')
+            return redirect(url_for('hirable_items'))
+
+        try:
+            # Instead of deleting, we mark the item as inactive
+            item.is_active = False
+            db.session.commit()
+            flash('Hirable item has been marked as inactive.', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'An error occurred: {e}', 'danger')
+
         return redirect(url_for('hirable_items'))
 
     # NEW: Routes for Rental Records
