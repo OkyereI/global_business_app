@@ -1,2 +1,3 @@
 pyinstaller --onefile --add-data "templates:templates" --add-data "instance/instance_data.db:." --icon "gbt.png" app.py
 
+pyinstaller --onefile --add-data "templates:templates" --add-data "instance:instance" --icon "gbt.png" app.py

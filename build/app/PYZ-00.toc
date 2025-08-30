@@ -791,7 +791,6 @@
   ('alembic.util.sqla_compat',
    '/home/isaac/env/lib/python3.10/site-packages/alembic/util/sqla_compat.py',
    'PYMODULE'),
-  ('app', '/home/isaac/my_projects/pharmapps/app.py', 'PYMODULE'),
   ('argparse', '/usr/lib/python3.10/argparse.py', 'PYMODULE'),
   ('asgiref',
    '/home/isaac/env/lib/python3.10/site-packages/asgiref/__init__.py',

@@ -4679,7 +4679,7 @@ def create_app():
         return redirect(url_for('companies'))
 
     @app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
-    # @login_required
+    @login_required 
     def company_transaction(company_id):
         """
         Handles company transactions, including recording new transactions,
@@ -4718,7 +4718,23 @@ def create_app():
             amount = float(request.form['amount'])
             description = request.form.get('description')
             send_sms_receipt = 'send_sms_receipt' in request.form
-            recorded_by = session['username']
+            
+            # --- CRITICAL FIX: Add a robust check for current_user status ---
+            if current_user.is_authenticated:
+                # Use the user's UUID if they are authenticated
+                recorded_by = current_user.id
+            else:
+                # This is a fallback and indicates a problem with Flask-Login setup.
+                # We are using a UUID placeholder to satisfy the foreign key constraint.
+                # This line should ideally not be reached if @login_required is working.
+                recorded_by = "00000000-0000-0000-0000-000000000000"
+                flash('Error: Could not determine current user. Transaction recorded with a placeholder ID.', 'danger')
+            
+            # --- DEBUGGING STEP: Print the value to confirm before the database operation ---
+            print(f"DEBUG: The value for 'recorded_by' is -> {recorded_by}")
+            # --- END DEBUGGING STEP ---
+            
+            # --- END CRITICAL FIX ---
 
             new_transaction = CompanyTransaction(
                 business_id=business_id,
@@ -4726,6 +4742,7 @@ def create_app():
                 transaction_type=transaction_type, 
                 amount=amount,
                 description=description,
+                transaction_date=date.today(),  
                 recorded_by=recorded_by
             )
             db.session.add(new_transaction)
@@ -4829,6 +4846,7 @@ def create_app():
                             total_transactions_sum=total_transactions_sum,
                             current_year=datetime.now().year
                             )
+
 
     @app.route('/company/print_last_receipt')
     # @login_required

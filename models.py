@@ -60,7 +60,8 @@ class User(UserMixin,db.Model):
     business_id = db.Column(db.String, db.ForeignKey('businesses.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    company_transactions = db.relationship('CompanyTransaction', back_populates='recorder', lazy=True)
+
     # Relationship to Business
     business = db.relationship('Business', back_populates='users')
 
@@ -221,9 +222,14 @@ class CompanyTransaction(db.Model):
     description = db.Column(db.Text, nullable=True)
     transaction_date = db.Column(db.Date, nullable=False)
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
-    
+    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False)
+    recorded_by = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=True)
+
     # This relationship links it back to the Business model
     business = db.relationship('Business', back_populates='company_transactions')
+    company = db.relationship('Company', back_populates='company_transactions')
+    recorder = db.relationship('User', back_populates='company_transactions')
+
     def __repr__(self):
         return f'<CompanyTransaction {self.transaction_type} - {self.amount}>'
 
@@ -251,45 +257,50 @@ class RentalRecord(db.Model):
     # --- ADD THIS CRUCIAL RELATIONSHIP ---
     # This links back to the 'Business' model, matching the 'rental_records' back_populates
     business = db.relationship('Business', back_populates='rental_records')
-    
+    date_recorded = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     hirable_item = db.relationship('HirableItem', backref='rental_records_rel', lazy=True)
 
     def __repr__(self):
         return f'<RentalRecord {self.item_name_at_rent} - {self.customer_name}>'
 
-
 class Company(db.Model):
     __tablename__ = 'companies'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    company_id = db.Column(db.String(36), db.ForeignKey('companies.id'), nullable=False)
+    # Removed the self-referencing company_id column as it is not needed.
     business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
-    name = db.Column(db.String(100), unique=True, nullable=False)
+    name = db.Column(db.String(100), nullable=False) # Removed unique constraint to allow companies with the same name in different businesses
     contact_person = db.Column(db.String(100), nullable=True)
-    phone_number = db.Column(db.String(20), nullable=True) # Ensure this is phone_number
+    phone_number = db.Column(db.String(20), nullable=True)
     email = db.Column(db.String(120), nullable=True)
     address = db.Column(db.String(200), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     date_added = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Correct relationship to link back to the Business model
     business = db.relationship('Business', backref='companies', lazy=True)
-    # The backref 'transactions' from CompanyTransaction provides access to company.transactions
     
+    # Correct relationship to link to CompanyTransaction model
+    # This assumes you have added 'company_id' column to CompanyTransaction model as previously advised.
+    company_transactions = db.relationship('CompanyTransaction', back_populates='company', lazy=True)
+
     def calculate_current_balance(self):
         """
         Calculates the current balance for this company based on its transactions.
-        A positive balance means the company *owes* your business.
+        A positive balance means the company owes your business.
         'Credit' (e.g., business supplies company, company owes business) increases balance.
         'Debit' (e.g., company pays business, company's debt to business decreases) decreases balance.
         """
-        total_debits = db.session.query(func.sum(CompanyTransaction.amount)).filter(
-            CompanyTransaction.company_id == self.id,
-            CompanyTransaction.transaction_type == 'Debit'
-        ).scalar() or 0.0
+        # We query the company_transactions relationship directly for efficiency
+        # This will automatically filter by this company's ID (self.id)
+        total_debits = db.session.query(func.sum(db.case(
+            (CompanyTransaction.transaction_type == 'Debit', CompanyTransaction.amount),
+            else_=0
+        ))).filter(CompanyTransaction.company_id == self.id).scalar() or 0.0
 
-        total_credits = db.session.query(func.sum(CompanyTransaction.amount)).filter(
-            CompanyTransaction.company_id == self.id,
-            CompanyTransaction.transaction_type == 'Credit'
-        ).scalar() or 0.0
+        total_credits = db.session.query(func.sum(db.case(
+            (CompanyTransaction.transaction_type == 'Credit', CompanyTransaction.amount),
+            else_=0
+        ))).filter(CompanyTransaction.company_id == self.id).scalar() or 0.0
 
         balance = total_credits - total_debits
         return float(balance)
@@ -315,6 +326,7 @@ class Company(db.Model):
     def __repr__(self):
         return f'<Company {self.name}>'
 
+
 class FutureOrder(db.Model):
     __tablename__ = 'future_orders'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -324,6 +336,7 @@ class FutureOrder(db.Model):
     customer_phone = db.Column(db.String(20), nullable=True)
     order_details = db.Column(db.Text, nullable=False)
     total_amount = db.Column(db.Float, nullable=False)
+    remaining_balance = db.Column(db.Float, nullable=False, default=0.0) # This is the updated line
     order_date = db.Column(db.Date, default=date.today, nullable=False)
     pickup_date = db.Column(db.Date, nullable=False)
     status = db.Column(db.String(50), default='Pending', nullable=False)
@@ -332,6 +345,7 @@ class FutureOrder(db.Model):
 
     company = db.relationship('Company', backref='future_orders_rel', lazy=True)
     business = db.relationship('Business', back_populates='future_orders')
+
     def set_order_details(self, details_list):
         self.order_details = json.dumps(details_list)
 
@@ -340,14 +354,10 @@ class FutureOrder(db.Model):
             return json.loads(self.order_details)
         return []
 
-    @property
-    def remaining_balance(self):
-        """Calculates the remaining balance of the order."""
-        return self.total_amount
-
     def __repr__(self):
-
         return f'<FutureOrder {self.customer_name} - {self.total_amount}>'
+
+
 
 class Customer(db.Model):
     __tablename__ = 'customers'

@@ -109,6 +109,8 @@
 
         <div class="card">
             <form id="futureOrderForm" action="" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div>
                         <label for="customer_name" class="block text-gray-700 text-sm font-semibold mb-2">Customer Name:</label>
@@ -208,7 +210,7 @@
                                                 data-unit-price="{{ item.unit_price }}"
                                                 data-number-of-tabs="{{ item.number_of_tabs if item.number_of_tabs else 1 }}">
                                             <option value="pack" {% if item.unit_type == 'pack' %}selected{% endif %}>Pack</option>
-                                            <option value="tab" {% if item.unit_type == 'tab' %}selected{% endif %}>Unit/Piece</option>
+                                            <option value="tab" {% if item.unit_type == 'tab' %}selected{% endif %}>Piece/Unit</option>
                                         </select>
                                     </td>
                                     <td class="py-3 px-4 text-sm text-gray-800 item-price">{{ "%.2f"|format(item.unit_price) }}</td>

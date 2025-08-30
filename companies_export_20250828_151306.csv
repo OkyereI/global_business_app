@@ -1,0 +1,33 @@
+id,name,contact_person,phone,email,address,balance,is_active,date_added,business_id
+da689a7f-94c7-49f5-a582-1fe5c441ef18,NAKOYEG,Foreman,,,,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+50350ae3-39f5-4759-9e49-a8891011b00d,Jsix,Manager,,,Kenyas2,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+0159024d-9014-43fb-a930-2458adc42bb9,ADUANA ROYAL,Mr Eric,,,Ntotoroso,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+74488b95-6e44-4a1e-a644-ad247dde3b0a,GREEN CITY,Mr Morris Gyan,,,Ntotoroso,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+88430b88-8246-4561-8710-d1983394659e,MR AGYAPONG,Mr. agyapong,,,,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+16b6c95f-a8fe-4355-a21c-166947148c02,LINKPART COMPANY,Manager,,,Kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+723ff795-c8ac-43af-b6e0-6072bdcd97c1,SAFARI,Mr Félix Ny,,,Accra,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+39b8bea1-da8a-4be5-a436-f38890bf9f1d,JAGO,Mr Albert,,,Sunyani,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+209eed54-15e3-4172-9560-7b52ee5beb79,D.N. OSEI,Manager,,,K2 Ntotoroso Road,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+e9726654-868a-46f6-a01f-09eee263915f,BERVES ENGINEERING,Ms Felicitas,,,Kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+daf70c6b-311e-43ac-9652-918d06bad622,LEXPONG,Mr Alex,,,Sunyani,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+756cab1a-e493-47fd-b223-876dde403896,NADAMS24/7,Manager,,,K2,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+79413e79-0e41-480a-ae0a-c3099aa165f4,ALOMAN,Manager,,,K2,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+e965200e-d2f5-4900-9ea2-204ce3ebaac3,MULTIWAVE,Nana Osei,,,K2,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+02b777ae-2faf-455f-be8d-246f97dfd1de,OCTAGON EXECUTIVE LODGE,Nana / Manager,,,Kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+085ef905-2ac5-4289-b8f5-cbc06f7f73a6,MABASH,Manager,,,,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+4ab10bb7-c848-4b0e-be04-2743e8f30375,E.A. Boateng company,Abedenego,,,k1,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+bbae1115-105c-40d0-a830-f289ebb152ea,PATRICK DJOKOTO,Patrick,,,k2 SITE,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+584a575d-a413-4c77-8db0-a0457183114f,DENNIS KOOMSON,Dennis,,,kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+ce2ca151-bff9-469c-86ce-96be66819972,GEORGE BOAHENE,GEORGE,,,Kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+404881ab-a6ab-4b76-bba5-8064f6062304,YOUYAK,Chimbsa,,,,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+de339dcb-ebfb-45a8-9e23-ce50c50f9e48,ADU FRIMPONG,ADU FRIMPONG,,,kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+71fcc95a-5d6f-4b5a-bc3e-cc37e38a6759,RICHARD OPOKU,Afa,,,Kenyasi,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+d8e98339-659d-4306-88f1-af0f0f23b439,EVNIAND ENGINEERING,manager,,,Ntoroso,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+f75e110f-638e-4122-9fdb-7b07be7ee85c,BERNARD NII,Mr. Bernard,,,k1 SITE,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+ac2678e3-4da8-4ef6-acf7-9ff41fb10de3,PROFCON,Manager,,,K1,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+9c3ec743-28de-4232-bc2f-d650a85e206b,ABWIN,Manager,,,K2,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+0c83cc4b-7814-4d29-8d39-8f31eb5fcdb9,Patrick Mensah,Mr Patrick,,,K2 site,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+a93f0302-2957-41ac-a354-be4c603688b5,ABIHAB,Maa Hagar,,,Ntotoroso,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+d84e8273-9b0e-41db-9124-9fe667738853,MARMALIMAN,Manager,,,Terchire,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+49614dff-5db2-4ddf-b313-b10b3136435e,AGASS,Manager,,,Ntotoroso,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de
+584da029-62f1-42c8-8df9-457cab4b093e,LEVERAGE,Mr Samuel Aboagye,,,Kenyasi No.1,0.0,True,,2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de

@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #ffffff;
+            color: #000000;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 1rem;
+        }
+        .header-section {
+            text-align: center;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #333;
+            padding-bottom: 1rem;
+        }
+        .business-info h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+        .business-info p {
+            font-size: 0.875rem;
+            margin: 0.125rem 0;
+        }
+        .report-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+        .company-info {
+            margin-bottom: 1rem;
+            border: 1px solid #ccc;
+            padding: 0.75rem;
+            font-size: 0.9rem;
+        }
+        .company-info p {
+            margin: 0.25rem 0;
+        }
+        .table-container {
+            margin-bottom: 2rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 0.5rem;
+            text-align: left;
+        }
+        th {
+            background-color: #f0f0f0;
+        }
+        .total-row {
+            font-weight: bold;
+        }
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            .container {
+                box-shadow: none;
+                max-width: none;
+                padding: 0;
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header-section">
+        <div class="business-info">
+            <h1>{{ business_info.name }}</h1>
+            <p>{{ business_info.address }}, {{ business_info.location }}</p>
+            <p>Phone: {{ business_info.phone }} | Email: {{ business_info.email }}</p>
+        </div>
+        <h2 class="report-title">Transaction History Report</h2>
+        <p>Report Date: {{ current_date }}</p>
+    </div>
+
+    <div class="company-info">
+        <p><strong>Company:</strong> {{ company.name }}</p>
+        <p><strong>Contact Person:</strong> {{ company.contact_person | default('N/A') }}</p>
+        <p><strong>Phone:</strong> {{ company.phone_number | default('N/A') }}</p>
+        <p><strong>Current Balance:</strong> 
+            GH₵ {{ "%.2f"|format(current_balance) }}
+        </p>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Amount (GH₵)</th>
+                    <th>Description</th>
+                    <th>Recorded By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for transaction in transactions %}
+                <tr>
+                    <td>{{ transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ transaction.transaction_type }}</td>
+                    <td>GH₵{{ "%.2f" | format(transaction.amount) }}</td>
+                    <td>{{ transaction.description | default('N/A') }}</td>
+                    <td>{{ transaction.recorded_by }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" style="text-align: center;">No transactions found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="total-row">
+                    <td colspan="2">Total Transactions:</td>
+                    <td>GH₵{{ "%.2f" | format(total_transactions_sum) }}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <p style="text-align: center; font-size: 0.8rem; margin-top: 2rem;">
+        This document is a computer-generated report and does not require a signature.
+    </p>
+</div>
+
+<script>
+    window.onload = function() {
+        window.print();
+    };
+</script>
+{% endblock %}

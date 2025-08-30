@@ -25,8 +25,8 @@ load_dotenv()
 # Example: Placeholder for external API keys/URLs if they are truly global
 ARKESEL_API_KEY = os.getenv('ARKESEL_API_KEY')
 ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'YourSenderID')
-ARKESEL_SMS_URL = "https://sms.arkesel.com/api/v2/sms/send" # Correct Arkesel SMS API URL
-
+ARKESEL_SMS_URL = "https://sms.arkesel.com/sms/api" # Correct Arkesel SMS API URL
+REMOTE_SERVER_URL = os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')
 # These should ideally come from Business info, but as fallback for SMS or defaults
 ENTERPRISE_NAME = os.getenv('ENTERPRISE_NAME', 'Your Enterprise Name')
 PHARMACY_LOCATION = os.getenv('PHARMACY_LOCATION', 'Your Town, Your Region')
@@ -35,15 +35,21 @@ PHARMACY_CONTACT = os.getenv('PHARMACY_CONTACT', '+1234567890')
 ADMIN_PHONE_NUMBER = os.getenv('ADMIN_PHONE_NUMBER', '') # For daily reports
 from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
 
-# Create the SQLAlchemy instance outside the function (global)
-# db = SQLAlchemy()
-
-# Create the Migrate instance outside the function (global)
-# migrate = Migrate()
+if getattr(sys, 'frozen', False):
+    # If the application is running as a PyInstaller bundle
+    # _MEIPASS is the path to the temporary folder where the app is unpacked
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    db_path = os.path.join(sys._MEIPASS, 'instance', 'instance_data.db')
+else:
+    # If running in a regular Python environment
+    template_folder = 'templates'
+    db_path = os.path.join('instance', 'instance_data.db')
 
 def create_app():
     # This is the application factory function
     app = Flask(__name__)
+    
+
     
     # --- Configuration ---
     DB_TYPE = os.getenv('DB_TYPE', 'postgresql')
@@ -125,28 +131,40 @@ def create_app():
     #         return f(*args, **kwargs)
     #     return decorated_function
 
-    # def super_admin_required(f):
-    #     from functools import wraps
-    #     @wraps(f)
-    #     def decorated_function(*args, **kwargs):
-    #         if session.get('role') != 'super_admin':
-    #             flash('Access denied: Super Admin only.', 'danger')
-    #             return redirect(url_for('dashboard'))
-    #         return f(*args, **kwargs)
-    #     return decorated_function
+    def super_admin_required(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if session.get('role') != 'super_admin':
+                flash('Access denied: Super Admin only.', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
 
-    # # Permissions based on roles (can be extended)
-    # def permission_required(roles):
-    #     from functools import wraps
-    #     def wrapper(f): # 'f' is the function being decorated (e.g., dashboard, inventory)
-    #         @wraps(f)
-    #         def decorated_function(*args, **kwargs):
-    #             if session.get('role') not in roles:
-    #                 flash(f'Access denied. Required roles: {", ".join(roles)}.', 'danger')
-    #                 return redirect(url_for('dashboard'))
-    #             return f(*args, **kwargs)
-    #         return decorated_function
-    #     return wrapper
+    def api_key_required(f):
+        """
+        Decorator to check for a valid API key in the request header.
+        """
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            api_key = request.headers.get('X-API-Key')
+            if not api_key or api_key != os.getenv('REMOTE_ADMIN_API_KEY'):
+                return jsonify({'message': 'API Key is missing or invalid.'}), 401
+            return f(*args, **kwargs)
+        return decorated_function
+
+    # Permissions based on roles (can be extended)
+    def permission_required(roles):
+        from functools import wraps
+        def wrapper(f): # 'f' is the function being decorated (e.g., dashboard, inventory)
+            @wraps(f)
+            def decorated_function(*args, **kwargs):
+                if session.get('role') not in roles:
+                    flash(f'Access denied. Required roles: {", ".join(roles)}.', 'danger')
+                    return redirect(url_for('dashboard'))
+                return f(*args, **kwargs)
+            return decorated_function
+        return wrapper
 
     def roles_required(*roles):
         """
@@ -326,9 +344,10 @@ def create_app():
         current_balance = 0.0
 
         for transaction in transactions:
-            if transaction.type == 'Debit':
+            # Corrected attribute name from 'type' to 'transaction_type'
+            if transaction.transaction_type == 'Debit':
                 current_balance += transaction.amount
-            elif transaction.type == 'Credit':
+            elif transaction.transaction_type == 'Credit':
                 current_balance -= transaction.amount
 
         total_debtors = 0.0
@@ -677,84 +696,47 @@ def create_app():
     # Before: @app.route('/sync_status', methods=['GET'])
     # Before: @login_required
     # @login_required # Apply login_required if you want to restrict access to authenticated users
-    @app.route('/sync_status', methods=['GET'])
-    # @login_required # Apply login_required if you want to restrict access to authenticated users
-    def sync_status():
-        """
-        Provides the online/offline status and last sync timestamp for the frontend.
-        """
-        # ACCESS CONTROL: Ensure only super_admin or admin can access
-        if session.get('role') not in ['super_admin', 'admin']:
-            return jsonify({'online': False, 'last_sync': None, 'message': 'Unauthorized'}), 401
+    # @app.route('/sync_status', methods=['GET'])
+    # # @login_required # Apply login_required if you want to restrict access to authenticated users
+    # def sync_status():
+    #     """
+    #     Provides the online/offline status and last sync timestamp for the frontend.
+    #     """
+    #     # ACCESS CONTROL: Ensure only super_admin or admin can access
+    #     if session.get('role') not in ['super_admin', 'admin']:
+    #         return jsonify({'online': False, 'last_sync': None, 'message': 'Unauthorized'}), 401
 
-        is_online = check_network_online() # Reuse your existing helper function
+    #     is_online = check_network_online() # Reuse your existing helper function
 
-        # Placeholder for last sync timestamp.
-        # In a real app, you'd store this in a database table (e.g., a settings table)
-        # or a Business model attribute. For now, we'll just return None or a mock timestamp.
-        last_sync_timestamp = None 
-        # Example: last_sync_timestamp = Business.query.get(current_business_id).last_sync_time if current_business_id else None
+    #     # Placeholder for last sync timestamp.
+    #     # In a real app, you'd store this in a database table (e.g., a settings table)
+    #     # or a Business model attribute. For now, we'll just return None or a mock timestamp.
+    #     last_sync_timestamp = None 
+    #     # Example: last_sync_timestamp = Business.query.get(current_business_id).last_sync_time if current_business_id else None
         
-        # If you want to return a mock last sync for testing:
-        # from datetime import datetime, timedelta
-        # last_sync_timestamp = (datetime.now() - timedelta(minutes=5)).isoformat() + "Z"
+    #     # If you want to return a mock last sync for testing:
+    #     # from datetime import datetime, timedelta
+    #     # last_sync_timestamp = (datetime.now() - timedelta(minutes=5)).isoformat() + "Z"
 
-        return jsonify({
-            'online': is_online,
-            'last_sync': last_sync_timestamp,
-            'message': 'Status fetched successfully.'
-        })
+    #     return jsonify({
+    #         'online': is_online,
+    #         'last_sync': last_sync_timestamp,
+    #         'message': 'Status fetched successfully.'
+    #     })
 
-    # --- Trigger Sync API Endpoint ---
-
-    # @app.route('/trigger_sync', methods=['POST'])
-    # @permission_required(['super_admin', 'admin'])
-    # def trigger_sync():
-    #     """Endpoint to manually trigger a sync from the desktop UI."""
-    #     business_id = session.get('business_id')
-    #     if not business_id:
-    #         return jsonify({'success': False, 'message': 'Business ID not found in session for sync.'}), 400
-
-    #     if not check_network_online():
-    #         return jsonify(success=False, message="Cannot sync. You are currently offline."), 400
-
-    #     try:
-    #         # --- The problem is likely inside this function call ---
-    #         success, message = perform_sync(business_id)
-    #         # ------------------------------------------------------
-            
-    #         if success:
-    #             # Update the last sync timestamp on the business model
-    #             business = Business.query.get(business_id)
-    #             if business:
-    #                 business.last_synced_at = datetime.utcnow()
-    #                 db.session.commit()
-    #             return jsonify({'success': True, 'message': message}), 200
-    #         else:
-    #             # This handles cases where `perform_sync` returns False
-    #             return jsonify({'success': False, 'message': message}), 500
-                
-    #     except Exception as e:
-    #         # This block will catch ANY error and print it
-    #         db.session.rollback()
-    #         print("--- FULL TRACEBACK ---")
-    #         import traceback
-    #         traceback.print_exc()
-    #         print("----------------------")
-    #         return jsonify({'success': False, 'message': f"An error occurred: {str(e)}"}), 500
-
-
+   
     # The csrf.exempt decorator should be removed because the form sends a token.
     @app.route('/api/v1/register_business_for_sync', methods=['POST'])
-    @csrf.exempt  # This decorator is essential for backend-to-backend API calls.
+    @api_key_required
+    @csrf.exempt
     def register_business_for_sync():
-        # Check if the incoming data is JSON (e.g., from an API call)
-        if request.is_json:
-            data = request.get_json()
-        else:
-            # Otherwise, assume it's form data from the HTML page
-            data = request.form
+        # 1. Validate incoming data type
+        if not request.is_json:
+            return jsonify({'message': 'Invalid content type. Expected JSON.'}), 400
 
+        data = request.get_json()
+
+        # 2. Extract and validate required fields
         name = data.get('name')
         business_type = data.get('type')
         address = data.get('address')
@@ -765,6 +747,7 @@ def create_app():
         if not name or not business_type:
             return jsonify({'message': 'Business name and type are required for registration.'}), 400
 
+        # 3. Check for existing business to prevent duplicates
         existing_business = Business.query.filter_by(name=name).first()
         if existing_business:
             return jsonify({
@@ -772,14 +755,15 @@ def create_app():
                 'business_id': existing_business.id
             }), 200
 
+        # 4. Attempt to create and save new business record
         try:
             new_business = Business(
-                name='SuperAdmin Global Business',
-                type='Pharmacy',
-                address='Global',
-                location='',
-                contact='9547096268',
-                email='email',
+                name=name,
+                type=business_type,
+                address=address,
+                location=location,
+                contact=contact,
+                email=email,
                 is_active=True
             )
             db.session.add(new_business)
@@ -789,16 +773,13 @@ def create_app():
                 'business_id': new_business.id
             }), 201
         except Exception as e:
+            # 5. Handle any database or other unexpected errors
             db.session.rollback()
             print(f"Error registering business online: {e}")
             return jsonify({'message': f'Failed to register business online: {str(e)}'}), 500
 
 
-    # Placeholder for your remote server URL (e.g., your deployed app's URL)
-    REMOTE_SERVER_URL = os.getenv('REMOTE_SERVER_URL', 'http://localhost:5000')
-
-
-    def perform_sync(local_business_id):
+    def perform_sync(local_business_id, sync_api_key):
         if not check_network_online():
             print("Offline: Cannot perform synchronization.")
             return False, "Offline: Cannot perform synchronization."
@@ -809,24 +790,25 @@ def create_app():
         if not local_business:
             return False, "Error: Local business not found."
 
+        # Use a dictionary to store headers for all requests
+        headers = {'X-API-Key': sync_api_key, 'Content-Type': 'application/json'}
+
         # --- NEW: Check and Register Business Remotely ---
         if not local_business.remote_id:
             print(f"Local business '{local_business.name}' not yet linked to remote server. Attempting registration...")
             registration_url = f"{REMOTE_SERVER_URL}/api/v1/register_business_for_sync"
             try:
-                # Send the local business's name and other details to register it remotely
-                # The remote server will create it and return its new remote_id
                 registration_payload = {
                     'name': local_business.name,
                     'address': local_business.address,
                     'location': local_business.location,
                     'contact': local_business.contact,
                     'email': local_business.email,
-                    'type': local_business.type, 
-                    # Do NOT send local 'id' as remote will generate its own
+                    'type': local_business.type,
                 }
-                response = requests.post(registration_url, json=registration_payload)
-                response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
+                # Use headers to authenticate this request
+                response = requests.post(registration_url, json=registration_payload, headers=headers)
+                response.raise_for_status()
 
                 remote_registration_data = response.json()
                 new_remote_id = remote_registration_data.get('business_id')
@@ -838,23 +820,10 @@ def create_app():
                 else:
                     return False, f"Remote registration failed: No business_id returned. Message: {remote_registration_data.get('message', 'Unknown error')}"
             
-            except requests.exceptions.HTTPError as e:
-                # This block specifically catches HTTP errors (like 400 Bad Request)
-                print(f"Failed to register business remotely (HTTP Error): {e}")
-                try:
-                    error_details = e.response.json()
-                    print(f"Remote Server Error Details: {error_details}")
-                    # Return the specific error message from the remote server
-                    return False, f"Remote registration failed: {error_details.get('message', 'Unknown error')}"
-                except json.JSONDecodeError:
-                    # If the response isn't JSON, return the raw text
-                    print(f"Remote Server Raw Response: {e.response.text}")
-                    return False, f"Remote registration failed: {e.response.text}"
             except requests.exceptions.RequestException as e:
-                # This catches other request errors (e.g., network issues)
+                # This catches all request errors (HTTP, network, etc.)
                 db.session.rollback()
                 return False, f"Failed to register business remotely: {e}"
-        # --- END NEW BUSINESS REGISTRATION LOGIC ---
 
         # Use the remote_id for all subsequent API calls
         effective_business_id = local_business.remote_id
@@ -863,23 +832,23 @@ def create_app():
         last_synced_at = local_business.last_synced_at.isoformat() if local_business.last_synced_at else "1970-01-01T00:00:00Z"
         print(f"Last synced at: {last_synced_at}")
 
-        # Push data to remote using the effective_business_id
-        success_push, msg_push = push_data_to_remote(effective_business_id)
+        # Pass the API key to the push and pull functions
+        success_push, msg_push = push_data_to_remote(effective_business_id, sync_api_key)
         if not success_push:
             return False, f"Sync failed during push: {msg_push}"
 
-        # Pull data from remote using the effective_business_id and its last_synced_at
-        # Ensure pull_data_from_remote takes the correct timestamp (UTC)
-        success_pull, msg_pull = pull_data_from_remote(effective_business_id, local_business.last_synced_at.isoformat() if local_business.last_synced_at else "1970-01-01T00:00:00Z")
+        success_pull, msg_pull = pull_data_from_remote(effective_business_id, last_synced_at, sync_api_key)
         if not success_pull:
             return False, f"Sync failed during pull: {msg_pull}"
 
-        # Update local business's last_synced_at
         local_business.last_synced_at = datetime.utcnow()
         db.session.commit()
         print(f"Synchronization successful at {local_business.last_synced_at.isoformat()}")
         return True, "Synchronization successful!"
+
+
     @app.route('/api/v1/users', methods=['GET'])
+    @api_key_required
     def get_users_for_sync():
         try:
             business_id = request.args.get('business_id')
@@ -906,6 +875,7 @@ def create_app():
             return jsonify({'error': 'An internal server error occurred.'}),
 
     @app.route('/api/v1/businesses', methods=['GET'])
+    @api_key_required
     # @login_required # Temporary: Should be API-specific auth in production
     def api_get_businesses():
         """
@@ -935,13 +905,14 @@ def create_app():
 
 
     @app.route('/api/v1/inventory', methods=['GET'])
+    @api_key_required
     # @login_required # Temporary: Should be API-specific auth in production
     def api_get_inventory():
         """
         API endpoint to fetch inventory items for a business.
         Requires business_id in query params. Can be filtered by last_updated.
         """
-        business_id = request.args.get('business_id', get_current_business_id())
+        business_id = request.args.get('business_id')
         if not business_id:
             return jsonify({'message': 'Business ID is required.'}), 400
 
@@ -964,6 +935,7 @@ def create_app():
 
 
     @app.route('/api/v1/inventory', methods=['POST'])
+    @api_key_required
     # @login_required # Temporary: Should be API-specific auth in production
     def api_upsert_inventory():
         """
@@ -1069,6 +1041,7 @@ def create_app():
     # In your app.py file
 
     @app.route('/api/v1/inventory', methods=['GET'])
+    @api_key_required
     def get_inventory_for_sync():
         print("DEBUG: Accessing inventory endpoint.") # ADD THIS LINE
         
@@ -1111,6 +1084,7 @@ def create_app():
             print(f"Error fetching inventory for sync: {e}")
             return jsonify({'error': 'An internal server error occurred.'}), 500
     @app.route('/api/v1/sales', methods=['POST'])
+    @api_key_required
     # @login_required # Temporary: Should be API-specific auth in production
     def api_record_sales():
         """
@@ -1192,6 +1166,7 @@ def create_app():
     # ... (existing imports and other code) ...
 
     @app.route('/api/get_product_by_barcode', methods=['POST'])
+    @api_key_required
     # @login_required
     def get_product_by_barcode():
         """
@@ -1365,7 +1340,41 @@ def create_app():
     #         return jsonify(success=False, message=str(e)), 500
 
         
- # app.py (Find your sync_businesses route)
+#  # app.py (Find your sync_businesses route)
+    # @app.route('/trigger_sync', methods=['POST'])
+    # @login_required
+    # def trigger_sync():
+    #     """
+    #     Triggers the data synchronization process based on the user's role.
+    #     """
+    #     is_online = check_network_online()
+    #     if not is_online:
+    #         return jsonify({'success': False, 'message': 'No internet connection detected.'}), 200
+
+    #     user_role = current_user.role
+    #     current_business_id = current_user.business_id
+
+    #     if user_role == 'super_admin':
+    #         # Pass the super admin API key to the full sync function
+    #         super_admin_api_key = os.getenv("SUPER_ADMIN_API_KEY")
+    #         if not super_admin_api_key:
+    #             return jsonify({'success': False, 'message': 'Super Admin API key not configured.'}), 500
+    #         success, message = super_admin_full_sync(super_admin_api_key)
+    #     elif user_role == 'admin':
+    #         # Retrieve and pass the admin-level API key
+    #         admin_api_key = os.getenv("REMOTE_ADMIN_API_KEY")
+    #         if not admin_api_key:
+    #             return jsonify({'success': False, 'message': 'Remote admin API key not configured.'}), 500
+            
+    #         success, message = admin_sync(current_business_id, admin_api_key)
+    #     else:
+    #         message = "Unauthorized role to perform synchronization."
+    #         return jsonify({'success': False, 'message': message}), 403
+
+    #     if success:
+    #         return jsonify({'success': True, 'message': message}), 200
+    #     else:
+    #         return jsonify({'success': False, 'message': message}), 500
     @app.route('/trigger_sync', methods=['POST'])
     @login_required
     def trigger_sync():
@@ -1374,143 +1383,166 @@ def create_app():
         """
         is_online = check_network_online()
         if not is_online:
-            flash('Cannot sync. No internet connection detected.', 'danger')
-            return redirect(url_for('dashboard'))
+            return jsonify({'success': False, 'message': 'No internet connection detected.'}), 200
 
-        # Retrieve the user's role and a secure token if available
         user_role = current_user.role
-        # WARNING: Cannot read current_user.password directly.
-        # A token or other secure authentication method is required here.
-        # For now, we will pass a placeholder and rely on the remote server's
-        # authentication logic to handle it, but this will likely fail.
-        # A better solution is to store a sync token in the database.
-        access_token = None
+        current_business_id = current_user.business_id
+        
+        # Retrieve the API key to be used for all sync API calls
+        sync_api_key = os.getenv("REMOTE_ADMIN_API_KEY")
+        if not sync_api_key:
+            return jsonify({'success': False, 'message': 'Synchronization API key not configured.'}), 500
 
         if user_role == 'super_admin':
-            # Super admin performs a full sync of ALL data
-            success, message = super_admin_full_sync(access_token)
+            success, message = super_admin_full_sync(sync_api_key)
+        elif user_role == 'admin':
+            success, message = perform_sync(current_business_id, sync_api_key)
         else:
-            # Regular business admin performs a sync of ONLY their business's data
-            success, message = pull_data_from_remote(current_user.business_id, access_token)
+            message = "Unauthorized role to perform synchronization."
+            return jsonify({'success': False, 'message': message}), 403
 
         if success:
-            flash(f'Synchronization successful: {message}', 'success')
+            return jsonify({'success': True, 'message': message}), 200
         else:
-            flash(f'Synchronization failed: {message}', 'danger')
+            return jsonify({'success': False, 'message': message}), 500
 
-        return redirect(url_for('dashboard'))
-
-    @app.route('/sync_businesses', methods=['POST'])
-    @login_required
-    @roles_required('super_admin')
-    def sync_businesses():
-        # ... (initial checks and setup) ...
-        
-        try:
-            # Assume online_db_url and offline_db_url are set correctly from app.config
-            online_db_url = current_app.config['SQLALCHEMY_DATABASE_URI']
-            offline_db_path = os.path.join(current_app.instance_path, 'instance_data.db')
-            offline_db_url = f'sqlite:///{offline_db_path}'
-
-            online_engine = create_engine(online_db_url)
-            offline_engine = create_engine(offline_db_url)
-
-            # --- Pulling Business Data ---
-            print("Pulling table: businesses...")
-            # Fetch all businesses from online DB
-            online_businesses_df = pd.read_sql_table('businesses', online_engine)
-            with offline_engine.connect() as conn:
-                conn.execute(text('DELETE FROM businesses;'))
-                conn.commit()
-                if not online_businesses_df.empty:
-                    online_businesses_df.to_sql('businesses', conn, if_exists='append', index=False)
-                    conn.commit()
-            print("Successfully pulled and replaced data for businesses.")
-
-            # --- Pulling User Data ---
-            print("Pulling table: user...")
-            # Fetch all users from online DB. The column holding the hash is likely 'password' in the DB.
-            online_users_df = pd.read_sql_table('user', online_engine)
-
-            # Ensure the password hash column is correctly named for insertion.
-            # In your User model, it's typically 'password' in the DB (mapped by _password_hash).
-            # So, the DataFrame should have a 'password' column.
-            # No explicit rename should be needed if the DB column is indeed 'password'.
-            # If your model's actual DB column for password was something else (e.g., 'password_hash'),
-            # you would rename here: online_users_df.rename(columns={'password_hash': 'password'}, inplace=True)
-            # But based on the model: _password_hash = db.Column('password', db.String(128), ...),
-            # the column in DB IS 'password'.
-
-            with offline_engine.connect() as conn:
-                conn.execute(text('DELETE FROM user;')) # Clear existing users
-                conn.commit()
-                if not online_users_df.empty:
-                    # Explicitly map columns if needed, otherwise direct to_sql should work
-                    online_users_df.to_sql('user', conn, if_exists='append', index=False)
-                    conn.commit()
-            print("Successfully pulled and replaced data for user.")
-
-            # --- Pulling Inventory Items Data ---
-            print("Pulling table: inventory_items...")
-            online_inventory_df = pd.read_sql_table('inventory_items', online_engine)
-            with offline_engine.connect() as conn:
-                conn.execute(text('DELETE FROM inventory_items;'))
-                conn.commit()
-                if not online_inventory_df.empty:
-                    online_inventory_df.to_sql('inventory_items', conn, if_exists='append', index=False)
-                    conn.commit()
-            print("Successfully pulled and replaced data for inventory_items.")
-
-            # --- Pulling Hirable Items Data ---
-            print("Pulling table: hirable_items...")
-            online_hirable_df = pd.read_sql_table('hirable_items', online_engine)
-            with offline_engine.connect() as conn:
-                conn.execute(text('DELETE FROM hirable_items;'))
-                conn.commit()
-                if not online_hirable_df.empty:
-                    online_hirable_df.to_sql('hirable_items', conn, if_exists='append', index=False)
-                    conn.commit()
-            print("Successfully pulled and replaced data for hirable_items.")
-
-            # --- Pulling Companies Data ---
-            print("Pulling table: companies...")
-            online_companies_df = pd.read_sql_table('companies', online_engine)
-            with offline_engine.connect() as conn:
-                conn.execute(text('DELETE FROM companies;'))
-                conn.commit()
-                if not online_companies_df.empty:
-                    online_companies_df.to_sql('companies', conn, if_exists='append', index=False)
-                    conn.commit()
-            print("Successfully pulled and replaced data for companies.")
-
-            # --- Pushing unsynced sales records from offline to online ---
-            # ... (your existing sales push logic) ...
-
-            flash('Data synchronization successful!', 'success')
-            return redirect(url_for('super_admin_dashboard'))
-
-        except Exception as e:
-            db.session.rollback()
-            print(f"Error during synchronization: {e}")
-            flash(f'Error during synchronization: {str(e)}', 'danger')
-            return redirect(url_for('super_admin_dashboard'))
     
+    # def super_admin_full_sync():
+    #     """
+    #     Pulls all data for all businesses and users from the remote server.
+    #     This function is for the Super Admin role only.
+    #     """
+    #     remote_url = get_remote_flask_base_url()
+    #     headers = {}
+
+    #     try:
+    #         # --- Step 1: Pull ALL Businesses ---
+    #         print("Pulling all registered businesses...")
+    #         businesses_response = requests.get(f"{remote_url}/api/v1/businesses", headers=headers)
+    #         businesses_response.raise_for_status()
+    #         new_businesses = businesses_response.json()
+            
+    #         with app.app_context():
+    #             db.session.query(Business).delete()
+    #             for business_data in new_businesses:
+    #                 business = Business(
+    #                     id=business_data['id'],
+    #                     name=business_data['name'],
+    #                     address=business_data['address'],
+    #                     location=business_data['location'],
+    #                     contact=business_data['contact'],
+    #                     type=business_data['type'],
+    #                     is_active=business_data['is_active'],
+    #                     last_updated=datetime.fromisoformat(business_data['last_updated'])
+    #                 )
+    #                 db.session.add(business)
+    #             db.session.commit()
+    #             print(f"Successfully pulled and replaced data for businesses. Found {len(new_businesses)} businesses.")
+
+    #         # --- Step 2: Pull ALL Users ---
+    #         print("Pulling all users...")
+    #         users_response = requests.get(f"{remote_url}/api/v1/users", headers=headers)
+    #         users_response.raise_for_status()
+    #         new_users = users_response.json()
+            
+    #         with app.app_context():
+    #             db.session.query(User).delete()
+    #             for user_data in new_users:
+    #                 user = User(
+    #                     id=user_data['id'],
+    #                     username=user_data['username'],
+    #                     password=user_data['password'],
+    #                     role=user_data['role'],
+    #                     business_id=user_data['business_id'],
+    #                     is_active=user_data['is_active'],
+    #                     created_at=datetime.fromisoformat(user_data['created_at'])
+    #                 )
+    #                 db.session.add(user)
+    #             db.session.commit()
+    #             print(f"Successfully pulled and replaced data for user. Found {len(new_users)} users.")
+            
+    #         # --- Step 3: Pull ALL Inventory Items ---
+    #         # This will get inventory for all businesses, as the API endpoint is likely not filtered
+    #         print("Pulling all inventory items...")
+    #         inventory_response = requests.get(f"{remote_url}/api/v1/inventory", headers=headers)
+    #         inventory_response.raise_for_status()
+    #         new_inventory_items = inventory_response.json()
+            
+    #         with app.app_context():
+    #             db.session.query(InventoryItem).delete()
+    #             for item_data in new_inventory_items:
+    #                 item = InventoryItem(
+    #                     id=item_data['id'],
+    #                     business_id=item_data['business_id'],
+    #                     product_name=item_data['product_name'],
+    #                     category=item_data['category'],
+    #                     purchase_price=item_data['purchase_price'],
+    #                     sale_price=item_data['sale_price'],
+    #                     current_stock=item_data['current_stock'],
+    #                     last_updated=datetime.fromisoformat(item_data['last_updated']),
+    #                     batch_number=item_data['batch_number'],
+    #                     number_of_tabs=item_data['number_of_tabs'],
+    #                     unit_price_per_tab=item_data['unit_price_per_tab'],
+    #                     item_type=item_data['item_type'],
+    #                     expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+    #                     is_fixed_price=item_data['is_fixed_price'],
+    #                     fixed_sale_price=item_data['fixed_sale_price'],
+    #                     is_active=item_data['is_active']
+    #                 )
+    #                 db.session.add(item)
+    #             db.session.commit()
+    #             print(f"Successfully pulled and replaced data for inventory_items. Found {len(new_inventory_items)} items.")
+            
+    #         # NOTE: You would need to add similar logic for other tables like HirableItems, Customers, etc.
+
+    #         return True, "Synchronization successful."
+
+    #     except requests.exceptions.RequestException as e:
+    #         db.session.rollback()
+    #         print(f"Error during full sync: {e}")
+    #         return False, f"Error during full sync: {e}"
+
     def super_admin_full_sync():
         """
         Pulls all data for all businesses and users from the remote server.
         This function is for the Super Admin role only.
         """
         remote_url = get_remote_flask_base_url()
-        headers = {}
+
+        # Get admin credentials from environment variables or a secure configuration
+        # NOTE: You should store these securely, e.g., in a .env file
+        admin_username = os.getenv("SUPER_ADMIN_USERNAME")
+        admin_password = os.getenv("SUPER_ADMIN_PASSWORD")
+
+        if not admin_username or not admin_password:
+            return False, "Synchronization failed: Admin credentials not found."
+
+        # Use a requests.Session to persist authentication cookies
+        session_requests = requests.Session()
 
         try:
-            # --- Step 1: Pull ALL Businesses ---
+            # Step 1: Authenticate with the online server to get a valid session
+            print("Authenticating with remote server...")
+            login_payload = {
+                'username': admin_username,
+                'password': admin_password
+            }
+            login_response = session_requests.post(f"{remote_url}/login", data=login_payload)
+            login_response.raise_for_status() # This will raise an error for bad status codes
+
+            if 'session_id' not in session_requests.cookies: # Check for a session cookie
+                return False, "Authentication failed: No session cookie received."
+
+            print("Authentication successful.")
+
+            # Step 2: Now that we have a valid session, pull all data
+            # --- Pull ALL Businesses ---
             print("Pulling all registered businesses...")
-            businesses_response = requests.get(f"{remote_url}/api/v1/businesses", headers=headers)
+            businesses_response = session_requests.get(f"{remote_url}/api/v1/businesses")
             businesses_response.raise_for_status()
             new_businesses = businesses_response.json()
             
-            with app.app_context():
+            with current_app.app_context():
                 db.session.query(Business).delete()
                 for business_data in new_businesses:
                     business = Business(
@@ -1521,25 +1553,27 @@ def create_app():
                         contact=business_data['contact'],
                         type=business_data['type'],
                         is_active=business_data['is_active'],
-                        last_updated=datetime.fromisoformat(business_data['last_updated'])
+                        # Ensure you handle datetime objects correctly
+                        last_updated=datetime.fromisoformat(business_data['last_updated']) if 'last_updated' in business_data and business_data['last_updated'] else None
                     )
                     db.session.add(business)
                 db.session.commit()
                 print(f"Successfully pulled and replaced data for businesses. Found {len(new_businesses)} businesses.")
 
-            # --- Step 2: Pull ALL Users ---
+            # --- Pull ALL Users ---
             print("Pulling all users...")
-            users_response = requests.get(f"{remote_url}/api/v1/users", headers=headers)
+            users_response = session_requests.get(f"{remote_url}/api/v1/users")
             users_response.raise_for_status()
             new_users = users_response.json()
             
-            with app.app_context():
+            with current_app.app_context():
                 db.session.query(User).delete()
                 for user_data in new_users:
                     user = User(
                         id=user_data['id'],
                         username=user_data['username'],
-                        password=user_data['password'],
+                        # Pass the password hash directly
+                        _password_hash=user_data['password'], 
                         role=user_data['role'],
                         business_id=user_data['business_id'],
                         is_active=user_data['is_active'],
@@ -1549,14 +1583,13 @@ def create_app():
                 db.session.commit()
                 print(f"Successfully pulled and replaced data for user. Found {len(new_users)} users.")
             
-            # --- Step 3: Pull ALL Inventory Items ---
-            # This will get inventory for all businesses, as the API endpoint is likely not filtered
+            # --- Pull ALL Inventory Items ---
             print("Pulling all inventory items...")
-            inventory_response = requests.get(f"{remote_url}/api/v1/inventory", headers=headers)
+            inventory_response = session_requests.get(f"{remote_url}/api/v1/inventory")
             inventory_response.raise_for_status()
             new_inventory_items = inventory_response.json()
             
-            with app.app_context():
+            with current_app.app_context():
                 db.session.query(InventoryItem).delete()
                 for item_data in new_inventory_items:
                     item = InventoryItem(
@@ -1581,7 +1614,7 @@ def create_app():
                 db.session.commit()
                 print(f"Successfully pulled and replaced data for inventory_items. Found {len(new_inventory_items)} items.")
             
-            # NOTE: You would need to add similar logic for other tables like HirableItems, Customers, etc.
+            # NOTE: Add similar logic for other tables like HirableItems, Customers, etc.
 
             return True, "Synchronization successful."
 
@@ -1589,6 +1622,240 @@ def create_app():
             db.session.rollback()
             print(f"Error during full sync: {e}")
             return False, f"Error during full sync: {e}"
+
+
+    def admin_sync(business_id, remote_api_key):
+        """
+        Performs a robust two-way synchronization for a specific business using a dedicated API key.
+        Pulls data from the remote server and pushes unsynced local data to it.
+        """
+        remote_url = get_remote_flask_base_url()
+        
+        # Use a dictionary to store headers, including the API key
+        headers = {
+            'X-API-Key': remote_api_key,
+            'Content-Type': 'application/json'
+        }
+
+        try:
+            # Step 1: Check business ID consistency
+            print(f"Checking business ID consistency...")
+            business_response = requests.get(f"{remote_url}/api/v1/business/{business_id}", headers=headers)
+            business_response.raise_for_status()
+            online_business_data = business_response.json()
+
+            with current_app.app_context():
+                local_business = Business.query.get(business_id)
+                if not local_business:
+                    local_business = Business(
+                        id=online_business_data['id'],
+                        name=online_business_data['name'],
+                        address=online_business_data['address'],
+                        location=online_business_data['location'],
+                        contact=online_business_data['contact'],
+                        type=online_business_data['type'],
+                        is_active=online_business_data['is_active'],
+                        last_updated=datetime.fromisoformat(online_business_data['last_updated'])
+                    )
+                    db.session.add(local_business)
+                    print("Local business record created from online data.")
+                elif local_business.id != online_business_data['id']:
+                    local_business.id = online_business_data['id']
+                    print(f"Local business ID updated to match remote ID: {local_business.id}")
+                db.session.commit()
+
+            # Step 2: Pull data for the specific business (Online -> Offline)
+            print(f"Pulling inventory and user data for business ID: {local_business.id} from remote...")
+            inventory_response = requests.get(f"{remote_url}/api/v1/businesses/{local_business.id}/inventory", headers=headers)
+            inventory_response.raise_for_status()
+            online_inventory_data = inventory_response.json()
+
+            users_response = requests.get(f"{remote_url}/api/v1/users?business_id={local_business.id}", headers=headers)
+            users_response.raise_for_status()
+            online_users_data = users_response.json()
+
+            with current_app.app_context():
+                InventoryItem.query.filter_by(business_id=local_business.id).delete()
+                for item_data in online_inventory_data:
+                    item = InventoryItem(
+                        id=item_data['id'],
+                        business_id=item_data['business_id'],
+                        product_name=item_data['product_name'],
+                        category=item_data['category'],
+                        purchase_price=item_data['purchase_price'],
+                        sale_price=item_data['sale_price'],
+                        current_stock=item_data['current_stock'],
+                        last_updated=datetime.fromisoformat(item_data['last_updated']),
+                        batch_number=item_data['batch_number'],
+                        number_of_tabs=item_data['number_of_tabs'],
+                        unit_price_per_tab=item_data['unit_price_per_tab'],
+                        item_type=item_data['item_type'],
+                        expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+                        is_fixed_price=item_data['is_fixed_price'],
+                        fixed_sale_price=item_data['fixed_sale_price'],
+                        is_active=item_data['is_active']
+                    )
+                    db.session.add(item)
+                
+                User.query.filter_by(business_id=local_business.id).delete()
+                for user_data in online_users_data:
+                    user = User(
+                        id=user_data['id'],
+                        username=user_data['username'],
+                        role=user_data['role'],
+                        is_active=user_data['is_active'],
+                        business_id=user_data['business_id'],
+                        _password_hash=user_data['password_hash'],
+                        created_at=datetime.fromisoformat(user_data['created_at'])
+                    )
+                    db.session.add(user)
+                db.session.commit()
+                print("Offline inventory and user data updated successfully.")
+
+            # Step 3: Push unsynced offline transactions (Offline -> Online)
+            print("Pushing unsynced offline sales to remote...")
+            with current_app.app_context():
+                unsynced_sales = SalesRecord.query.filter_by(synced_to_remote=False).all()
+                pushed_count = 0
+                if unsynced_sales:
+                    for sale in unsynced_sales:
+                        try:
+                            sale_data = {
+                                'id': sale.id,
+                                'business_id': local_business.id,
+                                'sales_person_id': sale.sales_person_id,
+                                'customer_id': sale.customer_id,
+                                'grand_total_amount': float(sale.grand_total_amount),
+                                'payment_method': sale.payment_method,
+                                'transaction_date': sale.transaction_date.isoformat(),
+                                'is_synced': True,
+                                'items': [{
+                                    'id': item.id,
+                                    'sales_record_id': item.sales_record_id,
+                                    'inventory_item_id': item.inventory_item_id,
+                                    'quantity_sold': float(item.quantity_sold),
+                                    'unit_price_at_sale': float(item.unit_price_at_sale)
+                                } for item in sale.items_sold]
+                            }
+                            
+                            push_response = requests.post(f"{remote_url}/api/v1/sales/push", json=sale_data, headers=headers)
+                            push_response.raise_for_status()
+                            
+                            sale.synced_to_remote = True
+                            pushed_count += 1
+                            
+                        except requests.exceptions.HTTPError as http_err:
+                            if http_err.response.status_code == 409:
+                                print(f"Sale {sale.id} already exists on remote. Marking as synced.")
+                                sale.synced_to_remote = True
+                                pushed_count += 1
+                            else:
+                                print(f"HTTP error pushing sale {sale.id}: {http_err.response.status_code} - {http_err.response.text}")
+                        except Exception as e:
+                            print(f"An error occurred while pushing sale {sale.id}: {e}")
+
+                db.session.commit()
+                print(f"Successfully pushed {pushed_count} sales to the remote server.")
+
+            # Step 4: Record the successful sync timestamp locally
+            with current_app.app_context():
+                business = Business.query.get(local_business.id)
+                if business:
+                    business.last_synced_at = datetime.utcnow()
+                    db.session.commit()
+                    print(f"Local business last_synced_at updated to {business.last_synced_at}.")
+
+            return True, "Synchronization successful."
+
+        except requests.exceptions.RequestException as e:
+            db.session.rollback()
+            error_msg = f"Network error during sync: {e}"
+            print(error_msg)
+            return False, error_msg
+        except Exception as e:
+            db.session.rollback()
+            error_msg = f"An unexpected error occurred during sync: {e}"
+            print(error_msg)
+            return False, error_msg
+
+
+    @app.route('/sync_businesses', methods=['POST'])
+    @login_required
+    @super_admin_required
+    def sync_businesses():
+        try:
+            online_db_url = app.config['SQLALCHEMY_DATABASE_URI']
+            offline_db_path = os.path.join(app.instance_path, 'instance_data.db')
+            offline_db_url = f"sqlite:///{offline_db_path}"
+
+            online_engine = create_engine(online_db_url)
+            offline_engine = create_engine(offline_db_url)
+
+            with online_engine.connect() as online_conn, offline_engine.connect() as offline_conn:
+                online_businesses_df = pd.read_sql_table('businesses', online_conn)
+                online_businesses_df.to_sql('businesses', offline_conn, if_exists='replace', index=False)
+                online_inventory_df = pd.read_sql_table('inventory_items', online_conn)
+                online_inventory_df.to_sql('inventory_items', offline_conn, if_exists='replace', index=False)
+                
+                unsynced_sales_df = pd.read_sql_query("SELECT * FROM sales_records WHERE synced_to_remote = FALSE", offline_conn)
+                if not unsynced_sales_df.empty:
+                    unsynced_sales_df.to_sql('sales_records', online_conn, if_exists='append', index=False)
+                    sales_ids_to_update = unsynced_sales_df['id'].tolist()
+                    with app.app_context():
+                        db.session.query(SalesRecord).filter(
+                            SalesRecord.id.in_(sales_ids_to_update)
+                        ).update({SalesRecord.synced_to_remote: True}, synchronize_session=False)
+                        db.session.commit()
+                
+                if Business.query.first():
+                    global_business = Business.query.filter_by(name='Global Business').first()
+                    if global_business:
+                        global_business.last_synced_at = datetime.utcnow()
+                        db.session.commit()
+
+            flash('Data synchronization successful!', 'success')
+            return redirect(url_for('super_admin_dashboard'))
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error during synchronization: {e}")
+            flash(f'Error during synchronization: {str(e)}', 'danger')
+            return redirect(url_for('super_admin_dashboard'))
+            
+    @app.route('/sync_status', methods=['GET'])
+    def sync_status():
+        """
+        Provides the online/offline status and last sync timestamp for the frontend.
+        """
+        if session.get('role') not in ['super_admin', 'admin']:
+            return jsonify({'online': False, 'last_sync': None, 'message': 'Unauthorized'}), 401
+
+        is_online = check_network_online()
+
+        last_sync_timestamp = None
+        current_business_id = session.get('business_id')
+
+        if current_business_id:
+            business = Business.query.get(current_business_id)
+            if business and business.last_synced_at:
+                last_sync_timestamp = business.last_synced_at.isoformat() + "Z"
+
+        status_message = "Online" if is_online else "Offline"
+        if last_sync_timestamp:
+            last_sync_dt = datetime.fromisoformat(last_sync_timestamp.replace("Z", ""))
+            if datetime.utcnow() - last_sync_dt < timedelta(minutes=15):
+                status_message = "Synced"
+            else:
+                status_message = "Needs Sync"
+        else:
+            status_message = "Never Synced"
+
+        return jsonify({
+            'online': is_online,
+            'status': status_message,
+            'last_sync': last_sync_timestamp,
+            'message': 'Status fetched successfully.'
+        })
 
     @app.route('/')
     def index():
@@ -4685,12 +4952,322 @@ def create_app():
         flash(f'Company "{company_to_delete.name}" deleted successfully!', 'success')
         return redirect(url_for('companies'))
 
-    @app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
+    # @app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
     # @login_required
+    # def company_transaction(company_id):
+    #     """
+    #     Handles company transactions, including recording new transactions,
+    #     updating company balance, sending SMS receipts, and displaying
+    #     a list of transactions with filtering capabilities.
+    #     """
+    #     business_id = get_current_business_id()
+    #     company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
+
+    #     business_info = session.get('business_info', {})
+    #     if not business_info or not business_info.get('name'):
+    #         business_details = Business.query.filter_by(id=business_id).first()
+    #         if business_details:
+    #             business_info = {
+    #                 'name': business_details.name,
+    #                 'address': business_details.address,
+    #                 'location': business_details.location,
+    #                 'phone': business_details.contact,
+    #                 'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+    #             }
+    #         else:
+    #             business_info = {
+    #                 'name': "Your Enterprise Name", # Replace with actual constant
+    #                 'address': "Your Pharmacy Address", # Replace with actual constant
+    #                 'location': "Your Pharmacy Location", # Replace with actual constant
+    #                 'phone': "Your Pharmacy Contact", # Replace with actual constant
+    #                 'email': 'info@example.com' # Default email
+    #             }
+
+    #     last_company_transaction_id = None
+    #     last_company_transaction_details = None
+    #     transactions = [] # Initialize here to ensure it's always defined
+
+    #     if request.method == 'POST':
+    #         transaction_type = request.form['type']
+    #         amount = float(request.form['amount'])
+    #         description = request.form.get('description')
+    #         send_sms_receipt = 'send_sms_receipt' in request.form
+    #         recorded_by = session['username']
+
+    #         new_transaction = CompanyTransaction(
+    #             business_id=business_id,
+    #             company_id=company.id,
+    #             transaction_type=transaction_type, 
+    #             amount=amount,
+    #             description=description,
+    #             transaction_date=date.today(),  # ADDED THIS LINE
+    #             recorded_by=recorded_by
+    #         )
+    #         db.session.add(new_transaction)
+    #         db.session.commit()
+
+    #         # Recalculate company balance AFTER the new transaction is committed
+    #         updated_company_balance = company.calculate_current_balance()
+
+    #         flash(f'Transaction recorded successfully! Company balance updated to GH₵{updated_company_balance:.2f}', 'success')
+
+    #         last_company_transaction_details = {
+    #             'id': new_transaction.id,
+    #             'transaction_type': new_transaction.transaction_type, 
+    #             'amount': new_transaction.amount,
+    #             'description': new_transaction.description,
+    #             'date': new_transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S'), 
+    #             'recorded_by': new_transaction.recorded_by,
+    #             'company_name': company.name,
+    #             'company_id': company.id,
+    #             'new_balance': updated_company_balance 
+    #         }
+    #         session['last_company_transaction_id'] = new_transaction.id
+    #         session['last_company_transaction_details'] = last_company_transaction_details
+
+    #         if send_sms_receipt and company.phone_number: 
+    #             message = (f"Dear {company.name}, a {new_transaction.transaction_type} transaction of GH₵{new_transaction.amount:.2f} "
+    #                     f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{updated_company_balance:.2f}. "
+    #                     f"Description: {new_transaction.description or 'N/A'}")
+    #             # Assuming send_sms function exists
+    #             # sms_success, sms_msg = send_sms(company.phone_number, message) 
+    #             # if sms_success:
+    #             #     flash(f'SMS receipt sent to {company.phone_number}.', 'info')
+    #             # else:
+    #             #     flash(f'Failed to send SMS receipt: {sms_msg}', 'warning')
+    #         elif send_sms_receipt and not company.phone_number:
+    #             flash('Cannot send SMS receipt: Company contact number not available.', 'warning')
+
+    #         return redirect(url_for('company_transaction', company_id=company.id))
+
+
+    #     # --- Logic for GET request and initial page load ---
+    #     transactions_query = CompanyTransaction.query.filter_by(
+    #         company_id=company.id,
+    #         business_id=business_id
+    #     )
+
+    #     search_query = request.args.get('search', '').strip()
+    #     start_date_str = request.args.get('start_date')
+    #     end_date_str = request.args.get('end_date')
+
+    #     if search_query:
+    #         transactions_query = transactions_query.filter(
+    #             (CompanyTransaction.description.ilike(f'%{search_query}%')) |
+    #             (CompanyTransaction.transaction_type.ilike(f'%{search_query}%')) | 
+    #             (CompanyTransaction.recorded_by.ilike(f'%{search_query}%'))
+    #         )
+
+    #     if start_date_str:
+    #         try:
+    #             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    #             transactions_query = transactions_query.filter(CompanyTransaction.transaction_date >= start_date) 
+    #         except ValueError:
+    #             flash('Invalid start date format.', 'danger')
+    #             pass
+
+    #     if end_date_str:
+    #         try:
+    #             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    #             transactions_query = transactions_query.filter(CompanyTransaction.transaction_date < (end_date + timedelta(days=1))) 
+    #         except ValueError:
+    #             flash('Invalid end date format.', 'danger')
+    #             pass
+
+    #     transactions = transactions_query.order_by(CompanyTransaction.transaction_date.desc()).all()
+
+    #     total_transactions_sum = sum(t.amount for t in transactions)
+        
+    #     # Calculate the current balance for the company
+    #     company_current_balance = company.calculate_current_balance()
+
+    #     # Prepare company data to pass to the template, including the calculated balance
+    #     company_data_for_template = {
+    #         'id': company.id,
+    #         'name': company.name,
+    #         'contact_person': company.contact_person,
+    #         'phone_number': company.phone_number,
+    #         'email': company.email,
+    #         'address': company.address,
+    #         'is_active': company.is_active,
+    #         'date_added': company.date_added,
+    #         'current_balance': company_current_balance # Pass the calculated balance here
+    #     }
+
+    #     return render_template('company_transaction.html', # Template name is company_transactions.html (plural)
+    #                         company=company_data_for_template, # Pass the dictionary with balance
+    #                         transactions=transactions,
+    #                         search_query=search_query,
+    #                         start_date=start_date_str,
+    #                         end_date=end_date_str,
+    #                         business_info=business_info,
+    #                         total_transactions_sum=total_transactions_sum,
+    #                         current_year=datetime.now().year
+    #                         )
+
+    # @app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
+    # @login_required
+    # def company_transaction(company_id):
+    #     """
+    #     Handles company transactions, including recording new transactions,
+    #     updating company balance, sending SMS receipts, and displaying
+    #     a list of transactions with filtering capabilities.
+    #     """
+    #     business_id = get_current_business_id()
+    #     company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
+
+    #     business_info = session.get('business_info', {})
+    #     if not business_info or not business_info.get('name'):
+    #         business_details = Business.query.filter_by(id=business_id).first()
+    #         if business_details:
+    #             business_info = {
+    #                 'name': business_details.name,
+    #                 'address': business_details.address,
+    #                 'location': business_details.location,
+    #                 'phone': business_details.contact,
+    #                 'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+    #             }
+    #         else:
+    #             business_info = {
+    #                 'name': "Your Enterprise Name",
+    #                 'address': "Your Pharmacy Address",
+    #                 'location': "Your Pharmacy Location",
+    #                 'phone': "Your Pharmacy Contact",
+    #                 'email': 'info@example.com'
+    #             }
+
+    #     last_company_transaction_id = None
+    #     last_company_transaction_details = None
+    #     transactions = []
+
+    #     if request.method == 'POST':
+    #         transaction_type = request.form['type']
+    #         amount = float(request.form['amount'])
+    #         description = request.form.get('description')
+    #         send_sms_receipt = 'send_sms_receipt' in request.form
+
+    #         # Change `recorded_by` to use the user's UUID
+    #         # Flask-Login's `current_user` object provides the ID.
+    #         if not current_user.is_authenticated:
+    #             flash("You must be logged in to record a transaction.", "danger")
+    #             return redirect(url_for('login'))
+            
+    #         recorded_by_id = current_user.id # This is the UUID from your user table
+
+    #         new_transaction = CompanyTransaction(
+    #             business_id=business_id,
+    #             company_id=company.id,
+    #             transaction_type=transaction_type, 
+    #             amount=amount,
+    #             description=description,
+    #             transaction_date=date.today(),
+    #             recorded_by=recorded_by_id # Use the ID here
+    #         )
+    #         db.session.add(new_transaction)
+    #         db.session.commit()
+
+    #         updated_company_balance = company.calculate_current_balance()
+    #         flash(f'Transaction recorded successfully! Company balance updated to GH₵{updated_company_balance:.2f}', 'success')
+
+    #         last_company_transaction_details = {
+    #             'id': new_transaction.id,
+    #             'transaction_type': new_transaction.transaction_type, 
+    #             'amount': new_transaction.amount,
+    #             'description': new_transaction.description,
+    #             'date': new_transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S'), 
+    #             # Use a lookup for the username to display it, as the database now stores the ID
+    #             'recorded_by': current_user.username,
+    #             'company_name': company.name,
+    #             'company_id': company.id,
+    #             'new_balance': updated_company_balance 
+    #         }
+    #         session['last_company_transaction_id'] = new_transaction.id
+    #         session['last_company_transaction_details'] = last_company_transaction_details
+
+    #         if send_sms_receipt and company.phone_number: 
+    #             message = (f"Dear {company.name}, a {new_transaction.transaction_type} transaction of GH₵{new_transaction.amount:.2f} "
+    #                     f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{updated_company_balance:.2f}. "
+    #                     f"Description: {new_transaction.description or 'N/A'}")
+    #             # Assuming send_sms function exists
+    #             # sms_success, sms_msg = send_sms(company.phone_number, message) 
+    #             # if sms_success:
+    #             #     flash(f'SMS receipt sent to {company.phone_number}.', 'info')
+    #             # else:
+    #             #     flash(f'Failed to send SMS receipt: {sms_msg}', 'warning')
+    #         elif send_sms_receipt and not company.phone_number:
+    #             flash('Cannot send SMS receipt: Company contact number not available.', 'warning')
+
+    #         return redirect(url_for('company_transaction', company_id=company.id))
+
+    #     # --- Logic for GET request and initial page load ---
+    #     transactions_query = CompanyTransaction.query.filter_by(
+    #         company_id=company.id,
+    #         business_id=business_id
+    #     )
+
+    #     search_query = request.args.get('search', '').strip()
+    #     start_date_str = request.args.get('start_date')
+    #     end_date_str = request.args.get('end_date')
+
+    #     if search_query:
+    #         # Update the search filter to use the User model for username lookup
+    #         transactions_query = transactions_query.join(User).filter(
+    #             (CompanyTransaction.description.ilike(f'%{search_query}%')) |
+    #             (CompanyTransaction.transaction_type.ilike(f'%{search_query}%')) | 
+    #             (User.username.ilike(f'%{search_query}%'))
+    #         )
+
+    #     if start_date_str:
+    #         try:
+    #             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+    #             transactions_query = transactions_query.filter(CompanyTransaction.transaction_date >= start_date) 
+    #         except ValueError:
+    #             flash('Invalid start date format.', 'danger')
+    #             pass
+
+    #     if end_date_str:
+    #         try:
+    #             end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+    #             transactions_query = transactions_query.filter(CompanyTransaction.transaction_date < (end_date + timedelta(days=1))) 
+    #         except ValueError:
+    #             flash('Invalid end date format.', 'danger')
+    #             pass
+
+    #     transactions = transactions_query.order_by(CompanyTransaction.transaction_date.desc()).all()
+
+    #     total_transactions_sum = sum(t.amount for t in transactions)
+        
+    #     company_current_balance = company.calculate_current_balance()
+
+    #     company_data_for_template = {
+    #         'id': company.id,
+    #         'name': company.name,
+    #         'contact_person': company.contact_person,
+    #         'phone_number': company.phone_number,
+    #         'email': company.email,
+    #         'address': company.address,
+    #         'is_active': company.is_active,
+    #         'date_added': company.date_added,
+    #         'current_balance': company_current_balance
+    #     }
+
+    #     return render_template('company_transaction.html',
+    #                         company=company_data_for_template,
+    #                         transactions=transactions,
+    #                         search_query=search_query,
+    #                         start_date=start_date_str,
+    #                         end_date=end_date_str,
+    #                         business_info=business_info,
+    #                         total_transactions_sum=total_transactions_sum,
+    #                         current_year=datetime.now().year
+    #                         )
+    
+    @app.route('/company/<string:company_id>/transactions', methods=['GET', 'POST'])
+    @login_required
     def company_transaction(company_id):
         """
         Handles company transactions, including recording new transactions,
-        updating company balance, sending SMS receipts, and displaying
+        updating company balance, sending a new SMS, and displaying
         a list of transactions with filtering capabilities.
         """
         business_id = get_current_business_id()
@@ -4709,69 +5286,61 @@ def create_app():
                 }
             else:
                 business_info = {
-                    'name': "Your Enterprise Name", # Replace with actual constant
-                    'address': "Your Pharmacy Address", # Replace with actual constant
-                    'location': "Your Pharmacy Location", # Replace with actual constant
-                    'phone': "Your Pharmacy Contact", # Replace with actual constant
-                    'email': 'info@example.com' # Default email
+                    'name': "Your Enterprise Name",
+                    'address': "Your Pharmacy Address",
+                    'location': "Your Pharmacy Location",
+                    'phone': "Your Pharmacy Contact",
+                    'email': 'info@example.com'
                 }
-
-        last_company_transaction_id = None
-        last_company_transaction_details = None
-        transactions = [] # Initialize here to ensure it's always defined
-
+        
+        # Handle POST request for new transaction
         if request.method == 'POST':
-            transaction_type = request.form['type']
-            amount = float(request.form['amount'])
-            description = request.form.get('description')
-            send_sms_receipt = 'send_sms_receipt' in request.form
-            recorded_by = session['username']
+            try:
+                transaction_type = request.form['type']
+                amount = float(request.form['amount'])
+                description = request.form.get('description')
+                send_sms_receipt = 'send_sms_receipt' in request.form
 
-            new_transaction = CompanyTransaction(
-                business_id=business_id,
-                company_id=company.id,
-                transaction_type=transaction_type, 
-                amount=amount,
-                description=description,
-                recorded_by=recorded_by
-            )
-            db.session.add(new_transaction)
-            db.session.commit()
+                if not current_user.is_authenticated:
+                    flash("You must be logged in to record a transaction.", "danger")
+                    return redirect(url_for('login'))
+                
+                recorded_by_id = current_user.id
 
-            # Recalculate company balance AFTER the new transaction is committed
-            updated_company_balance = company.calculate_current_balance()
+                new_transaction = CompanyTransaction(
+                    business_id=business_id,
+                    company_id=company.id,
+                    transaction_type=transaction_type, 
+                    amount=amount,
+                    description=description,
+                    transaction_date=date.today(),
+                    recorded_by=recorded_by_id
+                )
+                db.session.add(new_transaction)
+                db.session.commit()
 
-            flash(f'Transaction recorded successfully! Company balance updated to GH₵{updated_company_balance:.2f}', 'success')
+                updated_company_balance = company.calculate_current_balance()
+                
+                company.current_balance = updated_company_balance
+                db.session.commit()
 
-            last_company_transaction_details = {
-                'id': new_transaction.id,
-                'transaction_type': new_transaction.transaction_type, 
-                'amount': new_transaction.amount,
-                'description': new_transaction.description,
-                'date': new_transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S'), 
-                'recorded_by': new_transaction.recorded_by,
-                'company_name': company.name,
-                'company_id': company.id,
-                'new_balance': updated_company_balance 
-            }
-            session['last_company_transaction_id'] = new_transaction.id
-            session['last_company_transaction_details'] = last_company_transaction_details
+                flash(f'Transaction recorded successfully! Company balance updated to GH₵{updated_company_balance:.2f}', 'success')
 
-            if send_sms_receipt and company.phone_number: 
-                message = (f"Dear {company.name}, a {new_transaction.transaction_type} transaction of GH₵{new_transaction.amount:.2f} "
-                        f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{updated_company_balance:.2f}. "
-                        f"Description: {new_transaction.description or 'N/A'}")
-                # Assuming send_sms function exists
-                # sms_success, sms_msg = send_sms(company.phone_number, message) 
-                # if sms_success:
-                #     flash(f'SMS receipt sent to {company.phone_number}.', 'info')
-                # else:
-                #     flash(f'Failed to send SMS receipt: {sms_msg}', 'warning')
-            elif send_sms_receipt and not company.phone_number:
-                flash('Cannot send SMS receipt: Company contact number not available.', 'warning')
-
-            return redirect(url_for('company_transaction', company_id=company.id))
-
+                if send_sms_receipt and company.phone_number: 
+                    message = (f"Dear {company.name}, a {new_transaction.transaction_type} transaction of GH₵{new_transaction.amount:.2f} "
+                            f"was recorded by {business_info.get('name', 'Your Business')}. Your new balance is GH₵{updated_company_balance:.2f}. "
+                            f"Description: {new_transaction.description or 'N/A'}")
+                    # Assuming a send_sms function exists
+                    # send_sms(company.phone_number, message) 
+                elif send_sms_receipt and not company.phone_number:
+                    flash('Cannot send SMS receipt: Company contact number not available.', 'warning')
+                
+                return redirect(url_for('company_transaction', company_id=company.id))
+            
+            except Exception as e:
+                db.session.rollback()
+                flash(f"An error occurred while recording the transaction. Please try again. Error: {e}", "danger")
+                return redirect(url_for('company_transaction', company_id=company.id))
 
         # --- Logic for GET request and initial page load ---
         transactions_query = CompanyTransaction.query.filter_by(
@@ -4784,10 +5353,12 @@ def create_app():
         end_date_str = request.args.get('end_date')
 
         if search_query:
-            transactions_query = transactions_query.filter(
-                (CompanyTransaction.description.ilike(f'%{search_query}%')) |
-                (CompanyTransaction.transaction_type.ilike(f'%{search_query}%')) | 
-                (CompanyTransaction.recorded_by.ilike(f'%{search_query}%'))
+            transactions_query = transactions_query.join(User).filter(
+                or_(
+                    CompanyTransaction.description.ilike(f'%{search_query}%'),
+                    CompanyTransaction.transaction_type.ilike(f'%{search_query}%'),
+                    User.username.ilike(f'%{search_query}%')
+                )
             )
 
         if start_date_str:
@@ -4796,7 +5367,6 @@ def create_app():
                 transactions_query = transactions_query.filter(CompanyTransaction.transaction_date >= start_date) 
             except ValueError:
                 flash('Invalid start date format.', 'danger')
-                pass
 
         if end_date_str:
             try:
@@ -4804,16 +5374,19 @@ def create_app():
                 transactions_query = transactions_query.filter(CompanyTransaction.transaction_date < (end_date + timedelta(days=1))) 
             except ValueError:
                 flash('Invalid end date format.', 'danger')
-                pass
 
         transactions = transactions_query.order_by(CompanyTransaction.transaction_date.desc()).all()
-
-        total_transactions_sum = sum(t.amount for t in transactions)
         
-        # Calculate the current balance for the company
+        # Correct calculation of total transactions for the filtered list
+        total_transactions_sum = 0
+        for t in transactions:
+            if t.transaction_type == 'Credit':
+                total_transactions_sum += t.amount
+            elif t.transaction_type == 'Debit':
+                total_transactions_sum -= t.amount
+        
         company_current_balance = company.calculate_current_balance()
 
-        # Prepare company data to pass to the template, including the calculated balance
         company_data_for_template = {
             'id': company.id,
             'name': company.name,
@@ -4823,43 +5396,56 @@ def create_app():
             'address': company.address,
             'is_active': company.is_active,
             'date_added': company.date_added,
-            'current_balance': company_current_balance # Pass the calculated balance here
+            'current_balance': company_current_balance
         }
 
-        return render_template('company_transaction.html', # Template name is company_transactions.html (plural)
-                            company=company_data_for_template, # Pass the dictionary with balance
+        return render_template('company_transaction.html',
+                            company=company_data_for_template,
                             transactions=transactions,
                             search_query=search_query,
                             start_date=start_date_str,
                             end_date=end_date_str,
                             business_info=business_info,
                             total_transactions_sum=total_transactions_sum,
-                            current_year=datetime.now().year
-                            )
+                            current_year=datetime.now().year)
 
     @app.route('/company/print_last_receipt')
-    # @login_required
+# @login_required # Uncomment this decorator if you want to enforce login for printing
     def print_last_company_transaction_receipt():
         """
         Renders a dedicated, minimal page for printing the last recorded company transaction receipt.
         This page is designed to be immediately printed.
         """
-        business_id = get_current_business_id()
+        business_id = get_current_business_id() # Ensure this utility function is accessible
 
         # Retrieve last transaction details from session
+        # Using .pop() will remove them from the session after retrieval, preventing re-prints on refresh
         last_company_transaction_details = session.pop('last_company_transaction_details', None)
-        last_company_transaction_id = session.pop('last_company_transaction_id', None)
+        
+        # Optionally, you might want to retrieve and pop the ID as well, though not used in this function
+        # last_company_transaction_id = session.pop('last_company_transaction_id', None)
 
         if not last_company_transaction_details:
             flash('No recent transaction details found for printing.', 'warning')
-            return redirect(url_for('companies')) # Redirect to companies list or dashboard
+            return redirect(url_for('companies')) # Redirect to the companies list or dashboard
 
-        # Fetch the company and business info needed for the receipt
-        company = Company.query.filter_by(id=last_company_transaction_details['company_id'], business_id=business_id).first()
-        if not company: # Fallback if company not found (shouldn't happen if transaction exists)
+        # Fetch the company details using the company_id from the stored transaction details
+        company = None
+        try:
+            company = Company.query.filter_by(
+                id=last_company_transaction_details['company_id'], 
+                business_id=business_id
+            ).first()
+        except KeyError:
+            # Handle cases where 'company_id' might be missing from session details (shouldn't happen with correct flow)
+            flash('Error: Company ID missing in transaction details.', 'danger')
+            return redirect(url_for('companies'))
+
+        if not company: 
             flash('Company not found for the last transaction.', 'danger')
             return redirect(url_for('companies'))
 
+        # Fetch or construct business information for the receipt
         business_info = session.get('business_info', {})
         if not business_info or not business_info.get('name'):
             business_details = Business.query.filter_by(id=business_id).first()
@@ -4872,12 +5458,13 @@ def create_app():
                     'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
                 }
             else:
+                # Fallback to default enterprise details if business details aren't found
                 business_info = {
-                    'name': "Your Enterprise Name", # Replace with actual constant
-                    'address': "Your Pharmacy Address", # Replace with actual constant
-                    'location': "Your Pharmacy Location", # Replace with actual constant
-                    'phone': "Your Pharmacy Contact", # Replace with actual constant
-                    'email': 'info@example.com' # Default email
+                    'name': "Your Enterprise Name",
+                    'address': "Your Enterprise Address",
+                    'location': "Your Enterprise Location",
+                    'phone': "Your Enterprise Contact",
+                    'email': 'info@example.com'
                 }
 
         current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -4888,9 +5475,11 @@ def create_app():
                             business_info=business_info,
                             current_date=current_date)
 
+
     # NEW ROUTE: Send SMS for a specific Company Transaction
-    @app.route('/companies/transaction/send_sms/<string:transaction_id>')
-    # @login_required
+    
+    @app.route('/company/transaction/send_sms/<string:transaction_id>')
+    # @login_required # Ensure this decorator is uncommented in your actual app if needed
     def send_company_transaction_sms(transaction_id):
         # ACCESS CONTROL: Allows admin, sales roles
         if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
@@ -4905,21 +5494,25 @@ def create_app():
         transaction = CompanyTransaction.query.filter_by(id=transaction_id, business_id=business_id).first_or_404()
         company = Company.query.filter_by(id=transaction.company_id, business_id=business_id).first_or_404()
 
-        if not company.phone:
+        # Corrected: Use company.phone_number instead of company.phone
+        if not company.phone_number:
             flash(f'SMS receipt not sent: No phone number configured for company {company.name}.', 'warning')
             return redirect(url_for('company_transaction', company_id=company.id))
 
         business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-        current_balance_str = f"GH₵{company.balance:.2f}" if company.balance >= 0 else f"-GH₵{abs(company.balance):.2f}"
+        
+        # Calculate balance dynamically for the SMS
+        current_company_balance = company.calculate_current_balance()
+        current_balance_str = f"GH₵{current_company_balance:.2f}" if current_company_balance >= 0 else f"-GH₵{abs(current_company_balance):.2f}"
         
         sms_message = (
             f"{business_name_for_sms} Transaction Alert for {company.name}:\n"
-            f"Type: {transaction.type}\n"
+            f"Type: {transaction.transaction_type}\n" # Correct attribute name from .type to .transaction_type
             f"Amount: GH₵{transaction.amount:.2f}\n"
             f"New Balance: {current_balance_str}\n"
-            f"Date: {transaction.date.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Date: {transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S')}\n" # Correct attribute name from .date to .transaction_date
             f"Description: {transaction.description if transaction.description else 'N/A'}\n"
-            f"Recorded By: {transaction.recorded_by}\n\n"
+            f"Recorded By: {User.query.get(transaction.recorded_by).username}\n\n" # Look up username from recorded_by ID
             f"Thank you for your business!\n"
             f"From: {business_name_for_sms}"
         )
@@ -4927,7 +5520,7 @@ def create_app():
         sms_payload = {
             'action': 'send-sms',
             'api_key': ARKESEL_API_KEY,
-            'to': company.phone,
+            'to': company.phone_number, # Corrected: Use company.phone_number
             'from': ARKESEL_SENDER_ID,
             'sms': sms_message
         }
@@ -5004,32 +5597,30 @@ def create_app():
         """
         business_id = get_current_business_id()
 
-        # Fetch the company details
         company = Company.query.filter_by(id=company_id, business_id=business_id).first_or_404()
 
-        # Get filter parameters from the request query string
         search_query = request.args.get('search', '').strip()
         start_date_str = request.args.get('start_date')
         end_date_str = request.args.get('end_date')
 
-        # Build the base query for company transactions
         transactions_query = CompanyTransaction.query.filter_by(
             company_id=company.id,
             business_id=business_id
         )
 
-        # Apply search filter if provided
         if search_query:
-            transactions_query = transactions_query.filter(
-                (CompanyTransaction.description.ilike(f'%{search_query}%')) |
-                (CompanyTransaction.type.ilike(f'%{search_query}%'))
+            transactions_query = transactions_query.join(User).filter(
+                or_(
+                    CompanyTransaction.description.ilike(f'%{search_query}%'),
+                    CompanyTransaction.transaction_type.ilike(f'%{search_query}%'),
+                    User.username.ilike(f'%{search_query}%')
+                )
             )
 
-        # Apply date filters if provided
         if start_date_str:
             try:
                 start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-                transactions_query = transactions_query.filter(CompanyTransaction.date >= start_date)
+                transactions_query = transactions_query.filter(CompanyTransaction.transaction_date >= start_date)
             except ValueError:
                 flash('Invalid start date format. Please use YYYY-MM-DD.', 'danger')
                 pass
@@ -5037,19 +5628,23 @@ def create_app():
         if end_date_str:
             try:
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-                transactions_query = transactions_query.filter(CompanyTransaction.date < (end_date + timedelta(days=1)))
+                transactions_query = transactions_query.filter(CompanyTransaction.transaction_date < (end_date + timedelta(days=1)))
             except ValueError:
                 flash('Invalid end date format. Please use YYYY-MM-DD.', 'danger')
                 pass
 
-        # Order transactions by date, newest first
-        transactions = transactions_query.order_by(CompanyTransaction.date.desc()).all()
+        transactions = transactions_query.order_by(CompanyTransaction.transaction_date.desc()).all()
 
-        # --- FIX START: Calculate total transactions amount here ---
-        total_transactions_sum = sum(t.amount for t in transactions)
-        # --- FIX END ---
+        total_transactions_sum = 0
+        for t in transactions:
+            if t.transaction_type == 'Credit':
+                total_transactions_sum += t.amount
+            elif t.transaction_type == 'Debit':
+                total_transactions_sum -= t.amount
+                
+        # Calculate the company's current balance separately and pass it to the template
+        current_company_balance = company.calculate_current_balance()
 
-        # Fetch business info for the receipt header/footer
         business_info = session.get('business_info', {})
         if not business_info or not business_info.get('name'):
             business_details = Business.query.filter_by(id=business_id).first()
@@ -5063,16 +5658,17 @@ def create_app():
                 }
             else:
                 business_info = {
-                    'name': "Your Enterprise Name", # Replace with actual constant
-                    'address': "Your Pharmacy Address", # Replace with actual constant
-                    'location': "Your Pharmacy Location", # Replace with actual constant
-                    'phone': "Your Pharmacy Contact", # Replace with actual constant
-                    'email': 'info@example.com' # Default email
+                    'name': "Your Enterprise Name",
+                    'address': "Your Pharmacy Address",
+                    'location': "Your Pharmacy Location",
+                    'phone': "Your Pharmacy Contact",
+                    'email': 'info@example.com'
                 }
 
         current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        return render_template('company_transaction.html',
+        
+        # Pass the calculated balance as a new variable
+        return render_template('company_transaction_print.html',
                             company=company,
                             transactions=transactions,
                             business_info=business_info,
@@ -5080,9 +5676,10 @@ def create_app():
                             search_query=search_query,
                             start_date=start_date_str,
                             end_date=end_date_str,
-                            total_transactions_sum=total_transactions_sum # NEW: Pass the calculated sum
+                            total_transactions_sum=total_transactions_sum,
+                            # Pass the new variable with the calculated balance
+                            current_balance=current_company_balance
                             )
-
 
     @app.route('/future_orders')
     def future_orders():
@@ -5186,12 +5783,12 @@ def create_app():
                 business_id=business_id,
                 customer_name=customer_name,
                 customer_phone=customer_phone,
-                items_json=json.dumps(order_items_list),
+                order_details=json.dumps(order_items_list), # Use the correct column name
                 total_amount=total_amount,
-                date_ordered=datetime.now(),
-                expected_collection_date=expected_collection_date_obj, # This is now a datetime.date object or None
+                order_date=datetime.now(), # Use order_date instead of date_ordered
+                pickup_date=expected_collection_date_obj, # Use pickup_date instead of expected_collection_date
                 status='Pending',
-                remaining_balance=total_amount # Initially, the full amount is outstanding
+                # Note: remaining_balance is a @property, so you don't pass it as a keyword argument
             )
             db.session.add(new_order)
             db.session.commit()
@@ -5224,6 +5821,152 @@ def create_app():
         # For GET request or re-render on error, ensure 'order' always has 'items' as an empty list
         # and total_amount initialized to 0.0
         return render_template('add_edit_future_order.html', title='Add Future Order', order={'items': [], 'total_amount': 0.0}, user_role=session.get('role'), inventory_items=serialized_inventory_items, current_year=datetime.now().year)
+
+    # Make sure to import 'json' at the top of your app.py file if it's not already there.
+# import json
+
+    # @app.route('/future_orders/add', methods=['GET', 'POST'])
+    # @login_required
+    # def add_future_order():
+    #     # ACCESS CONTROL: Allows admin and sales roles
+    #     if session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
+    #         flash('You do not have permission to add future orders or no business selected.', 'danger')
+    #         return redirect(url_for('dashboard'))
+
+    #     if get_current_business_type() != 'Hardware':
+    #         flash('This feature is only available for Hardware businesses.', 'warning')
+    #         return redirect(url_for('dashboard'))
+
+    #     business_id = get_current_business_id()
+        
+    #     # Only show hardware items for future orders
+    #     available_inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True, item_type='Hardware Material').all()
+    #     serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
+
+    #     if request.method == 'POST':
+    #         try:
+    #             customer_name = request.form['customer_name'].strip()
+    #             customer_phone = request.form.get('customer_phone', '').strip()
+    #             expected_collection_date_str = request.form.get('expected_collection_date', '').strip()
+    #             cart_items_json = request.form.get('cart_items_json')
+
+    #             if not cart_items_json or json.loads(cart_items_json) == []:
+    #                 flash('No items in the order to record.', 'danger')
+    #                 return redirect(url_for('add_future_order'))
+                
+    #             cart_items = json.loads(cart_items_json)
+
+    #             expected_collection_date_obj = None
+    #             if expected_collection_date_str:
+    #                 try:
+    #                     expected_collection_date_obj = datetime.strptime(expected_collection_date_str, '%Y-%m-%d').date()
+    #                 except ValueError:
+    #                     flash('Invalid expected collection date format. Please use YYYY-MM-DD.', 'danger')
+    #                     return redirect(url_for('add_future_order'))
+
+    #             total_amount = sum(item['item_total_amount'] for item in cart_items)
+                
+    #             # Step 1: Create and commit the main FutureOrder record first to get its ID
+    #             new_order = FutureOrder(
+    #                 business_id=business_id,
+    #                 customer_name=customer_name,
+    #                 customer_phone=customer_phone,
+    #                 total_amount=total_amount,
+    #                 date_ordered=datetime.now(),
+    #                 expected_collection_date=expected_collection_date_obj,
+    #                 status='Pending',
+    #             )
+    #             db.session.add(new_order)
+    #             db.session.commit() # Commit here to get the new_order.id
+
+    #             # Step 2: Loop through the cart items and create FutureOrderItem records
+    #             for item_data in cart_items:
+    #                 product_id = item_data['product_id']
+    #                 quantity = float(item_data['quantity_sold'])
+    #                 unit_price = float(item_data['price_at_time_per_unit_sold'])
+    #                 unit_type = item_data['sale_unit_type']
+                    
+    #                 product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
+    #                 if not product:
+    #                     flash(f'Product with ID {product_id} not found. Order partially saved.', 'danger')
+    #                     continue
+
+    #                 # Deduct stock based on the base unit
+    #                 effective_quantity_to_deduct = quantity
+    #                 if unit_type == 'pack':
+    #                     effective_quantity_to_deduct = quantity * product.number_of_tabs
+
+    #                 if product.current_stock < effective_quantity_to_deduct:
+    #                     flash(f'Insufficient stock for {product.product_name}. Currently {product.current_stock}. Tried to order: {effective_quantity_to_deduct}. Please reduce quantity or fulfill later.', 'danger')
+    #                     continue
+                    
+    #                 # Deduct stock immediately
+    #                 product.current_stock -= effective_quantity_to_deduct
+    #                 product.last_updated = datetime.now()
+    #                 db.session.add(product)
+
+    #                 # Create the FutureOrderItem
+    #                 new_order_item = FutureOrderItem(
+    #                     future_order_id=new_order.id, # Use the ID from the newly committed order
+    #                     product_id=product_id,
+    #                     product_name=product.product_name,
+    #                     quantity=quantity,
+    #                     unit_price=unit_price,
+    #                     unit_type=unit_type,
+    #                     number_of_tabs=product.number_of_tabs,
+    #                     sale_price_pack=product.sale_price,
+    #                     unit_price_per_tab=product.unit_price_per_tab
+    #                 )
+    #                 db.session.add(new_order_item)
+                
+    #             db.session.commit()
+                
+    #             flash(f'Future order for {customer_name} recorded successfully! Order ID: {str(new_order.id)[:8].upper()}', 'success')
+                
+    #             # Send SMS confirmation to customer
+    #             if customer_phone:
+    #                 business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+    #                 message = (
+    #                     f"{business_name_for_sms} Order Confirmation:\n"
+    #                     f"Order ID: {str(new_order.id)[:8].upper()}\n"
+    #                     f"Customer: {customer_name}\n"
+    #                     f"Total Amount: GH₵{total_amount:.2f}\n"
+    #                     f"Expected Collection: {expected_collection_date_obj.strftime('%Y-%m-%d') if expected_collection_date_obj else 'N/A'}\n\n"
+    #                     f"Thank you for your order!\n"
+    #                     f"From: {business_name_for_sms}"
+    #                 )
+    #                 sms_payload = {
+    #                     'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone,
+    #                     'from': ARKESEL_SENDER_ID, 'sms': message
+    #                 }
+    #                 try:
+    #                     requests.get(ARKESEL_SMS_URL, params=sms_payload)
+    #                 except requests.exceptions.RequestException as e:
+    #                     print(f'Network error sending SMS for future order: {e}')
+    #                     flash(f'Network error when trying to send SMS order confirmation.', 'warning')
+
+    #             return redirect(url_for('future_orders'))
+
+    #         except (json.JSONDecodeError, KeyError, ValueError) as e:
+    #             db.session.rollback()
+    #             flash(f'Invalid item data format or a required field is missing: {e}. Please try again.', 'danger')
+    #             return redirect(url_for('add_future_order'))
+    #         except Exception as e:
+    #             db.session.rollback()
+    #             flash(f'An unexpected error occurred: {e}', 'danger')
+    #             print(f"Error: {e}")
+    #             return redirect(url_for('add_future_order'))
+
+    #     # For GET request or re-render on error
+    #     return render_template(
+    #         'add_edit_future_order.html',
+    #         title='Add Future Order',
+    #         order={'items': [], 'total_amount': 0.0},
+    #         user_role=session.get('role'),
+    #         inventory_items=serialized_inventory_items,
+    #         current_year=datetime.now().year
+    #     )
+
 
     @app.route('/future_orders/edit/<order_id>', methods=['GET', 'POST'])
     def edit_future_order(order_id):
@@ -5451,6 +6194,7 @@ def create_app():
         return redirect(url_for('future_orders'))
 
     @app.route('/future_orders/payment/<order_id>', methods=['GET', 'POST'])
+    @csrf.exempt
     def future_order_payment(order_id):
         # ACCESS CONTROL: Allows admin and sales roles
         if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
@@ -5708,6 +6452,7 @@ def create_app():
                 }
                 return render_template('add_edit_rental_record.html', title='Add Rental Record', record=record_data_for_form_on_error, user_role=session.get('role'), hirable_items=serialized_hirable_items, business_info=business_info, current_year=datetime.now().year)
 
+            # Calculate number of days
             number_of_days = (end_date_obj - start_date_obj).days + 1 if end_date_obj and start_date_obj else 1
             total_hire_amount = number_of_days * hirable_item.daily_hire_price
 
@@ -5716,20 +6461,25 @@ def create_app():
             hirable_item.last_updated = datetime.now()
             db.session.add(hirable_item)
 
+            # Corrected `RentalRecord` instantiation
             new_record = RentalRecord(
                 business_id=business_id,
                 hirable_item_id=hirable_item.id,
                 item_name_at_rent=hirable_item.item_name,
                 customer_name=customer_name,
                 customer_phone=customer_phone,
-                start_date=start_date_obj,
-                end_date=end_date_obj,
-                # quantity=1, # Removed as per database schema
-                number_of_days=number_of_days,
-                daily_hire_price_at_rent=hirable_item.daily_hire_price,
-                total_hire_amount=total_hire_amount,
+                # Map route variables to model column names
+                rent_date=start_date_obj,
+                return_date=end_date_obj,
+                quantity=1, # Assuming 1 unit of the hirable item is rented
+                # Ensure quantity reflects number_of_days if that's how it's designed
+                # quantity=number_of_days, # If quantity is meant to be the duration
+                rental_price_per_day_at_rent=hirable_item.daily_hire_price,
+                total_rental_amount=total_hire_amount, # Use the model's column name
                 status='Rented',
-                sales_person_name=session.get('username', 'N/A')
+                # `date_recorded` is handled by the model's default=datetime.utcnow
+                # `sales_person_name` is not a column in the model, remove it
+                # If you need sales_person_name in the model, you must add it and migrate.
             )
             db.session.add(new_record)
             db.session.commit()
@@ -5740,13 +6490,13 @@ def create_app():
                 'item_name': new_record.item_name_at_rent,
                 'customer_name': new_record.customer_name,
                 'customer_phone': new_record.customer_phone,
-                'start_date': new_record.start_date.strftime('%Y-%m-%d'),
-                'end_date': new_record.end_date.strftime('%Y-%m-%d') if new_record.end_date else 'N/A',
-                'number_of_days': new_record.number_of_days,
-                'daily_hire_price': new_record.daily_hire_price_at_rent,
-                'total_hire_amount': new_record.total_hire_amount,
-                'sales_person': new_record.sales_person_name,
-                'date_recorded': new_record.date_recorded.strftime('%Y-%m-%d %H:%M:%S')
+                'start_date': new_record.rent_date.strftime('%Y-%m-%d'), # Use rent_date
+                'end_date': new_record.return_date.strftime('%Y-%m-%d') if new_record.return_date else 'N/A', # Use return_date
+                'number_of_days': number_of_days, # This is a calculated value, not from new_record directly
+                'daily_hire_price': new_record.rental_price_per_day_at_rent, # Use rental_price_per_day_at_rent
+                'total_hire_amount': new_record.total_rental_amount, # Use total_rental_amount
+                'sales_person': session.get('username', 'N/A'), # Get directly from session, as it's not a model column
+                'date_recorded': new_record.date_recorded.strftime('%Y-%m-%d %H:%M:%S') # This is now correct
             }
             
             # SMS Sending Logic
@@ -5756,8 +6506,8 @@ def create_app():
                     f"{business_name_for_sms} Rental Confirmation:\n"
                     f"Item: {new_record.item_name_at_rent}\n"
                     f"Customer: {new_record.customer_name}\n"
-                    f"Period: {new_record.start_date.strftime('%Y-%m-%d')} to {new_record.end_date.strftime('%Y-%m-%d') if new_record.end_date else 'N/A'}\n"
-                    f"Total: GH₵{new_record.total_hire_amount:.2f}\n\n"
+                    f"Period: {new_record.rent_date.strftime('%Y-%m-%d')} to {new_record.return_date.strftime('%Y-%m-%d') if new_record.return_date else 'N/A'}\n"
+                    f"Total: GH₵{new_record.total_rental_amount:.2f}\n\n" # Use total_rental_amount
                     f"Thank you for your business!\n"
                     f"From: {business_name_for_sms}"
                 )
@@ -5790,6 +6540,7 @@ def create_app():
                             print_ready=print_ready,
                             last_rental_details=last_rental_details,
                             current_year=datetime.now().year)
+
 
     @app.route('/rental_records/print/<record_id>')
     # @login_required
@@ -6257,38 +7008,117 @@ def create_app():
         return jsonify({'success': True, 'products': products_data})
 
 
-    # with app.app_context():
-    #     # Step 1: Create all database tables
-    #     print("Creating database tables...")
-    #     db.create_all()
-    #     print("Database tables created successfully.")
+    with app.app_context():
+        # Step 1: Create all database tables
+        print("Creating database tables...")
+        db.create_all()
+        print("Database tables created successfully.")
 
-    #     # Step 2: Check for and create the superadmin user
-    #     super_admin_username = os.getenv('SUPER_ADMIN_USERNAME') or 'superadmin'
-    #     super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD') or 'superpassword'
+        # Step 2: Check for and create the superadmin user
+        super_admin_username = os.getenv('SUPER_ADMIN_USERNAME') or 'superadmin'
+        super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD') or 'superpassword'
 
-    #     existing_super_admin = User.query.filter_by(username=super_admin_username).first()
-    #     if not existing_super_admin:
-    #         print("Superadmin user not found. Creating new superadmin...")
-    #         hashed_password = generate_password_hash(super_admin_password, method='scrypt')
+        existing_super_admin = User.query.filter_by(username=super_admin_username).first()
+        if not existing_super_admin:
+            print("Superadmin user not found. Creating new superadmin...")
+            hashed_password = generate_password_hash(super_admin_password, method='scrypt')
             
-    #         super_admin = User(
-    #             id='superadmin',
-    #             username=super_admin_username,
-    #             _password_hash=hashed_password,
-    #             role='super_admin',
-    #             business_id='super_admin_business',
-    #             is_active=True,
-    #             created_at=datetime.utcnow()
-    #         )
-    #         db.session.add(super_admin)
-    #         db.session.commit()
-    #         print(f"Superadmin user '{super_admin_username}' created successfully.")
-    #     else:
-    #         print(f"Superadmin user '{super_admin_username}' already exists. No new user created.")
+            super_admin = User(
+                id='superadmin',
+                username=super_admin_username,
+                _password_hash=hashed_password,
+                role='super_admin',
+                business_id='super_admin_business',
+                is_active=True,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(super_admin)
+            db.session.commit()
+            print(f"Superadmin user '{super_admin_username}' created successfully.")
+        else:
+            print(f"Superadmin user '{super_admin_username}' already exists. No new user created.")
 
 
     # NEW: Jinja2 filter to safely format a date or datetime object
+    @app.route('/companies/import', methods=['POST'])
+    @csrf.exempt
+    @login_required
+    def import_company_transactions():
+        # Check for correct business type and user role
+        if get_current_business_type() != 'Hardware' or session.get('role') not in ['admin', 'sales']:
+            flash('This feature is only available for Hardware businesses and requires admin or sales permissions.', 'danger')
+            return redirect(url_for('companies'))
+
+        if 'file' not in request.files:
+            flash('No file part', 'danger')
+            return redirect(url_for('companies'))
+
+        file = request.files['file']
+        if file.filename == '':
+            flash('No selected file', 'danger')
+            return redirect(url_for('companies'))
+
+        if file and file.filename.endswith('.csv'):
+            business_id = get_current_business_id()
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_reader = csv.reader(stream)
+            headers = [header.strip().lower() for header in next(csv_reader)]
+
+            try:
+                for i, row in enumerate(csv_reader):
+                    if not row:
+                        continue
+                    
+                    row_data = dict(zip(headers, row))
+                    
+                    # Required fields
+                    company_id = row_data.get('company_id')
+                    transaction_type = row_data.get('transaction_type')
+                    amount_str = row_data.get('amount')
+                    
+                    if not all([company_id, transaction_type, amount_str]):
+                        flash(f'Skipping row {i+2}: Missing required data (company_id, transaction_type, amount).', 'warning')
+                        continue
+
+                    # Validate amount
+                    try:
+                        amount = decimal.Decimal(amount_str)
+                    except (decimal.InvalidOperation, ValueError):
+                        flash(f'Skipping row {i+2}: Invalid amount value.', 'warning')
+                        continue
+                    
+                    # Find existing company
+                    company = Company.query.filter_by(id=company_id, business_id=business_id).first()
+                    if not company:
+                        flash(f'Skipping row {i+2}: Company with ID "{company_id}" not found for this business.', 'warning')
+                        continue
+                        
+                    # Create new transaction
+                    new_transaction = CompanyTransaction(
+                        business_id=business_id,
+                        company_id=company_id,
+                        transaction_type=transaction_type,
+                        amount=amount,
+                        description=row_data.get('description'),
+                        transaction_date=datetime.strptime(row_data.get('transaction_date', datetime.utcnow().strftime('%Y-%m-%d')), '%Y-%m-%d').date()
+                    )
+                    db.session.add(new_transaction)
+                
+                db.session.commit()
+                flash('Company transactions imported successfully!', 'success')
+            except Exception as e:
+                db.session.rollback()
+                flash(f'An error occurred during import: {e}', 'danger')
+        else:
+            flash('Invalid file type. Please upload a CSV file.', 'danger')
+
+        return redirect(url_for('companies'))
+    @app.route('/check-business-id')
+    @login_required
+    def check_business_id():
+        current_business_id = session.get('business_id')
+        return f"Your current business ID is: {current_business_id}"
+
     @app.template_filter('format_date')
     def format_date(value, format='%Y-%m-%d'):
         if isinstance(value, (datetime, date)):

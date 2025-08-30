@@ -196,7 +196,10 @@
                                     {% if order.remaining_balance > 0 %}
                                     <a href="{{ url_for('future_order_payment', order_id=order.id) }}" class="btn btn-secondary text-sm mr-2">Record Payment</a>
                                     {% else %}
-                                    <a href="{{ url_for('collect_future_order', order_id=order.id) }}" class="btn btn-primary text-sm mr-2" onclick="return confirm('Are you sure you want to mark this order as collected? Stock will be deducted.');">Collect Order</a>
+                                    <form action="{{ url_for('collect_future_order', order_id=order.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to mark this order as collected? Stock will be deducted.');" class="inline-block">
+                                        {{ csrf_token() }}
+                                        <button type="submit" class="btn btn-primary text-sm">Collect Order</button>
+                                    </form>
                                     {% endif %}
                                 {% else %}
                                     <span class="text-gray-500 text-sm">No actions</span>
