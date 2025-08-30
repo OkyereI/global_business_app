@@ -6140,6 +6140,7 @@ def create_app():
         return redirect(url_for('future_orders'))
 
     @app.route('/future_orders/collect/<order_id>', methods=['GET', 'POST'])
+    @csrf.exempt
     def collect_future_order(order_id):
         # ACCESS CONTROL: Allows admin and sales roles
         if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():

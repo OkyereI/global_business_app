@@ -12,7 +12,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 DATABASE_URL = "postgresql://bisinessdb_user:QceRMwRe2FtjhPk8iMLCIKB3j3s4KmhI@dpg-d1olvgbuibrs73cum700-a.oregon-postgres.render.com/bisinessdb"
 
 # The specific business ID to query for transactions
-TARGET_BUSINESS_ID = "2e2d7a2b-84ec-4b84-bb7c-96a0d8bdd6de"
+TARGET_BUSINESS_ID = "599cce00-0632-4033-8de6-3ec946f3a9d2"
 
 # Define the output CSV file name
 OUTPUT_FILENAME = f"transactions_{TARGET_BUSINESS_ID}.csv"

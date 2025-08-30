@@ -33,7 +33,7 @@ class Business(db.Model):
     email = db.Column(db.String(120), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
     last_synced_at = db.Column(db.DateTime, default=datetime.utcnow)
-    remote_id = db.Column(db.String(36), nullable=True, unique=True)
+    remote_id = db.Column(db.String(36), nullable=True)
     
     # Use back_populates to explicitly link to the 'business' relationship in the User model
     users = db.relationship('User', back_populates='business', lazy=True)
@@ -338,7 +338,7 @@ class FutureOrder(db.Model):
     total_amount = db.Column(db.Float, nullable=False)
     remaining_balance = db.Column(db.Float, nullable=False, default=0.0) # This is the updated line
     order_date = db.Column(db.Date, default=date.today, nullable=False)
-    pickup_date = db.Column(db.Date, nullable=False)
+    pickup_date = db.Column(db.Date, nullable=True)
     status = db.Column(db.String(50), default='Pending', nullable=False)
     notes = db.Column(db.Text, nullable=True)
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)

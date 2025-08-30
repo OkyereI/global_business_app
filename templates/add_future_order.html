@@ -131,7 +131,6 @@
         {% endwith %}
 
         <form method="POST" action="{{ url_for('add_future_order') }}" class="space-y-6">
-            {# CSRF TOKEN ADDED HERE #}
             {{ csrf_token() }}
 
             <h2 class="section-title">Customer Details</h2>
