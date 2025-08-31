@@ -8,20 +8,6 @@ import uuid
 import json
 from sqlalchemy import Index, func
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class Business(db.Model):
     __tablename__ = 'businesses'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -150,9 +136,6 @@ class InventoryItem(db.Model):
     def __repr__(self):
         return f'<InventoryItem {self.product_name} ({self.current_stock})>'
 
-
-
-
 class Creditor(db.Model):
     __tablename__ = 'creditors'
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -232,9 +215,6 @@ class CompanyTransaction(db.Model):
 
     def __repr__(self):
         return f'<CompanyTransaction {self.transaction_type} - {self.amount}>'
-
-
-
 
 class RentalRecord(db.Model):
     __tablename__ = 'rental_records'
@@ -356,8 +336,6 @@ class FutureOrder(db.Model):
 
     def __repr__(self):
         return f'<FutureOrder {self.customer_name} - {self.total_amount}>'
-
-
 
 class Customer(db.Model):
     __tablename__ = 'customers'

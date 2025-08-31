@@ -3602,6 +3602,7 @@ def create_app():
     #     return redirect(url_for('inventory'))
 
     @app.route('/inventory/delete/<item_id>', methods=['GET', 'POST'])
+    @csrf.exempt
     @login_required
     def delete_inventory_item(item_id):
         """Marks an inventory item as inactive."""
