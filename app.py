@@ -1406,101 +1406,42 @@ def create_app():
         else:
             return jsonify({'success': False, 'message': message}), 500
 
-    
-    # def super_admin_full_sync():
-    #     """
-    #     Pulls all data for all businesses and users from the remote server.
-    #     This function is for the Super Admin role only.
-    #     """
-    #     remote_url = get_remote_flask_base_url()
-    #     headers = {}
+    @app.route('/api/businesses')
+    def api_businesses():
+        """
+        API endpoint to expose all business data for synchronization.
+        This is what your local instance will call.
+        It should also include the related users.
+        """
+        try:
+            businesses = Business.query.options(db.joinedload(Business.users)).all()
+            businesses_data = []
+            for business in businesses:
+                business_dict = {
+                    'id': business.id,
+                    'name': business.name,
+                    'type': business.type,
+                    'address': business.address,
+                    'contact': business.contact,
+                    'email': business.email,
+                    'is_active': business.is_active,
+                    'users': []
+                }
+                for user in business.users:
+                    user_dict = {
+                        'id': user.id,
+                        'username': user.username,
+                        '_password_hash': user._password_hash,
+                        'role': user.role,
+                        'is_active': user.is_active
+                    }
+                    business_dict['users'].append(user_dict)
+                businesses_data.append(business_dict)
+            return jsonify(businesses_data)
+        except Exception as e:
+            print(f"Error serving API request for businesses: {e}")
+            return jsonify({'error': str(e)}), 500
 
-    #     try:
-    #         # --- Step 1: Pull ALL Businesses ---
-    #         print("Pulling all registered businesses...")
-    #         businesses_response = requests.get(f"{remote_url}/api/v1/businesses", headers=headers)
-    #         businesses_response.raise_for_status()
-    #         new_businesses = businesses_response.json()
-            
-    #         with app.app_context():
-    #             db.session.query(Business).delete()
-    #             for business_data in new_businesses:
-    #                 business = Business(
-    #                     id=business_data['id'],
-    #                     name=business_data['name'],
-    #                     address=business_data['address'],
-    #                     location=business_data['location'],
-    #                     contact=business_data['contact'],
-    #                     type=business_data['type'],
-    #                     is_active=business_data['is_active'],
-    #                     last_updated=datetime.fromisoformat(business_data['last_updated'])
-    #                 )
-    #                 db.session.add(business)
-    #             db.session.commit()
-    #             print(f"Successfully pulled and replaced data for businesses. Found {len(new_businesses)} businesses.")
-
-    #         # --- Step 2: Pull ALL Users ---
-    #         print("Pulling all users...")
-    #         users_response = requests.get(f"{remote_url}/api/v1/users", headers=headers)
-    #         users_response.raise_for_status()
-    #         new_users = users_response.json()
-            
-    #         with app.app_context():
-    #             db.session.query(User).delete()
-    #             for user_data in new_users:
-    #                 user = User(
-    #                     id=user_data['id'],
-    #                     username=user_data['username'],
-    #                     password=user_data['password'],
-    #                     role=user_data['role'],
-    #                     business_id=user_data['business_id'],
-    #                     is_active=user_data['is_active'],
-    #                     created_at=datetime.fromisoformat(user_data['created_at'])
-    #                 )
-    #                 db.session.add(user)
-    #             db.session.commit()
-    #             print(f"Successfully pulled and replaced data for user. Found {len(new_users)} users.")
-            
-    #         # --- Step 3: Pull ALL Inventory Items ---
-    #         # This will get inventory for all businesses, as the API endpoint is likely not filtered
-    #         print("Pulling all inventory items...")
-    #         inventory_response = requests.get(f"{remote_url}/api/v1/inventory", headers=headers)
-    #         inventory_response.raise_for_status()
-    #         new_inventory_items = inventory_response.json()
-            
-    #         with app.app_context():
-    #             db.session.query(InventoryItem).delete()
-    #             for item_data in new_inventory_items:
-    #                 item = InventoryItem(
-    #                     id=item_data['id'],
-    #                     business_id=item_data['business_id'],
-    #                     product_name=item_data['product_name'],
-    #                     category=item_data['category'],
-    #                     purchase_price=item_data['purchase_price'],
-    #                     sale_price=item_data['sale_price'],
-    #                     current_stock=item_data['current_stock'],
-    #                     last_updated=datetime.fromisoformat(item_data['last_updated']),
-    #                     batch_number=item_data['batch_number'],
-    #                     number_of_tabs=item_data['number_of_tabs'],
-    #                     unit_price_per_tab=item_data['unit_price_per_tab'],
-    #                     item_type=item_data['item_type'],
-    #                     expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
-    #                     is_fixed_price=item_data['is_fixed_price'],
-    #                     fixed_sale_price=item_data['fixed_sale_price'],
-    #                     is_active=item_data['is_active']
-    #                 )
-    #                 db.session.add(item)
-    #             db.session.commit()
-    #             print(f"Successfully pulled and replaced data for inventory_items. Found {len(new_inventory_items)} items.")
-            
-    #         # NOTE: You would need to add similar logic for other tables like HirableItems, Customers, etc.
-
-    #         return True, "Synchronization successful."
-
-    #     except requests.exceptions.RequestException as e:
-    #         db.session.rollback()
-    #         print(f"Error during full sync: {e}")
-    #         return False, f"Error during full sync: {e}"
 
     def super_admin_full_sync():
         """
