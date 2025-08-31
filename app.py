@@ -13,7 +13,7 @@ import pandas as pd
 import requests # Import requests for API calls
 import json # Import json for API responses and handling
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import Index, create_engine, text, func, cast # Import func and cast for dashboard queries
+from sqlalchemy import Index, create_engine, text, func, cast,or_  # Import func and cast for dashboard queries
 from dotenv import load_dotenv
 from flask import current_app
 from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
@@ -5841,151 +5841,7 @@ def create_app():
         # and total_amount initialized to 0.0
         return render_template('add_edit_future_order.html', title='Add Future Order', order={'items': [], 'total_amount': 0.0}, user_role=session.get('role'), inventory_items=serialized_inventory_items, current_year=datetime.now().year)
 
-    # Make sure to import 'json' at the top of your app.py file if it's not already there.
-# import json
-
-    # @app.route('/future_orders/add', methods=['GET', 'POST'])
-    # @login_required
-    # def add_future_order():
-    #     # ACCESS CONTROL: Allows admin and sales roles
-    #     if session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-    #         flash('You do not have permission to add future orders or no business selected.', 'danger')
-    #         return redirect(url_for('dashboard'))
-
-    #     if get_current_business_type() != 'Hardware':
-    #         flash('This feature is only available for Hardware businesses.', 'warning')
-    #         return redirect(url_for('dashboard'))
-
-    #     business_id = get_current_business_id()
-        
-    #     # Only show hardware items for future orders
-    #     available_inventory_items = InventoryItem.query.filter_by(business_id=business_id, is_active=True, item_type='Hardware Material').all()
-    #     serialized_inventory_items = [serialize_inventory_item(item) for item in available_inventory_items]
-
-    #     if request.method == 'POST':
-    #         try:
-    #             customer_name = request.form['customer_name'].strip()
-    #             customer_phone = request.form.get('customer_phone', '').strip()
-    #             expected_collection_date_str = request.form.get('expected_collection_date', '').strip()
-    #             cart_items_json = request.form.get('cart_items_json')
-
-    #             if not cart_items_json or json.loads(cart_items_json) == []:
-    #                 flash('No items in the order to record.', 'danger')
-    #                 return redirect(url_for('add_future_order'))
-                
-    #             cart_items = json.loads(cart_items_json)
-
-    #             expected_collection_date_obj = None
-    #             if expected_collection_date_str:
-    #                 try:
-    #                     expected_collection_date_obj = datetime.strptime(expected_collection_date_str, '%Y-%m-%d').date()
-    #                 except ValueError:
-    #                     flash('Invalid expected collection date format. Please use YYYY-MM-DD.', 'danger')
-    #                     return redirect(url_for('add_future_order'))
-
-    #             total_amount = sum(item['item_total_amount'] for item in cart_items)
-                
-    #             # Step 1: Create and commit the main FutureOrder record first to get its ID
-    #             new_order = FutureOrder(
-    #                 business_id=business_id,
-    #                 customer_name=customer_name,
-    #                 customer_phone=customer_phone,
-    #                 total_amount=total_amount,
-    #                 date_ordered=datetime.now(),
-    #                 expected_collection_date=expected_collection_date_obj,
-    #                 status='Pending',
-    #             )
-    #             db.session.add(new_order)
-    #             db.session.commit() # Commit here to get the new_order.id
-
-    #             # Step 2: Loop through the cart items and create FutureOrderItem records
-    #             for item_data in cart_items:
-    #                 product_id = item_data['product_id']
-    #                 quantity = float(item_data['quantity_sold'])
-    #                 unit_price = float(item_data['price_at_time_per_unit_sold'])
-    #                 unit_type = item_data['sale_unit_type']
-                    
-    #                 product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
-    #                 if not product:
-    #                     flash(f'Product with ID {product_id} not found. Order partially saved.', 'danger')
-    #                     continue
-
-    #                 # Deduct stock based on the base unit
-    #                 effective_quantity_to_deduct = quantity
-    #                 if unit_type == 'pack':
-    #                     effective_quantity_to_deduct = quantity * product.number_of_tabs
-
-    #                 if product.current_stock < effective_quantity_to_deduct:
-    #                     flash(f'Insufficient stock for {product.product_name}. Currently {product.current_stock}. Tried to order: {effective_quantity_to_deduct}. Please reduce quantity or fulfill later.', 'danger')
-    #                     continue
-                    
-    #                 # Deduct stock immediately
-    #                 product.current_stock -= effective_quantity_to_deduct
-    #                 product.last_updated = datetime.now()
-    #                 db.session.add(product)
-
-    #                 # Create the FutureOrderItem
-    #                 new_order_item = FutureOrderItem(
-    #                     future_order_id=new_order.id, # Use the ID from the newly committed order
-    #                     product_id=product_id,
-    #                     product_name=product.product_name,
-    #                     quantity=quantity,
-    #                     unit_price=unit_price,
-    #                     unit_type=unit_type,
-    #                     number_of_tabs=product.number_of_tabs,
-    #                     sale_price_pack=product.sale_price,
-    #                     unit_price_per_tab=product.unit_price_per_tab
-    #                 )
-    #                 db.session.add(new_order_item)
-                
-    #             db.session.commit()
-                
-    #             flash(f'Future order for {customer_name} recorded successfully! Order ID: {str(new_order.id)[:8].upper()}', 'success')
-                
-    #             # Send SMS confirmation to customer
-    #             if customer_phone:
-    #                 business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-    #                 message = (
-    #                     f"{business_name_for_sms} Order Confirmation:\n"
-    #                     f"Order ID: {str(new_order.id)[:8].upper()}\n"
-    #                     f"Customer: {customer_name}\n"
-    #                     f"Total Amount: GH₵{total_amount:.2f}\n"
-    #                     f"Expected Collection: {expected_collection_date_obj.strftime('%Y-%m-%d') if expected_collection_date_obj else 'N/A'}\n\n"
-    #                     f"Thank you for your order!\n"
-    #                     f"From: {business_name_for_sms}"
-    #                 )
-    #                 sms_payload = {
-    #                     'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': customer_phone,
-    #                     'from': ARKESEL_SENDER_ID, 'sms': message
-    #                 }
-    #                 try:
-    #                     requests.get(ARKESEL_SMS_URL, params=sms_payload)
-    #                 except requests.exceptions.RequestException as e:
-    #                     print(f'Network error sending SMS for future order: {e}')
-    #                     flash(f'Network error when trying to send SMS order confirmation.', 'warning')
-
-    #             return redirect(url_for('future_orders'))
-
-    #         except (json.JSONDecodeError, KeyError, ValueError) as e:
-    #             db.session.rollback()
-    #             flash(f'Invalid item data format or a required field is missing: {e}. Please try again.', 'danger')
-    #             return redirect(url_for('add_future_order'))
-    #         except Exception as e:
-    #             db.session.rollback()
-    #             flash(f'An unexpected error occurred: {e}', 'danger')
-    #             print(f"Error: {e}")
-    #             return redirect(url_for('add_future_order'))
-
-    #     # For GET request or re-render on error
-    #     return render_template(
-    #         'add_edit_future_order.html',
-    #         title='Add Future Order',
-    #         order={'items': [], 'total_amount': 0.0},
-    #         user_role=session.get('role'),
-    #         inventory_items=serialized_inventory_items,
-    #         current_year=datetime.now().year
-    #     )
-
+   
 
     @app.route('/future_orders/edit/<order_id>', methods=['GET', 'POST'])
     def edit_future_order(order_id):
@@ -6363,26 +6219,6 @@ def create_app():
                             user_role=session.get('role'),
                             current_year=datetime.now().year)
 
-
-    # @app.route('/hirable_items/delete/<item_id>')
-    # @csrf.exempt
-    # def delete_hirable_item(item_id):
-    #     # ACCESS CONTROL: Allows admin role
-    #     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-    #         flash('You do not have permission to delete hirable items or no business selected.', 'danger')
-    #         return redirect(url_for('dashboard'))
-        
-    #     if get_current_business_type() != 'Hardware':
-    #         flash('This feature is only available for Hardware businesses.', 'warning')
-    #         return redirect(url_for('dashboard'))
-
-    #     business_id = get_current_business_id()
-    #     item_to_delete = HirableItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
-        
-    #     item_to_delete.is_active = False # Soft delete
-    #     db.session.commit()
-    #     flash(f'Hirable item "{item_to_delete.item_name}" marked as inactive successfully!', 'success')
-    #     return redirect(url_for('hirable_items'))
 
     @app.route('/hirable_items/delete/<item_id>', methods=['POST'])
     @login_required
