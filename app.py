@@ -1720,48 +1720,190 @@ def create_app():
             return False, error_msg
 
 
+    # @app.route('/sync_businesses', methods=['POST'])
+    # @login_required
+    # @super_admin_required
+    # def sync_businesses():
+    #     try:
+    #         online_db_url = app.config['SQLALCHEMY_DATABASE_URI']
+    #         offline_db_path = os.path.join(app.instance_path, 'instance_data.db')
+    #         offline_db_url = f"sqlite:///{offline_db_path}"
+
+    #         online_engine = create_engine(online_db_url)
+    #         offline_engine = create_engine(offline_db_url)
+
+    #         with online_engine.connect() as online_conn, offline_engine.connect() as offline_conn:
+    #             online_businesses_df = pd.read_sql_table('businesses', online_conn)
+    #             online_businesses_df.to_sql('businesses', offline_conn, if_exists='replace', index=False)
+    #             online_inventory_df = pd.read_sql_table('inventory_items', online_conn)
+    #             online_inventory_df.to_sql('inventory_items', offline_conn, if_exists='replace', index=False)
+                
+    #             unsynced_sales_df = pd.read_sql_query("SELECT * FROM sales_records WHERE synced_to_remote = FALSE", offline_conn)
+    #             if not unsynced_sales_df.empty:
+    #                 unsynced_sales_df.to_sql('sales_records', online_conn, if_exists='append', index=False)
+    #                 sales_ids_to_update = unsynced_sales_df['id'].tolist()
+    #                 with app.app_context():
+    #                     db.session.query(SalesRecord).filter(
+    #                         SalesRecord.id.in_(sales_ids_to_update)
+    #                     ).update({SalesRecord.synced_to_remote: True}, synchronize_session=False)
+    #                     db.session.commit()
+                
+    #             if Business.query.first():
+    #                 global_business = Business.query.filter_by(name='Global Business').first()
+    #                 if global_business:
+    #                     global_business.last_synced_at = datetime.utcnow()
+    #                     db.session.commit()
+
+    #         flash('Data synchronization successful!', 'success')
+    #         return redirect(url_for('super_admin_dashboard'))
+
+    #     except Exception as e:
+    #         db.session.rollback()
+    #         print(f"Error during synchronization: {e}")
+    #         flash(f'Error during synchronization: {str(e)}', 'danger')
+    #         return redirect(url_for('super_admin_dashboard'))
+
     @app.route('/sync_businesses', methods=['POST'])
     @login_required
     @super_admin_required
     def sync_businesses():
+        print("Starting business synchronization...")
+        session['sync_status'] = {'status': 'Syncing', 'last_sync': 'In Progress...', 'message': 'Synchronization started...'}
+
         try:
-            online_db_url = app.config['SQLALCHEMY_DATABASE_URI']
-            offline_db_path = os.path.join(app.instance_path, 'instance_data.db')
-            offline_db_url = f"sqlite:///{offline_db_path}"
+            # Step 1: Request business data from the remote server's API
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
+            print(f"Attempting to fetch businesses from: {api_endpoint}")
+            response = requests.get(api_endpoint, timeout=30)
+            response.raise_for_status() # Raise an exception for HTTP errors
+            
+            # Step 2: Parse the JSON data
+            remote_businesses_data = response.json()
+            print(f"Received {len(remote_businesses_data)} businesses from the remote server.")
+            if len(remote_businesses_data) > 0:
+                print("Received data (first 500 chars):", json.dumps(remote_businesses_data, indent=2)[:500])
 
-            online_engine = create_engine(online_db_url)
-            offline_engine = create_engine(offline_db_url)
+            # Step 3: Iterate and synchronize each business and its users
+            new_businesses_count = 0
+            updated_businesses_count = 0
+            new_users_count = 0
+            
+            for remote_business_data in remote_businesses_data:
+                remote_id = remote_business_data.get('id')
+                # Find if the business already exists in our local database
+                local_business = Business.query.filter_by(remote_id=remote_id).first()
 
-            with online_engine.connect() as online_conn, offline_engine.connect() as offline_conn:
-                online_businesses_df = pd.read_sql_table('businesses', online_conn)
-                online_businesses_df.to_sql('businesses', offline_conn, if_exists='replace', index=False)
-                online_inventory_df = pd.read_sql_table('inventory_items', online_conn)
-                online_inventory_df.to_sql('inventory_items', offline_conn, if_exists='replace', index=False)
+                if not local_business:
+                    # Business does not exist, create a new one
+                    local_business = Business(
+                        name=remote_business_data['name'],
+                        type=remote_business_data['type'],
+                        address=remote_business_data['address'],
+                        contact=remote_business_data['contact'],
+                        email=remote_business_data['email'],
+                        is_active=remote_business_data.get('is_active', True),
+                        last_synced_at=datetime.utcnow(),
+                        remote_id=remote_id
+                    )
+                    db.session.add(local_business)
+                    db.session.commit() # Commit here to get a local_business.id for user
+                    print(f"Created new local business: {local_business.name}")
+                    new_businesses_count += 1
+                else:
+                    # Business exists, update its details
+                    local_business.name = remote_business_data['name']
+                    local_business.type = remote_business_data['type']
+                    local_business.address = remote_business_data['address']
+                    local_business.contact = remote_business_data['contact']
+                    local_business.email = remote_business_data['email']
+                    local_business.is_active = remote_business_data.get('is_active', True)
+                    local_business.last_synced_at = datetime.utcnow()
+                    updated_businesses_count += 1
+                    print(f"Updated existing local business: {local_business.name}")
+
+                # Now, synchronize users for this business
+                remote_users = remote_business_data.get('users', [])
+                for remote_user_data in remote_users:
+                    remote_user_id = remote_user_data.get('id')
+                    local_user = User.query.filter_by(id=remote_user_id).first()
+
+                    if not local_user:
+                        # User does not exist, create a new one
+                        new_user = User(
+                            id=remote_user_id,
+                            username=remote_user_data['username'],
+                            _password_hash=remote_user_data['_password_hash'],
+                            role=remote_user_data['role'],
+                            business_id=local_business.id,
+                            is_active=remote_user_data.get('is_active', True),
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(new_user)
+                        print(f"Created new user: {new_user.username} for business {local_business.name}")
+                        new_users_count += 1
+                    else:
+                        # User exists, update details
+                        local_user.username = remote_user_data['username']
+                        local_user._password_hash = remote_user_data['_password_hash']
+                        local_user.role = remote_user_data['role']
+                        local_user.business_id = local_business.id
+                        local_user.is_active = remote_user_data.get('is_active', True)
+                        print(f"Updated user: {local_user.username}")
                 
-                unsynced_sales_df = pd.read_sql_query("SELECT * FROM sales_records WHERE synced_to_remote = FALSE", offline_conn)
-                if not unsynced_sales_df.empty:
-                    unsynced_sales_df.to_sql('sales_records', online_conn, if_exists='append', index=False)
-                    sales_ids_to_update = unsynced_sales_df['id'].tolist()
-                    with app.app_context():
-                        db.session.query(SalesRecord).filter(
-                            SalesRecord.id.in_(sales_ids_to_update)
-                        ).update({SalesRecord.synced_to_remote: True}, synchronize_session=False)
-                        db.session.commit()
-                
-                if Business.query.first():
-                    global_business = Business.query.filter_by(name='Global Business').first()
-                    if global_business:
-                        global_business.last_synced_at = datetime.utcnow()
-                        db.session.commit()
+            db.session.commit() # Final commit for all changes
 
-            flash('Data synchronization successful!', 'success')
+            # Update session status on successful completion
+            message = (
+                f"Synchronization successful! "
+                f"Added {new_businesses_count} new businesses, "
+                f"updated {updated_businesses_count} businesses, "
+                f"and added {new_users_count} new users."
+            )
+            session['sync_status'] = {
+                'status': 'Online',
+                'last_sync': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': message
+            }
+            flash(message, 'success')
+            print("Synchronization completed successfully.")
+            return redirect(url_for('super_admin_dashboard'))
+
+        except requests.exceptions.RequestException as e:
+            db.session.rollback()
+            message = f"Network error during synchronization: {e}"
+            session['sync_status'] = {
+                'status': 'Error',
+                'last_sync': 'Never',
+                'message': message
+            }
+            flash(message, 'danger')
+            print(f"Synchronization failed with a network error: {e}")
+            return redirect(url_for('super_admin_dashboard'))
+
+        except json.JSONDecodeError as e:
+            db.session.rollback()
+            # This is where we catch the JSON error and print the response text for debugging
+            message = f"Error decoding JSON response from server: {e}. Server responded with: '{response.text[:100]}...'"
+            session['sync_status'] = {
+                'status': 'Error',
+                'last_sync': 'Never',
+                'message': message
+            }
+            flash(message, 'danger')
+            print(f"Synchronization failed with a JSON decoding error: {e}")
             return redirect(url_for('super_admin_dashboard'))
 
         except Exception as e:
             db.session.rollback()
-            print(f"Error during synchronization: {e}")
-            flash(f'Error during synchronization: {str(e)}', 'danger')
-            return redirect(url_for('super_admin_dashboard'))
+            message = f"An unexpected error occurred during synchronization: {e}"
+            session['sync_status'] = {
+                'status': 'Error',
+                'last_sync': 'Never',
+                'message': message
+            }
+            flash(message, 'danger')
+            print(f"Synchronization failed with an unexpected error: {e}")
+            return redirect(url_for('super_admin_dashboard'))  
             
     @app.route('/sync_status', methods=['GET'])
     def sync_status():
