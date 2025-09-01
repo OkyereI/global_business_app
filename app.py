@@ -724,7 +724,11 @@ def create_app():
     #         'message': 'Status fetched successfully.'
     #     })
 
-   
+    @app.route('/api/debug_key', methods=['GET'])
+    def debug_key():
+        key_from_env = os.getenv('REMOTE_ADMIN_API_KEY')
+        return jsonify({'key': key_from_env, 'is_found': bool(key_from_env)})
+    # END OF TEMPORARY ROUTE
     # The csrf.exempt decorator should be removed because the form sends a token.
     @app.route('/api/v1/register_business_for_sync', methods=['POST'])
     @api_key_required
