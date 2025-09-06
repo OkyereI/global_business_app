@@ -794,15 +794,11 @@ def create_app():
     def pull_inventory_data(api_key, business_id):
         """Pulls inventory data for a specific business from the remote server."""
         try:
-            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/v1/inventory?business_id={business_id}"
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/v1/inventory/business/{business_id}"
             logging.info(f"Attempting to fetch inventory from: {api_endpoint}")
 
-            # This is where the API key is added to the request headers.
             headers = {'X-API-Key': api_key}
             response = requests.get(api_endpoint, timeout=30, headers=headers)
-            
-            # The server will return a 401 Unauthorized or 403 Forbidden error
-            # if the API key is missing or invalid.
             response.raise_for_status()
 
             remote_inventory_data = response.json()
@@ -849,7 +845,6 @@ def create_app():
             return True, f"Inventory synchronized successfully. {new_items_count} new items added, {updated_items_count} items updated."
 
         except requests.exceptions.RequestException as e:
-            # This is the point where the 401/403 error is raised and caught.
             return False, f"Network error during inventory sync: {e}"
         except json.JSONDecodeError as e:
             return False, f"Error decoding JSON response during inventory sync: {e}. Server responded with: '{response.text[:100]}...'"
@@ -963,13 +958,124 @@ def create_app():
             return True, final_message
 
         except requests.exceptions.RequestException as e:
-            db.session.rollback()
             return False, f"Network error during business sync: {e}"
         except json.JSONDecodeError as e:
-            db.session.rollback()
             return False, f"Error decoding JSON response during business sync: {e}. Server responded with: '{response.text[:100]}...'"
         except Exception as e:
-            db.session.rollback()
+            return False, f"An unexpected error occurred during business sync: {e}"
+
+  
+    def pull_business_data(api_key):
+        """Pulls business and user data from the remote server."""
+        try:
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
+            logging.info(f"Attempting to fetch businesses from: {api_endpoint}")
+            
+            headers = {'X-API-Key': api_key}
+            response = requests.get(api_endpoint, timeout=30, headers=headers)
+            response.raise_for_status()
+
+            remote_businesses_data = response.json()
+            logging.info(f"Received {len(remote_businesses_data)} businesses from the remote server.")
+
+            new_businesses_count = 0
+            updated_businesses_count = 0
+            new_users_count = 0
+            inventory_sync_msg = ""
+            
+            # Ensure the response is a list before iterating
+            if not isinstance(remote_businesses_data, list):
+                logging.warning("Remote business data is not a list. Wrapping in a list.")
+                remote_businesses_data = [remote_businesses_data]
+            
+            for remote_business_data in remote_businesses_data:
+                # Check if the individual item is a dictionary
+                if not isinstance(remote_business_data, dict):
+                    logging.warning(f"Skipping malformed business entry: {remote_business_data}")
+                    continue
+                
+                remote_id = remote_business_data.get('id')
+                if not remote_id:
+                    logging.warning("Skipping business entry with no ID.")
+                    continue
+                
+                local_business = Business.query.filter_by(remote_id=remote_id).first()
+                if not local_business:
+                    local_business = Business(
+                        name=remote_business_data.get('name', 'Unknown Name'),
+                        type=remote_business_data.get('type', 'Unknown Type'),
+                        address=remote_business_data.get('address', 'Unknown Address'),
+                        contact=remote_business_data.get('contact', 'Unknown Contact'),
+                        email=remote_business_data.get('email', 'Unknown Email'),
+                        is_active=remote_business_data.get('is_active', True),
+                        last_synced_at=datetime.utcnow(),
+                        remote_id=remote_id
+                    )
+                    db.session.add(local_business)
+                    db.session.commit()
+                    logging.info(f"Created new local business: {local_business.name}")
+                    new_businesses_count += 1
+                else:
+                    local_business.name = remote_business_data.get('name', local_business.name)
+                    local_business.type = remote_business_data.get('type', local_business.type)
+                    local_business.address = remote_business_data.get('address', local_business.address)
+                    local_business.contact = remote_business_data.get('contact', local_business.contact)
+                    local_business.email = remote_business_data.get('email', local_business.email)
+                    local_business.is_active = remote_business_data.get('is_active', local_business.is_active)
+                    local_business.last_synced_at = datetime.utcnow()
+                    updated_businesses_count += 1
+                    logging.info(f"Updated existing local business: {local_business.name}")
+
+                # Pull inventory data for this specific business
+                success_inv_pull, msg_inv_pull = pull_inventory_data(api_key, local_business.id)
+                inventory_sync_msg += f"Inventory for {local_business.name} synced: {msg_inv_pull}. "
+                
+                remote_users = remote_business_data.get('users', [])
+                if not isinstance(remote_users, list):
+                    logging.warning(f"Skipping malformed user list for business ID {remote_id}")
+                    continue
+
+                for remote_user_data in remote_users:
+                    if not isinstance(remote_user_data, dict):
+                        logging.warning("Skipping a malformed user entry from remote data.")
+                        continue
+                    remote_user_id = remote_user_data.get('id')
+                    if not remote_user_id:
+                        logging.warning("Skipping user entry with no ID.")
+                        continue
+                        
+                    local_user = User.query.filter_by(id=remote_user_id).first()
+
+                    if not local_user:
+                        new_user = User(
+                            id=remote_user_id,
+                            username=remote_user_data.get('username', 'Unknown User'),
+                            _password_hash=remote_user_data.get('_password_hash', ''),
+                            role=remote_user_data.get('role', 'user'),
+                            business_id=local_business.id,
+                            is_active=remote_user_data.get('is_active', True),
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(new_user)
+                        logging.info(f"Created new user: {new_user.username} for business {local_business.name}")
+                        new_users_count += 1
+                    else:
+                        local_user.username = remote_user_data.get('username', local_user.username)
+                        local_user._password_hash = remote_user_data.get('_password_hash', local_user._password_hash)
+                        local_user.role = remote_user_data.get('role', local_user.role)
+                        local_user.business_id = local_business.id
+                        local_user.is_active = remote_user_data.get('is_active', local_user.is_active)
+                        logging.info(f"Updated user: {local_user.username}")
+            
+            db.session.commit()
+            final_message = f"Businesses synced: {new_businesses_count} added, {updated_businesses_count} updated. Users synced: {new_users_count} added. {inventory_sync_msg}"
+            return True, final_message
+
+        except requests.exceptions.RequestException as e:
+            return False, f"Network error during business sync: {e}"
+        except json.JSONDecodeError as e:
+            return False, f"Error decoding JSON response during business sync: {e}. Server responded with: '{response.text[:100]}...'"
+        except Exception as e:
             return False, f"An unexpected error occurred during business sync: {e}"
 
     def push_inventory_data(business_id, api_key):
@@ -993,18 +1099,36 @@ def create_app():
             # Pull phase
             success_pull_biz, msg_pull_biz = pull_business_data(api_key)
             if not success_pull_biz:
-                # Ensure a message is always returned, even if a part of the sync fails.
-                return False, f"Business pull failed: {msg_pull_biz or 'Unknown error.'}"
+                return False, f"Business pull failed: {msg_pull_biz}"
 
             # Push phase
             success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
             if not success_push_inv:
-                # Ensure a message is always returned
-                return False, f"Inventory push failed: {msg_push_inv or 'Unknown error.'}"
+                return False, f"Inventory push failed: {msg_push_inv}"
             
-            # Concatenate messages, ensuring they are not None
-            final_message = f"Full synchronization successful. {msg_pull_biz or ''}. {msg_push_inv or ''}"
-            return True, final_message
+            return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
+
+        except Exception as e:
+            db.session.rollback()
+            return False, f"An unexpected error occurred during full sync: {e}"
+
+
+    def perform_sync(business_id, api_key):
+        """Orchestrates the full synchronization process."""
+        try:
+            # Pull phase
+            success_pull_biz, msg_pull_biz = pull_business_data(api_key)
+            if not success_pull_biz:
+                return False, f"Business pull failed: {msg_pull_biz}"
+
+            # Push phase
+            success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
+            if not success_push_inv:
+                return False, f"Inventory push failed: {msg_push_inv}"
+
+            # You had a line here that was not defined, so I will remove it for now to avoid errors
+            
+            return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
 
         except Exception as e:
             db.session.rollback()
@@ -1070,7 +1194,73 @@ def create_app():
             return jsonify({'message': f'Failed to register business online: {str(e)}'}), 500
 
 
-   
+    def perform_sync(local_business_id, sync_api_key):
+        if not check_network_online():
+            print("Offline: Cannot perform synchronization.")
+            return False, "Offline: Cannot perform synchronization."
+
+        print("Online: Starting synchronization...")
+        
+        local_business = Business.query.get(local_business_id)
+        if not local_business:
+            return False, "Error: Local business not found."
+
+        # Use a dictionary to store headers for all requests
+        headers = {'X-API-Key': sync_api_key, 'Content-Type': 'application/json'}
+
+        # --- NEW: Check and Register Business Remotely ---
+        if not local_business.remote_id:
+            print(f"Local business '{local_business.name}' not yet linked to remote server. Attempting registration...")
+            registration_url = f"{REMOTE_SERVER_URL}/api/v1/register_business_for_sync"
+            try:
+                registration_payload = {
+                    'name': local_business.name,
+                    'address': local_business.address,
+                    'location': local_business.location,
+                    'contact': local_business.contact,
+                    'email': local_business.email,
+                    'type': local_business.type,
+                }
+                # Use headers to authenticate this request
+                response = requests.post(registration_url, json=registration_payload, headers=headers)
+                response.raise_for_status()
+
+                remote_registration_data = response.json()
+                new_remote_id = remote_registration_data.get('business_id')
+
+                if new_remote_id:
+                    local_business.remote_id = new_remote_id
+                    db.session.commit()
+                    print(f"Successfully registered local business '{local_business.name}' on remote server. Remote ID: {new_remote_id}")
+                else:
+                    return False, f"Remote registration failed: No business_id returned. Message: {remote_registration_data.get('message', 'Unknown error')}"
+            
+            except requests.exceptions.RequestException as e:
+                # This catches all request errors (HTTP, network, etc.)
+                db.session.rollback()
+                return False, f"Failed to register business remotely: {e}"
+
+        # Use the remote_id for all subsequent API calls
+        effective_business_id = local_business.remote_id
+
+        # Make sure get_last_synced_timestamp is configured to retrieve a timestamp for the specific business
+        last_synced_at = local_business.last_synced_at.isoformat() if local_business.last_synced_at else "1970-01-01T00:00:00Z"
+        print(f"Last synced at: {last_synced_at}")
+
+        # Pass the API key to the push and pull functions
+        success_push, msg_push = push_data_to_remote(effective_business_id, sync_api_key)
+        if not success_push:
+            return False, f"Sync failed during push: {msg_push}"
+
+        success_pull, msg_pull = pull_data_from_remote(effective_business_id,  sync_api_key)
+        if not success_pull:
+            return False, f"Sync failed during pull: {msg_pull}"
+
+        local_business.last_synced_at = datetime.utcnow()
+        db.session.commit()
+        print(f"Synchronization successful at {local_business.last_synced_at.isoformat()}")
+        return True, "Synchronization successful!"
+
     
     @app.route('/api/v1/users', methods=['GET'])
     @api_key_required
@@ -1099,52 +1289,34 @@ def create_app():
             print(f"Error fetching users for sync: {e}")
             return jsonify({'error': 'An internal server error occurred.'}),
 
-    # @app.route('/api/v1/businesses', methods=['GET'])
-    # @api_key_required
-    # # @login_required # Temporary: Should be API-specific auth in production
-    # def api_get_businesses():
-    #     """
-    #     API endpoint to fetch a list of businesses.
-    #     Can be filtered by last_updated timestamp for incremental sync.
-    #     """
-    #     if session.get('role') != 'super_admin':
-    #         # For non-super admins, restrict to their own business if applicable
-    #         business_id = get_current_business_id()
-    #         if not business_id:
-    #             return jsonify({'message': 'Access denied: Business ID not in session for this user.'}), 403
-    #         businesses = Business.query.filter_by(id=business_id, is_active=True).all()
-    #     else:
-    #         # Super admin can see all active businesses
-    #         businesses = Business.query.filter_by(is_active=True).all()
+    @app.route('/api/v1/businesses', methods=['GET'])
+    @api_key_required
+    # @login_required # Temporary: Should be API-specific auth in production
+    def api_get_businesses():
+        """
+        API endpoint to fetch a list of businesses.
+        Can be filtered by last_updated timestamp for incremental sync.
+        """
+        if session.get('role') != 'super_admin':
+            # For non-super admins, restrict to their own business if applicable
+            business_id = get_current_business_id()
+            if not business_id:
+                return jsonify({'message': 'Access denied: Business ID not in session for this user.'}), 403
+            businesses = Business.query.filter_by(id=business_id, is_active=True).all()
+        else:
+            # Super admin can see all active businesses
+            businesses = Business.query.filter_by(is_active=True).all()
         
-    #     # Filter by last_synced_at if provided in query parameters
-    #     last_synced_at_str = request.args.get('last_synced_at')
-    #     if last_synced_at_str:
-    #         try:
-    #             last_synced_at = datetime.fromisoformat(last_synced_at_str)
-    #             businesses = [b for b in businesses if b.last_updated and b.last_updated > last_synced_at]
-    #         except ValueError:
-    #             return jsonify({'message': 'Invalid last_synced_at format. Use ISO 8601.'}), 400
+        # Filter by last_synced_at if provided in query parameters
+        last_synced_at_str = request.args.get('last_synced_at')
+        if last_synced_at_str:
+            try:
+                last_synced_at = datetime.fromisoformat(last_synced_at_str)
+                businesses = [b for b in businesses if b.last_updated and b.last_updated > last_synced_at]
+            except ValueError:
+                return jsonify({'message': 'Invalid last_synced_at format. Use ISO 8601.'}), 400
 
-    #     return jsonify([serialize_business(b) for b in businesses])
-
-    @app.route('/api/businesses', methods=['GET'])
-    def get_businesses():
-        """Returns a list of all businesses and their users for synchronization."""
-        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
-        # Use the same API key from your local app's .env file
-        if api_key != os.getenv('REMOTE_ADMIN_API_KEY'):
-            return jsonify({"error": "API Key is missing or invalid."}), 401
-
-        businesses = Business.query.all()
-        businesses_data = []
-        for business in businesses:
-            business_dict = business.to_dict()
-            users_in_business = User.query.filter_by(business_id=business.id).all()
-            business_dict['users'] = [user.to_dict() for user in users_in_business]
-            businesses_data.append(business_dict)
-
-        return jsonify(businesses_data)
+        return jsonify([serialize_business(b) for b in businesses])
 
 
     @app.route('/api/v1/inventory', methods=['GET'])
@@ -1529,57 +1701,37 @@ def create_app():
             f.write(timestamp)
 
 
+    
     @app.route('/trigger_sync', methods=['POST'])
     @login_required
     def trigger_sync():
-        """Triggers a full synchronization of all data."""
-        current_business_id = session.get('business_id')
-        # This is where the API key is retrieved from your local environment.
-        api_key = os.getenv('REMOTE_ADMIN_API_KEY')
+        """
+        Triggers the data synchronization process based on the user's role.
+        """
+        is_online = check_network_online()
+        if not is_online:
+            return jsonify({'success': False, 'message': 'No internet connection detected.'}), 200
+
+        user_role = current_user.role
+        current_business_id = current_user.business_id
         
-        if not current_business_id:
-            flash("No business ID found in session. Cannot sync.", 'danger')
-            return redirect(url_for('login'))
+        # Retrieve the API key to be used for all sync API calls
+        sync_api_key = os.getenv("REMOTE_ADMIN_API_KEY")
+        if not sync_api_key:
+            return jsonify({'success': False, 'message': 'Synchronization API key not configured.'}), 500
 
-        success, message = perform_sync(current_business_id, api_key)
+        if user_role == 'super_admin':
+            success, message = super_admin_full_sync(sync_api_key)
+        elif user_role == 'admin':
+            success, message = perform_sync(current_business_id, sync_api_key)
+        else:
+            message = "Unauthorized role to perform synchronization."
+            return jsonify({'success': False, 'message': message}), 403
 
-        session['sync_status'] = {
-            'status': 'Online' if success else 'Error',
-            'last_sync': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') if success else 'Never',
-            'message': message
-        }
-        flash(message, 'success' if success else 'danger')
-        return redirect(url_for('dashboard'))  
-    # @app.route('/trigger_sync', methods=['POST'])
-    # @login_required
-    # def trigger_sync():
-    #     """
-    #     Triggers the data synchronization process based on the user's role.
-    #     """
-    #     is_online = check_network_online()
-    #     if not is_online:
-    #         return jsonify({'success': False, 'message': 'No internet connection detected.'}), 200
-
-    #     user_role = current_user.role
-    #     current_business_id = current_user.business_id
-        
-    #     # Retrieve the API key to be used for all sync API calls
-    #     sync_api_key = os.getenv("REMOTE_ADMIN_API_KEY")
-    #     if not sync_api_key:
-    #         return jsonify({'success': False, 'message': 'Synchronization API key not configured.'}), 500
-
-    #     if user_role == 'super_admin':
-    #         success, message = super_admin_full_sync(sync_api_key)
-    #     elif user_role == 'admin':
-    #         success, message = perform_sync(current_business_id, sync_api_key)
-    #     else:
-    #         message = "Unauthorized role to perform synchronization."
-    #         return jsonify({'success': False, 'message': message}), 403
-
-    #     if success:
-    #         return jsonify({'success': True, 'message': message}), 200
-    #     else:
-    #         return jsonify({'success': False, 'message': message}), 500
+        if success:
+            return jsonify({'success': True, 'message': message}), 200
+        else:
+            return jsonify({'success': False, 'message': message}), 500
 
     @app.route('/api/businesses')
     def api_businesses():
@@ -1939,171 +2091,155 @@ def create_app():
     #         return redirect(url_for('super_admin_dashboard'))
 
         # This is the new, more robust function
-    # @app.route('/sync_businesses', methods=['POST'])
-    # @login_required
-    # # @super_admin_required  # This decorator needs to be defined
-    # def sync_businesses():
-    #     logging.info("Starting business synchronization...")
-    #     session['sync_status'] = {'status': 'Syncing', 'last_sync': 'In Progress...', 'message': 'Synchronization started...'}
-
-    #     try:
-    #         # Step 1: Request business data from the remote server's API
-    #         api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
-    #         logging.info(f"Attempting to fetch businesses from: {api_endpoint}")
-            
-    #         # Use a dedicated API key for server-to-server communication
-    #         api_key = os.getenv('API_KEY_SECRET')
-    #         headers = {'X-API-Key': api_key}
-            
-    #         # Use requests.Session to maintain the Flask user session cookies
-    #         with requests.Session() as s:
-    #             s.cookies.update(request.cookies)
-    #             response = s.get(api_endpoint, timeout=30, headers=headers)
-    #             response.raise_for_status() # Raise an exception for HTTP errors
-
-    #         # Step 2: Parse the JSON data
-    #         remote_businesses_data = response.json()
-    #         logging.info(f"Received {len(remote_businesses_data)} businesses from the remote server.")
-    #         if len(remote_businesses_data) > 0:
-    #             logging.debug("Received data (first 500 chars):", json.dumps(remote_businesses_data, indent=2)[:500])
-
-    #         # Step 3: Iterate and synchronize each business and its users
-    #         new_businesses_count = 0
-    #         updated_businesses_count = 0
-    #         new_users_count = 0
-            
-    #         for remote_business_data in remote_businesses_data:
-    #             remote_id = remote_business_data.get('id')
-    #             # Find if the business already exists in our local database
-    #             local_business = Business.query.filter_by(remote_id=remote_id).first()
-
-    #             if not local_business:
-    #                 # Business does not exist, create a new one
-    #                 local_business = Business(
-    #                     name=remote_business_data['name'],
-    #                     type=remote_business_data['type'],
-    #                     address=remote_business_data['address'],
-    #                     contact=remote_business_data['contact'],
-    #                     email=remote_business_data['email'],
-    #                     is_active=remote_business_data.get('is_active', True),
-    #                     last_synced_at=datetime.utcnow(),
-    #                     remote_id=remote_id
-    #                 )
-    #                 db.session.add(local_business)
-    #                 db.session.commit() # Commit here to get a local_business.id for user
-    #                 logging.info(f"Created new local business: {local_business.name}")
-    #                 new_businesses_count += 1
-    #             else:
-    #                 # Business exists, update its details
-    #                 local_business.name = remote_business_data['name']
-    #                 local_business.type = remote_business_data['type']
-    #                 local_business.address = remote_business_data['address']
-    #                 local_business.contact = remote_business_data['contact']
-    #                 local_business.email = remote_business_data['email']
-    #                 local_business.is_active = remote_business_data.get('is_active', True)
-    #                 local_business.last_synced_at = datetime.utcnow()
-    #                 updated_businesses_count += 1
-    #                 logging.info(f"Updated existing local business: {local_business.name}")
-
-    #             # Now, synchronize users for this business
-    #             remote_users = remote_business_data.get('users', [])
-    #             for remote_user_data in remote_users:
-    #                 remote_user_id = remote_user_data.get('id')
-    #                 local_user = User.query.filter_by(id=remote_user_id).first()
-
-    #                 if not local_user:
-    #                     # User does not exist, create a new one
-    #                     new_user = User(
-    #                         id=remote_user_id,
-    #                         username=remote_user_data['username'],
-    #                         _password_hash=remote_user_data['_password_hash'],
-    #                         role=remote_user_data['role'],
-    #                         business_id=local_business.id,
-    #                         is_active=remote_user_data.get('is_active', True),
-    #                         created_at=datetime.utcnow()
-    #                     )
-    #                     db.session.add(new_user)
-    #                     logging.info(f"Created new user: {new_user.username} for business {local_business.name}")
-    #                     new_users_count += 1
-    #                 else:
-    #                     # User exists, update details
-    #                     local_user.username = remote_user_data['username']
-    #                     local_user._password_hash = remote_user_data['_password_hash']
-    #                     local_user.role = remote_user_data['role']
-    #                     local_user.business_id = local_business.id
-    #                     local_user.is_active = remote_user_data.get('is_active', True)
-    #                     logging.info(f"Updated user: {local_user.username}")
-                
-    #         db.session.commit() # Final commit for all changes
-
-    #         # Update session status on successful completion
-    #         message = (
-    #             f"Synchronization successful! "
-    #             f"Added {new_businesses_count} new businesses, "
-    #             f"updated {updated_businesses_count} businesses, "
-    #             f"and added {new_users_count} new users."
-    #         )
-    #         session['sync_status'] = {
-    #             'status': 'Online',
-    #             'last_sync': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-    #             'message': message
-    #         }
-    #         flash(message, 'success')
-    #         logging.info("Synchronization completed successfully.")
-    #         return redirect(url_for('super_admin_dashboard'))
-
-    #     except requests.exceptions.RequestException as e:
-    #         db.session.rollback()
-    #         message = f"Network error during synchronization: {e}"
-    #         session['sync_status'] = {
-    #             'status': 'Error',
-    #             'last_sync': 'Never',
-    #             'message': message
-    #         }
-    #         flash(message, 'danger')
-    #         logging.error(f"Synchronization failed with a network error: {e}")
-    #         return redirect(url_for('super_admin_dashboard'))
-
-    #     except json.JSONDecodeError as e:
-    #         db.session.rollback()
-    #         # This is where we catch the JSON error and print the response text for debugging
-    #         message = f"Error decoding JSON response from server: {e}. Server responded with: '{response.text[:100]}...'"
-    #         session['sync_status'] = {
-    #             'status': 'Error',
-    #             'last_sync': 'Never',
-    #             'message': message
-    #         }
-    #         flash(message, 'danger')
-    #         logging.error(f"Synchronization failed with a JSON decoding error: {e}")
-    #         return redirect(url_for('super_admin_dashboard'))
-
-    #     except Exception as e:
-    #         db.session.rollback()
-    #         message = f"An unexpected error occurred during synchronization: {e}"
-    #         session['sync_status'] = {
-    #             'status': 'Error',
-    #             'last_sync': 'Never',
-    #             'message': message
-    #         }
-    #         flash(message, 'danger')
-    #         logging.error(f"Synchronization failed with an unexpected error: {e}")
-    #         return redirect(url_for('super_admin_dashboard'))  
-
     @app.route('/sync_businesses', methods=['POST'])
     @login_required
+    # @super_admin_required  # This decorator needs to be defined
     def sync_businesses():
-        """Handles business synchronization via a dedicated route."""
-        api_key = os.getenv('REMOTE_ADMIN_API_KEY')
-        success, message = pull_business_data(api_key)
-        
-        session['sync_status'] = {
-            'status': 'Online' if success else 'Error',
-            'last_sync': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') if success else 'Never',
-            'message': message
-        }
-        flash(message, 'success' if success else 'danger')
-        return redirect(url_for('super_admin_dashboard'))
+        logging.info("Starting business synchronization...")
+        session['sync_status'] = {'status': 'Syncing', 'last_sync': 'In Progress...', 'message': 'Synchronization started...'}
 
+        try:
+            # Step 1: Request business data from the remote server's API
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
+            logging.info(f"Attempting to fetch businesses from: {api_endpoint}")
+            
+            # Use a dedicated API key for server-to-server communication
+            api_key = os.getenv('API_KEY_SECRET')
+            headers = {'X-API-Key': api_key}
+            
+            # Use requests.Session to maintain the Flask user session cookies
+            with requests.Session() as s:
+                s.cookies.update(request.cookies)
+                response = s.get(api_endpoint, timeout=30, headers=headers)
+                response.raise_for_status() # Raise an exception for HTTP errors
+
+            # Step 2: Parse the JSON data
+            remote_businesses_data = response.json()
+            logging.info(f"Received {len(remote_businesses_data)} businesses from the remote server.")
+            if len(remote_businesses_data) > 0:
+                logging.debug("Received data (first 500 chars):", json.dumps(remote_businesses_data, indent=2)[:500])
+
+            # Step 3: Iterate and synchronize each business and its users
+            new_businesses_count = 0
+            updated_businesses_count = 0
+            new_users_count = 0
+            
+            for remote_business_data in remote_businesses_data:
+                remote_id = remote_business_data.get('id')
+                # Find if the business already exists in our local database
+                local_business = Business.query.filter_by(remote_id=remote_id).first()
+
+                if not local_business:
+                    # Business does not exist, create a new one
+                    local_business = Business(
+                        name=remote_business_data['name'],
+                        type=remote_business_data['type'],
+                        address=remote_business_data['address'],
+                        contact=remote_business_data['contact'],
+                        email=remote_business_data['email'],
+                        is_active=remote_business_data.get('is_active', True),
+                        last_synced_at=datetime.utcnow(),
+                        remote_id=remote_id
+                    )
+                    db.session.add(local_business)
+                    db.session.commit() # Commit here to get a local_business.id for user
+                    logging.info(f"Created new local business: {local_business.name}")
+                    new_businesses_count += 1
+                else:
+                    # Business exists, update its details
+                    local_business.name = remote_business_data['name']
+                    local_business.type = remote_business_data['type']
+                    local_business.address = remote_business_data['address']
+                    local_business.contact = remote_business_data['contact']
+                    local_business.email = remote_business_data['email']
+                    local_business.is_active = remote_business_data.get('is_active', True)
+                    local_business.last_synced_at = datetime.utcnow()
+                    updated_businesses_count += 1
+                    logging.info(f"Updated existing local business: {local_business.name}")
+
+                # Now, synchronize users for this business
+                remote_users = remote_business_data.get('users', [])
+                for remote_user_data in remote_users:
+                    remote_user_id = remote_user_data.get('id')
+                    local_user = User.query.filter_by(id=remote_user_id).first()
+
+                    if not local_user:
+                        # User does not exist, create a new one
+                        new_user = User(
+                            id=remote_user_id,
+                            username=remote_user_data['username'],
+                            _password_hash=remote_user_data['_password_hash'],
+                            role=remote_user_data['role'],
+                            business_id=local_business.id,
+                            is_active=remote_user_data.get('is_active', True),
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(new_user)
+                        logging.info(f"Created new user: {new_user.username} for business {local_business.name}")
+                        new_users_count += 1
+                    else:
+                        # User exists, update details
+                        local_user.username = remote_user_data['username']
+                        local_user._password_hash = remote_user_data['_password_hash']
+                        local_user.role = remote_user_data['role']
+                        local_user.business_id = local_business.id
+                        local_user.is_active = remote_user_data.get('is_active', True)
+                        logging.info(f"Updated user: {local_user.username}")
+                
+            db.session.commit() # Final commit for all changes
+
+            # Update session status on successful completion
+            message = (
+                f"Synchronization successful! "
+                f"Added {new_businesses_count} new businesses, "
+                f"updated {updated_businesses_count} businesses, "
+                f"and added {new_users_count} new users."
+            )
+            session['sync_status'] = {
+                'status': 'Online',
+                'last_sync': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                'message': message
+            }
+            flash(message, 'success')
+            logging.info("Synchronization completed successfully.")
+            return redirect(url_for('super_admin_dashboard'))
+
+        except requests.exceptions.RequestException as e:
+            db.session.rollback()
+            message = f"Network error during synchronization: {e}"
+            session['sync_status'] = {
+                'status': 'Error',
+                'last_sync': 'Never',
+                'message': message
+            }
+            flash(message, 'danger')
+            logging.error(f"Synchronization failed with a network error: {e}")
+            return redirect(url_for('super_admin_dashboard'))
+
+        except json.JSONDecodeError as e:
+            db.session.rollback()
+            # This is where we catch the JSON error and print the response text for debugging
+            message = f"Error decoding JSON response from server: {e}. Server responded with: '{response.text[:100]}...'"
+            session['sync_status'] = {
+                'status': 'Error',
+                'last_sync': 'Never',
+                'message': message
+            }
+            flash(message, 'danger')
+            logging.error(f"Synchronization failed with a JSON decoding error: {e}")
+            return redirect(url_for('super_admin_dashboard'))
+
+        except Exception as e:
+            db.session.rollback()
+            message = f"An unexpected error occurred during synchronization: {e}"
+            session['sync_status'] = {
+                'status': 'Error',
+                'last_sync': 'Never',
+                'message': message
+            }
+            flash(message, 'danger')
+            logging.error(f"Synchronization failed with an unexpected error: {e}")
+            return redirect(url_for('super_admin_dashboard'))  
 
     @app.route('/sync_status', methods=['GET'])
     def sync_status():
