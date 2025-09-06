@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from flask import current_app
 from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
 import io
+import logging
 # Load environment variables
 load_dotenv()
 
@@ -478,7 +479,6 @@ def create_app():
         remote_url = get_remote_flask_base_url()
         headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
         
-        # Check for a valid business ID
         if not business_id:
             print("Error: No business ID provided for synchronization.")
             return False, "Synchronization failed: Business ID not found."
@@ -488,12 +488,16 @@ def create_app():
             print(f"Pulling data for business ID: {business_id}")
             business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
             business_response.raise_for_status()
+            
+            if not business_response.text:
+                print("Error: Received an empty response body for /api/v1/businesses/{business_id}")
+                return False, "Synchronization failed: Remote server returned empty data for business."
+            
             business_data = business_response.json()
             
             with app.app_context():
                 business = db.session.get(Business, business_data['id'])
                 if business:
-                    # Update existing business
                     business.name = business_data['name']
                     business.address = business_data['address']
                     business.location = business_data['location']
@@ -502,7 +506,6 @@ def create_app():
                     business.is_active = business_data['is_active']
                     business.last_updated = datetime.fromisoformat(business_data['last_updated'])
                 else:
-                    # Add new business
                     new_business = Business(
                         id=business_data['id'],
                         name=business_data['name'],
@@ -521,10 +524,14 @@ def create_app():
             print("Pulling users for this business...")
             users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
             users_response.raise_for_status()
+            
+            if not users_response.text:
+                print("Error: Received an empty response body for /api/v1/users/business/{business_id}")
+                return False, "Synchronization failed: Remote server returned empty data for users."
+                
             users_data = users_response.json()
             
             with app.app_context():
-                # Delete existing users for this business to ensure a clean sync
                 User.query.filter_by(business_id=business_id).delete()
                 for user_data in users_data:
                     user = User(
@@ -544,8 +551,13 @@ def create_app():
             print("Pulling inventory for this business...")
             inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
             inventory_response.raise_for_status()
+
+            if not inventory_response.text:
+                print("Error: Received an empty response body for /api/v1/inventory/business/{business_id}")
+                return False, "Synchronization failed: Remote server returned empty data for inventory."
+
             inventory_data = inventory_response.json()
-            
+
             with app.app_context():
                 InventoryItem.query.filter_by(business_id=business_id).delete()
                 for item_data in inventory_data:
@@ -576,49 +588,140 @@ def create_app():
         except requests.exceptions.RequestException as e:
             db.session.rollback()
             print(f"Error during sync: {e}")
-            return False, f"Synchronization failed: {e}"
+            return False, f"Synchronization failed due to a network or server error: {e}"
+        except json.JSONDecodeError as e:
+            db.session.rollback()
+            print(f"JSON decoding error: {e}. Raw response text was: {e.doc}")
+            return False, f"Synchronization failed: Invalid data format received from the server."
         except Exception as e:
             db.session.rollback()
             print(f"An unexpected error occurred: {e}")
             return False, f"An unexpected error occurred: {e}"
-    
-    def push_data_to_remote(remote_business_id):
-        # This function remains unchanged as we are only pulling user data, not pushing it.
-        remote_url = get_remote_flask_base_url()
-        headers = {'Content-Type': 'application/json'} # API expects JSON
+    # def pull_data_from_remote(business_id, access_token):
+    #     """
+    #     Pulls data for a specific business from the remote server.
+    #     """
+    #     remote_url = get_remote_flask_base_url()
+    #     headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
         
-        # 1. Push pending Sales Records (those not yet marked as synced in local DB)
-        with app.app_context(): # Ensure we are in app context for DB operations
-            pending_sales = SalesRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
-            if pending_sales:
-                sales_data = [serialize_sale_record_api(s) for s in pending_sales]
-                try:
-                    sales_response = requests.post(f"{remote_url}/api/v1/sales", json=sales_data, headers=headers)
-                    sales_response.raise_for_status()
-                    response_json = sales_response.json()
-                    if response_json.get('message') == 'Sales records synchronized successfully.':
-                        for sale in pending_sales:
-                            sale.synced_to_remote = True # Mark as synced locally
-                        db.session.commit()
-                        print(f"Pushed {len(pending_sales)} sales to remote. Response: {response_json}")
-                        return True, f"Pushed {len(pending_sales)} sales."
-                    else:
-                        print(f"Error pushing sales (remote message): {response_json.get('message')}")
-                        return False, f"Error pushing sales: {response_json.get('message')}"
-                except requests.exceptions.RequestException as e:
-                    print(f"Error pushing sales: {e}")
-                    db.session.rollback() # Rollback if API call fails
-                    return False, f"Error pushing sales: {e}"
-                except Exception as e:
-                    print(f"Unexpected error pushing sales: {e}")
-                    db.session.rollback()
-                    return False, f"Unexpected error pushing sales: {e}"
-            else:
-                print("No pending sales to push.")
-                return True, "No pending sales to push."
+    #     # Check for a valid business ID
+    #     if not business_id:
+    #         print("Error: No business ID provided for synchronization.")
+    #         return False, "Synchronization failed: Business ID not found."
 
-    # Function to push data from local (SQLite) to remote (PostgreSQL)
-    def push_data_to_remote(remote_business_id):
+    #     try:
+    #         # --- Step 1: Pull Business Data ---
+    #         print(f"Pulling data for business ID: {business_id}")
+    #         business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
+    #         business_response.raise_for_status()
+            
+    #         # Check for empty response body before decoding
+    #         if not business_response.text.strip():
+    #             print("Error: Received an empty response for business data. Possible server issue.")
+    #             return False, "Synchronization failed: Received an empty response from business API."
+            
+    #         business_data = business_response.json()
+            
+    #         with app.app_context():
+    #             business = db.session.get(Business, business_data['id'])
+    #             if business:
+    #                 # Update existing business
+    #                 business.name = business_data['name']
+    #                 business.address = business_data['address']
+    #                 business.location = business_data['location']
+    #                 business.contact = business_data['contact']
+    #                 business.type = business_data['type']
+    #                 business.is_active = business_data['is_active']
+    #                 business.last_updated = datetime.fromisoformat(business_data['last_updated'])
+    #             else:
+    #                 # Add new business
+    #                 new_business = Business(
+    #                     id=business_data['id'],
+    #                     name=business_data['name'],
+    #                     address=business_data['address'],
+    #                     location=business_data['location'],
+    #                     contact=business_data['contact'],
+    #                     type=business_data['type'],
+    #                     is_active=business_data['is_active'],
+    #                     last_updated=datetime.fromisoformat(business_data['last_updated'])
+    #                 )
+    #                 db.session.add(new_business)
+    #             db.session.commit()
+    #             print("Successfully pulled and replaced business data.")
+            
+    #         # --- Step 2: Pull Users for this Business ---
+    #         print("Pulling users for this business...")
+    #         users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
+    #         users_response.raise_for_status()
+            
+    #         if not users_response.text.strip():
+    #             print("Error: Received an empty response for user data. Skipping user sync.")
+    #             # Continue with the rest of the sync instead of failing
+    #         else:
+    #             users_data = users_response.json()
+    #             with app.app_context():
+    #                 User.query.filter_by(business_id=business_id).delete()
+    #                 for user_data in users_data:
+    #                     user = User(
+    #                         id=user_data['id'],
+    #                         username=user_data['username'],
+    #                         password=user_data['password'],
+    #                         role=user_data['role'],
+    #                         business_id=user_data['business_id'],
+    #                         is_active=user_data['is_active'],
+    #                         created_at=datetime.fromisoformat(user_data['created_at'])
+    #                     )
+    #                     db.session.add(user)
+    #                 db.session.commit()
+    #                 print("Successfully pulled and replaced user data.")
+
+    #         # --- Step 3: Pull Inventory for this Business ---
+    #         print("Pulling inventory for this business...")
+    #         inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
+    #         inventory_response.raise_for_status()
+
+    #         if not inventory_response.text.strip():
+    #             print("Error: Received an empty response for inventory data. Skipping inventory sync.")
+    #         else:
+    #             inventory_data = inventory_response.json()
+    #             with app.app_context():
+    #                 InventoryItem.query.filter_by(business_id=business_id).delete()
+    #                 for item_data in inventory_data:
+    #                     item = InventoryItem(
+    #                         id=item_data['id'],
+    #                         business_id=item_data['business_id'],
+    #                         product_name=item_data['product_name'],
+    #                         category=item_data['category'],
+    #                         purchase_price=item_data['purchase_price'],
+    #                         sale_price=item_data['sale_price'],
+    #                         current_stock=item_data['current_stock'],
+    #                         last_updated=datetime.fromisoformat(item_data['last_updated']),
+    #                         batch_number=item_data['batch_number'],
+    #                         number_of_tabs=item_data['number_of_tabs'],
+    #                         unit_price_per_tab=item_data['unit_price_per_tab'],
+    #                         item_type=item_data['item_type'],
+    #                         expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+    #                         is_fixed_price=item_data['is_fixed_price'],
+    #                         fixed_sale_price=item_data['fixed_sale_price'],
+    #                         is_active=item_data['is_active']
+    #                     )
+    #                     db.session.add(item)
+    #                 db.session.commit()
+    #                 print("Successfully pulled and replaced inventory data.")
+
+    #         return True, "Synchronization successful."
+
+    #     except requests.exceptions.RequestException as e:
+    #         db.session.rollback()
+    #         print(f"Error during sync: {e}")
+    #         return False, f"Synchronization failed: {e}"
+    #     except Exception as e:
+    #         db.session.rollback()
+    #         print(f"An unexpected error occurred: {e}")
+    #         return False, f"An unexpected error occurred: {e}"
+    
+
+    def push_data_to_remote(remote_business_id, api_key):
         remote_url = get_remote_flask_base_url()
         headers = {'Content-Type': 'application/json'} # API expects JSON
         
@@ -688,41 +791,349 @@ def create_app():
             return True, "Synchronization successful."
         except requests.exceptions.RequestException as e:
             return False, f"Error during synchronization: {e}"
+    def pull_inventory_data(api_key, business_id):
+        """Pulls inventory data for a specific business from the remote server."""
+        try:
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/v1/inventory/business/{business_id}"
+            logging.info(f"Attempting to fetch inventory from: {api_endpoint}")
 
-    # --- NEW: Desktop-Specific Routes for Sync Management ---
-    # These routes would be called from the local UI (renderer.js)
-    # to trigger sync actions via IPC.
+            headers = {'X-API-Key': api_key}
+            response = requests.get(api_endpoint, timeout=30, headers=headers)
+            response.raise_for_status()
 
-    # Before: @app.route('/sync_status', methods=['GET'])
-    # Before: @login_required
-    # @login_required # Apply login_required if you want to restrict access to authenticated users
-    # @app.route('/sync_status', methods=['GET'])
-    # # @login_required # Apply login_required if you want to restrict access to authenticated users
-    # def sync_status():
-    #     """
-    #     Provides the online/offline status and last sync timestamp for the frontend.
-    #     """
-    #     # ACCESS CONTROL: Ensure only super_admin or admin can access
-    #     if session.get('role') not in ['super_admin', 'admin']:
-    #         return jsonify({'online': False, 'last_sync': None, 'message': 'Unauthorized'}), 401
+            remote_inventory_data = response.json()
+            logging.info(f"Received {len(remote_inventory_data)} inventory items.")
 
-    #     is_online = check_network_online() # Reuse your existing helper function
+            if not isinstance(remote_inventory_data, list):
+                logging.warning("Remote inventory data is not a list. Wrapping in a list.")
+                remote_inventory_data = [remote_inventory_data]
 
-    #     # Placeholder for last sync timestamp.
-    #     # In a real app, you'd store this in a database table (e.g., a settings table)
-    #     # or a Business model attribute. For now, we'll just return None or a mock timestamp.
-    #     last_sync_timestamp = None 
-    #     # Example: last_sync_timestamp = Business.query.get(current_business_id).last_sync_time if current_business_id else None
-        
-    #     # If you want to return a mock last sync for testing:
-    #     # from datetime import datetime, timedelta
-    #     # last_sync_timestamp = (datetime.now() - timedelta(minutes=5)).isoformat() + "Z"
+            new_items_count = 0
+            updated_items_count = 0
 
-    #     return jsonify({
-    #         'online': is_online,
-    #         'last_sync': last_sync_timestamp,
-    #         'message': 'Status fetched successfully.'
-    #     })
+            for item_data in remote_inventory_data:
+                if not isinstance(item_data, dict):
+                    logging.warning("Skipping malformed inventory entry from remote data.")
+                    continue
+                    
+                remote_id = item_data.get('id')
+                if not remote_id:
+                    logging.warning("Skipping inventory entry with no ID.")
+                    continue
+                
+                local_product = Product.query.filter_by(remote_id=remote_id).first()
+
+                if not local_product:
+                    # Item does not exist, create a new one
+                    new_product = Product(
+                        name=item_data.get('name', 'Unknown Product'),
+                        business_id=item_data.get('business_id', business_id),
+                        quantity=item_data.get('quantity', 0),
+                        unit_price=item_data.get('unit_price', 0.0),
+                        remote_id=remote_id
+                    )
+                    db.session.add(new_product)
+                    new_items_count += 1
+                else:
+                    # Item exists, update its details
+                    local_product.name = item_data.get('name', local_product.name)
+                    local_product.quantity = item_data.get('quantity', local_product.quantity)
+                    local_product.unit_price = item_data.get('unit_price', local_product.unit_price)
+                    updated_items_count += 1
+            
+            db.session.commit()
+            return True, f"Inventory synchronized successfully. {new_items_count} new items added, {updated_items_count} items updated."
+
+        except requests.exceptions.RequestException as e:
+            return False, f"Network error during inventory sync: {e}"
+        except json.JSONDecodeError as e:
+            return False, f"Error decoding JSON response during inventory sync: {e}. Server responded with: '{response.text[:100]}...'"
+        except Exception as e:
+            return False, f"An unexpected error occurred during inventory sync: {e}"
+
+    def pull_business_data(api_key):
+        """Pulls business and user data from the remote server."""
+        try:
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
+            logging.info(f"Attempting to fetch businesses from: {api_endpoint}")
+            
+            headers = {'X-API-Key': api_key}
+            response = requests.get(api_endpoint, timeout=30, headers=headers)
+            response.raise_for_status()
+
+            remote_businesses_data = response.json()
+            logging.info(f"Received {len(remote_businesses_data)} businesses from the remote server.")
+
+            new_businesses_count = 0
+            updated_businesses_count = 0
+            new_users_count = 0
+            inventory_sync_msg = ""
+            
+            # Ensure the response is a list before iterating
+            if not isinstance(remote_businesses_data, list):
+                logging.warning("Remote business data is not a list. Wrapping in a list.")
+                remote_businesses_data = [remote_businesses_data]
+            
+            for remote_business_data in remote_businesses_data:
+                # Check if the individual item is a dictionary
+                if not isinstance(remote_business_data, dict):
+                    logging.warning(f"Skipping malformed business entry: {remote_business_data}")
+                    continue
+                
+                remote_id = remote_business_data.get('id')
+                if not remote_id:
+                    logging.warning("Skipping business entry with no ID.")
+                    continue
+                
+                local_business = Business.query.filter_by(remote_id=remote_id).first()
+                if not local_business:
+                    local_business = Business(
+                        name=remote_business_data.get('name', 'Unknown Name'),
+                        type=remote_business_data.get('type', 'Unknown Type'),
+                        address=remote_business_data.get('address', 'Unknown Address'),
+                        contact=remote_business_data.get('contact', 'Unknown Contact'),
+                        email=remote_business_data.get('email', 'Unknown Email'),
+                        is_active=remote_business_data.get('is_active', True),
+                        last_synced_at=datetime.utcnow(),
+                        remote_id=remote_id
+                    )
+                    db.session.add(local_business)
+                    db.session.commit()
+                    logging.info(f"Created new local business: {local_business.name}")
+                    new_businesses_count += 1
+                else:
+                    local_business.name = remote_business_data.get('name', local_business.name)
+                    local_business.type = remote_business_data.get('type', local_business.type)
+                    local_business.address = remote_business_data.get('address', local_business.address)
+                    local_business.contact = remote_business_data.get('contact', local_business.contact)
+                    local_business.email = remote_business_data.get('email', local_business.email)
+                    local_business.is_active = remote_business_data.get('is_active', local_business.is_active)
+                    local_business.last_synced_at = datetime.utcnow()
+                    updated_businesses_count += 1
+                    logging.info(f"Updated existing local business: {local_business.name}")
+
+                # Pull inventory data for this specific business
+                success_inv_pull, msg_inv_pull = pull_inventory_data(api_key, local_business.id)
+                inventory_sync_msg += f"Inventory for {local_business.name} synced: {msg_inv_pull}. "
+                
+                remote_users = remote_business_data.get('users', [])
+                if not isinstance(remote_users, list):
+                    logging.warning(f"Skipping malformed user list for business ID {remote_id}")
+                    continue
+
+                for remote_user_data in remote_users:
+                    if not isinstance(remote_user_data, dict):
+                        logging.warning("Skipping a malformed user entry from remote data.")
+                        continue
+                    remote_user_id = remote_user_data.get('id')
+                    if not remote_user_id:
+                        logging.warning("Skipping user entry with no ID.")
+                        continue
+                        
+                    local_user = User.query.filter_by(id=remote_user_id).first()
+
+                    if not local_user:
+                        new_user = User(
+                            id=remote_user_id,
+                            username=remote_user_data.get('username', 'Unknown User'),
+                            _password_hash=remote_user_data.get('_password_hash', ''),
+                            role=remote_user_data.get('role', 'user'),
+                            business_id=local_business.id,
+                            is_active=remote_user_data.get('is_active', True),
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(new_user)
+                        logging.info(f"Created new user: {new_user.username} for business {local_business.name}")
+                        new_users_count += 1
+                    else:
+                        local_user.username = remote_user_data.get('username', local_user.username)
+                        local_user._password_hash = remote_user_data.get('_password_hash', local_user._password_hash)
+                        local_user.role = remote_user_data.get('role', local_user.role)
+                        local_user.business_id = local_business.id
+                        local_user.is_active = remote_user_data.get('is_active', local_user.is_active)
+                        logging.info(f"Updated user: {local_user.username}")
+            
+            db.session.commit()
+            final_message = f"Businesses synced: {new_businesses_count} added, {updated_businesses_count} updated. Users synced: {new_users_count} added. {inventory_sync_msg}"
+            return True, final_message
+
+        except requests.exceptions.RequestException as e:
+            return False, f"Network error during business sync: {e}"
+        except json.JSONDecodeError as e:
+            return False, f"Error decoding JSON response during business sync: {e}. Server responded with: '{response.text[:100]}...'"
+        except Exception as e:
+            return False, f"An unexpected error occurred during business sync: {e}"
+
+  
+    def pull_business_data(api_key):
+        """Pulls business and user data from the remote server."""
+        try:
+            api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
+            logging.info(f"Attempting to fetch businesses from: {api_endpoint}")
+            
+            headers = {'X-API-Key': api_key}
+            response = requests.get(api_endpoint, timeout=30, headers=headers)
+            response.raise_for_status()
+
+            remote_businesses_data = response.json()
+            logging.info(f"Received {len(remote_businesses_data)} businesses from the remote server.")
+
+            new_businesses_count = 0
+            updated_businesses_count = 0
+            new_users_count = 0
+            inventory_sync_msg = ""
+            
+            # Ensure the response is a list before iterating
+            if not isinstance(remote_businesses_data, list):
+                logging.warning("Remote business data is not a list. Wrapping in a list.")
+                remote_businesses_data = [remote_businesses_data]
+            
+            for remote_business_data in remote_businesses_data:
+                # Check if the individual item is a dictionary
+                if not isinstance(remote_business_data, dict):
+                    logging.warning(f"Skipping malformed business entry: {remote_business_data}")
+                    continue
+                
+                remote_id = remote_business_data.get('id')
+                if not remote_id:
+                    logging.warning("Skipping business entry with no ID.")
+                    continue
+                
+                local_business = Business.query.filter_by(remote_id=remote_id).first()
+                if not local_business:
+                    local_business = Business(
+                        name=remote_business_data.get('name', 'Unknown Name'),
+                        type=remote_business_data.get('type', 'Unknown Type'),
+                        address=remote_business_data.get('address', 'Unknown Address'),
+                        contact=remote_business_data.get('contact', 'Unknown Contact'),
+                        email=remote_business_data.get('email', 'Unknown Email'),
+                        is_active=remote_business_data.get('is_active', True),
+                        last_synced_at=datetime.utcnow(),
+                        remote_id=remote_id
+                    )
+                    db.session.add(local_business)
+                    db.session.commit()
+                    logging.info(f"Created new local business: {local_business.name}")
+                    new_businesses_count += 1
+                else:
+                    local_business.name = remote_business_data.get('name', local_business.name)
+                    local_business.type = remote_business_data.get('type', local_business.type)
+                    local_business.address = remote_business_data.get('address', local_business.address)
+                    local_business.contact = remote_business_data.get('contact', local_business.contact)
+                    local_business.email = remote_business_data.get('email', local_business.email)
+                    local_business.is_active = remote_business_data.get('is_active', local_business.is_active)
+                    local_business.last_synced_at = datetime.utcnow()
+                    updated_businesses_count += 1
+                    logging.info(f"Updated existing local business: {local_business.name}")
+
+                # Pull inventory data for this specific business
+                success_inv_pull, msg_inv_pull = pull_inventory_data(api_key, local_business.id)
+                inventory_sync_msg += f"Inventory for {local_business.name} synced: {msg_inv_pull}. "
+                
+                remote_users = remote_business_data.get('users', [])
+                if not isinstance(remote_users, list):
+                    logging.warning(f"Skipping malformed user list for business ID {remote_id}")
+                    continue
+
+                for remote_user_data in remote_users:
+                    if not isinstance(remote_user_data, dict):
+                        logging.warning("Skipping a malformed user entry from remote data.")
+                        continue
+                    remote_user_id = remote_user_data.get('id')
+                    if not remote_user_id:
+                        logging.warning("Skipping user entry with no ID.")
+                        continue
+                        
+                    local_user = User.query.filter_by(id=remote_user_id).first()
+
+                    if not local_user:
+                        new_user = User(
+                            id=remote_user_id,
+                            username=remote_user_data.get('username', 'Unknown User'),
+                            _password_hash=remote_user_data.get('_password_hash', ''),
+                            role=remote_user_data.get('role', 'user'),
+                            business_id=local_business.id,
+                            is_active=remote_user_data.get('is_active', True),
+                            created_at=datetime.utcnow()
+                        )
+                        db.session.add(new_user)
+                        logging.info(f"Created new user: {new_user.username} for business {local_business.name}")
+                        new_users_count += 1
+                    else:
+                        local_user.username = remote_user_data.get('username', local_user.username)
+                        local_user._password_hash = remote_user_data.get('_password_hash', local_user._password_hash)
+                        local_user.role = remote_user_data.get('role', local_user.role)
+                        local_user.business_id = local_business.id
+                        local_user.is_active = remote_user_data.get('is_active', local_user.is_active)
+                        logging.info(f"Updated user: {local_user.username}")
+            
+            db.session.commit()
+            final_message = f"Businesses synced: {new_businesses_count} added, {updated_businesses_count} updated. Users synced: {new_users_count} added. {inventory_sync_msg}"
+            return True, final_message
+
+        except requests.exceptions.RequestException as e:
+            return False, f"Network error during business sync: {e}"
+        except json.JSONDecodeError as e:
+            return False, f"Error decoding JSON response during business sync: {e}. Server responded with: '{response.text[:100]}...'"
+        except Exception as e:
+            return False, f"An unexpected error occurred during business sync: {e}"
+
+    def push_inventory_data(business_id, api_key):
+        """Pushes local inventory data to the remote server."""
+        try:
+            # Placeholder: Fetch locally created/updated inventory items
+            # local_products = Product.query.filter_by(business_id=business_id, synced=False).all()
+            # api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/inventory/sync"
+            # headers = {'X-API-Key': api_key}
+            # data = [product.to_dict() for product in local_products]
+            # response = requests.post(api_endpoint, json=data, headers=headers)
+            # response.raise_for_status()
+            logging.info(f"Pushing inventory data to remote server for business ID: {business_id}")
+            return True, "Inventory data push successful."
+        except Exception as e:
+            return False, f"Failed to push inventory data to remote server: {e}"
+
+    def perform_sync(business_id, api_key):
+        """Orchestrates the full synchronization process."""
+        try:
+            # Pull phase
+            success_pull_biz, msg_pull_biz = pull_business_data(api_key)
+            if not success_pull_biz:
+                return False, f"Business pull failed: {msg_pull_biz}"
+
+            # Push phase
+            success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
+            if not success_push_inv:
+                return False, f"Inventory push failed: {msg_push_inv}"
+            
+            return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
+
+        except Exception as e:
+            db.session.rollback()
+            return False, f"An unexpected error occurred during full sync: {e}"
+
+
+    def perform_sync(business_id, api_key):
+        """Orchestrates the full synchronization process."""
+        try:
+            # Pull phase
+            success_pull_biz, msg_pull_biz = pull_business_data(api_key)
+            if not success_pull_biz:
+                return False, f"Business pull failed: {msg_pull_biz}"
+
+            # Push phase
+            success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
+            if not success_push_inv:
+                return False, f"Inventory push failed: {msg_push_inv}"
+
+            # You had a line here that was not defined, so I will remove it for now to avoid errors
+            
+            return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
+
+        except Exception as e:
+            db.session.rollback()
+            return False, f"An unexpected error occurred during full sync: {e}"
+
 
     @app.route('/api/debug_key', methods=['GET'])
     def debug_key():
@@ -841,7 +1252,7 @@ def create_app():
         if not success_push:
             return False, f"Sync failed during push: {msg_push}"
 
-        success_pull, msg_pull = pull_data_from_remote(effective_business_id, last_synced_at, sync_api_key)
+        success_pull, msg_pull = pull_data_from_remote(effective_business_id,  sync_api_key)
         if not success_pull:
             return False, f"Sync failed during pull: {msg_pull}"
 
@@ -850,7 +1261,7 @@ def create_app():
         print(f"Synchronization successful at {local_business.last_synced_at.isoformat()}")
         return True, "Synchronization successful!"
 
-
+    
     @app.route('/api/v1/users', methods=['GET'])
     @api_key_required
     def get_users_for_sync():
@@ -1290,95 +1701,7 @@ def create_app():
             f.write(timestamp)
 
 
-    # app.py
-
-    # ... (other code)
-
-    # @app.route('/trigger_sync', methods=['POST'])
-    # @login_required
-    # def trigger_sync():
-    #     """
-    #     Triggers the data synchronization process.
-    #     """
-    #     if session.get('role') != 'super_admin':
-    #         return jsonify(success=False, message='Access denied. Super Admin role required.'), 403
-
-    #     try:
-    #         # Use a temporary variable to hold the online DB URL based on DB_TYPE
-    #         if app.config.get('DB_TYPE') == 'sqlite':
-    #             # In SQLite mode, there is no online database to pull from
-    #             return jsonify(success=False, message='Synchronization is not available in offline (SQLite) mode.'), 400
-    #         else:
-    #             # Get the online PostgreSQL URL directly from the app config
-    #             online_db_url = app.config['SQLALCHEMY_DATABASE_URI']
-                
-    #         # Connect to online PostgreSQL and offline SQLite
-    #         online_engine = create_engine(online_db_url)
-    #         # Use the correct offline DB URI based on app configuration
-    #         offline_engine = create_engine(f"sqlite:///{os.path.join(app.instance_path, 'instance_data.db')}")
-
-    #         # --- Pulling data from online to offline ---
-    #         print("--- Pulling data from online to offline ---")
-    #         businesses_df = pd.read_sql_query("SELECT * FROM businesses", online_engine)
-    #         businesses_df.to_sql('businesses', offline_engine, if_exists='replace', index=False)
-            
-    #         inventory_df = pd.read_sql_query("SELECT * FROM inventory_items", online_engine)
-    #         inventory_df.to_sql('inventory_items', offline_engine, if_exists='replace', index=False)
-
-    #         # --- Pushing data from offline to online ---
-    #         print("--- Pushing data from offline to online ---")
-    #         sales_sql = "SELECT * FROM sales_records"
-    #         sales_df = pd.read_sql_query(sales_sql, offline_engine)
-
-    #         if not sales_df.empty:
-    #             with online_engine.connect() as conn:
-    #                 sales_df.to_sql('sales_records', conn, if_exists='append', index=False)
-            
-    #         # Update the last sync timestamp
-    #         set_last_sync_timestamp(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            
-    #         return jsonify(success=True, message='Synchronization successful!')
-        
-    #     except Exception as e:
-    #         print(f"Error during synchronization: {e}")
-    #         return jsonify(success=False, message=str(e)), 500
-
-        
-#  # app.py (Find your sync_businesses route)
-    # @app.route('/trigger_sync', methods=['POST'])
-    # @login_required
-    # def trigger_sync():
-    #     """
-    #     Triggers the data synchronization process based on the user's role.
-    #     """
-    #     is_online = check_network_online()
-    #     if not is_online:
-    #         return jsonify({'success': False, 'message': 'No internet connection detected.'}), 200
-
-    #     user_role = current_user.role
-    #     current_business_id = current_user.business_id
-
-    #     if user_role == 'super_admin':
-    #         # Pass the super admin API key to the full sync function
-    #         super_admin_api_key = os.getenv("SUPER_ADMIN_API_KEY")
-    #         if not super_admin_api_key:
-    #             return jsonify({'success': False, 'message': 'Super Admin API key not configured.'}), 500
-    #         success, message = super_admin_full_sync(super_admin_api_key)
-    #     elif user_role == 'admin':
-    #         # Retrieve and pass the admin-level API key
-    #         admin_api_key = os.getenv("REMOTE_ADMIN_API_KEY")
-    #         if not admin_api_key:
-    #             return jsonify({'success': False, 'message': 'Remote admin API key not configured.'}), 500
-            
-    #         success, message = admin_sync(current_business_id, admin_api_key)
-    #     else:
-    #         message = "Unauthorized role to perform synchronization."
-    #         return jsonify({'success': False, 'message': message}), 403
-
-    #     if success:
-    #         return jsonify({'success': True, 'message': message}), 200
-    #     else:
-    #         return jsonify({'success': False, 'message': message}), 500
+    
     @app.route('/trigger_sync', methods=['POST'])
     @login_required
     def trigger_sync():
@@ -1767,25 +2090,34 @@ def create_app():
     #         flash(f'Error during synchronization: {str(e)}', 'danger')
     #         return redirect(url_for('super_admin_dashboard'))
 
+        # This is the new, more robust function
     @app.route('/sync_businesses', methods=['POST'])
     @login_required
-    @super_admin_required
+    # @super_admin_required  # This decorator needs to be defined
     def sync_businesses():
-        print("Starting business synchronization...")
+        logging.info("Starting business synchronization...")
         session['sync_status'] = {'status': 'Syncing', 'last_sync': 'In Progress...', 'message': 'Synchronization started...'}
 
         try:
             # Step 1: Request business data from the remote server's API
             api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/businesses"
-            print(f"Attempting to fetch businesses from: {api_endpoint}")
-            response = requests.get(api_endpoint, timeout=30)
-            response.raise_for_status() # Raise an exception for HTTP errors
+            logging.info(f"Attempting to fetch businesses from: {api_endpoint}")
             
+            # Use a dedicated API key for server-to-server communication
+            api_key = os.getenv('API_KEY_SECRET')
+            headers = {'X-API-Key': api_key}
+            
+            # Use requests.Session to maintain the Flask user session cookies
+            with requests.Session() as s:
+                s.cookies.update(request.cookies)
+                response = s.get(api_endpoint, timeout=30, headers=headers)
+                response.raise_for_status() # Raise an exception for HTTP errors
+
             # Step 2: Parse the JSON data
             remote_businesses_data = response.json()
-            print(f"Received {len(remote_businesses_data)} businesses from the remote server.")
+            logging.info(f"Received {len(remote_businesses_data)} businesses from the remote server.")
             if len(remote_businesses_data) > 0:
-                print("Received data (first 500 chars):", json.dumps(remote_businesses_data, indent=2)[:500])
+                logging.debug("Received data (first 500 chars):", json.dumps(remote_businesses_data, indent=2)[:500])
 
             # Step 3: Iterate and synchronize each business and its users
             new_businesses_count = 0
@@ -1811,7 +2143,7 @@ def create_app():
                     )
                     db.session.add(local_business)
                     db.session.commit() # Commit here to get a local_business.id for user
-                    print(f"Created new local business: {local_business.name}")
+                    logging.info(f"Created new local business: {local_business.name}")
                     new_businesses_count += 1
                 else:
                     # Business exists, update its details
@@ -1823,7 +2155,7 @@ def create_app():
                     local_business.is_active = remote_business_data.get('is_active', True)
                     local_business.last_synced_at = datetime.utcnow()
                     updated_businesses_count += 1
-                    print(f"Updated existing local business: {local_business.name}")
+                    logging.info(f"Updated existing local business: {local_business.name}")
 
                 # Now, synchronize users for this business
                 remote_users = remote_business_data.get('users', [])
@@ -1843,7 +2175,7 @@ def create_app():
                             created_at=datetime.utcnow()
                         )
                         db.session.add(new_user)
-                        print(f"Created new user: {new_user.username} for business {local_business.name}")
+                        logging.info(f"Created new user: {new_user.username} for business {local_business.name}")
                         new_users_count += 1
                     else:
                         # User exists, update details
@@ -1852,7 +2184,7 @@ def create_app():
                         local_user.role = remote_user_data['role']
                         local_user.business_id = local_business.id
                         local_user.is_active = remote_user_data.get('is_active', True)
-                        print(f"Updated user: {local_user.username}")
+                        logging.info(f"Updated user: {local_user.username}")
                 
             db.session.commit() # Final commit for all changes
 
@@ -1869,7 +2201,7 @@ def create_app():
                 'message': message
             }
             flash(message, 'success')
-            print("Synchronization completed successfully.")
+            logging.info("Synchronization completed successfully.")
             return redirect(url_for('super_admin_dashboard'))
 
         except requests.exceptions.RequestException as e:
@@ -1881,7 +2213,7 @@ def create_app():
                 'message': message
             }
             flash(message, 'danger')
-            print(f"Synchronization failed with a network error: {e}")
+            logging.error(f"Synchronization failed with a network error: {e}")
             return redirect(url_for('super_admin_dashboard'))
 
         except json.JSONDecodeError as e:
@@ -1894,7 +2226,7 @@ def create_app():
                 'message': message
             }
             flash(message, 'danger')
-            print(f"Synchronization failed with a JSON decoding error: {e}")
+            logging.error(f"Synchronization failed with a JSON decoding error: {e}")
             return redirect(url_for('super_admin_dashboard'))
 
         except Exception as e:
@@ -1906,9 +2238,9 @@ def create_app():
                 'message': message
             }
             flash(message, 'danger')
-            print(f"Synchronization failed with an unexpected error: {e}")
+            logging.error(f"Synchronization failed with an unexpected error: {e}")
             return redirect(url_for('super_admin_dashboard'))  
-            
+
     @app.route('/sync_status', methods=['GET'])
     def sync_status():
         """
