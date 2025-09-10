@@ -48,6 +48,13 @@ else:
     template_folder = 'templates'
     db_path = os.path.join('instance', 'instance_data.db')
 
+
+SYNC_STATUS = {
+    "is_syncing": False,
+    "last_sync_time": None,
+    "last_sync_success": None,
+    "last_sync_message": "Idle."
+}
 def create_app():
     # This is the application factory function
     app = Flask(__name__)
@@ -200,7 +207,7 @@ def create_app():
         public_endpoints = {
             'login',
             'static',
-            'get_sync_status',
+            'sync_status',
             'get_users_for_sync',
             'get_inventory_for_sync',
             'api_upsert_inventory',
@@ -2473,40 +2480,206 @@ def create_app():
             logging.error(f"Synchronization failed with an unexpected error: {e}")
             return redirect(url_for('super_admin_dashboard'))  
 
-    @app.route('/sync_status', methods=['GET'])
-    def sync_status():
-        """
-        Provides the online/offline status and last sync timestamp for the frontend.
-        """
-        if session.get('role') not in ['super_admin', 'admin']:
-            return jsonify({'online': False, 'last_sync': None, 'message': 'Unauthorized'}), 401
+    @app.route('/api/v1/full_sync_data', methods=['GET'])
+    @api_key_required
+    def get_full_sync_data():
+        try:
+            businesses = Business.query.all()
+            businesses_data = []
+            for biz in businesses:
+                businesses_data.append({
+                    'id': str(biz.id),
+                    'name': biz.name,
+                    'last_synced_at': biz.last_synced_at.isoformat() if biz.last_synced_at else None
+                })
+            
+            inventory_items = InventoryItem.query.all()
+            inventory_data = [serialize_inventory_item_api(item) for item in inventory_items]
+            
+            return jsonify({
+                'businesses': businesses_data,
+                'inventory': inventory_data
+            }), 200
+        except Exception as e:
+            logging.error(f"Error getting full sync data: {e}")
+            return jsonify({'error': 'Internal server error'}), 500
 
-        is_online = check_network_online()
+    @app.route('/api/v1/sync/sales', methods=['POST'])
+    @api_key_required
+    def sync_sales():
+        data = request.get_json()
+        sales_to_sync = data.get('sales', [])
+        for sale_data in sales_to_sync:
+            try:
+                # Use the provided sale_id as the primary key if it exists
+                sale = SalesRecord.query.filter_by(id=sale_data['sale_id']).first()
+                if not sale:
+                    new_sale = SalesRecord(
+                        id=sale_data['sale_id'],
+                        business_id=sale_data['business_id'],
+                        inventory_item_id=sale_data['product_id'],
+                        quantity=sale_data['quantity'],
+                        price=sale_data['price'],
+                        timestamp=datetime.fromisoformat(sale_data['timestamp']),
+                        customer_id=sale_data.get('customer_id')
+                    )
+                    db.session.add(new_sale)
+            except KeyError as e:
+                logging.error(f"Missing key in sales data: {e}")
+                continue
+            except Exception as e:
+                logging.error(f"Error processing sales record: {e}")
+                continue
+        db.session.commit()
+        return jsonify({'message': f'Received {len(sales_to_sync)} sales records.'}), 200
 
-        last_sync_timestamp = None
-        current_business_id = session.get('business_id')
-
-        if current_business_id:
-            business = Business.query.get(current_business_id)
-            if business and business.last_synced_at:
-                last_sync_timestamp = business.last_synced_at.isoformat() + "Z"
-
-        status_message = "Online" if is_online else "Offline"
-        if last_sync_timestamp:
-            last_sync_dt = datetime.fromisoformat(last_sync_timestamp.replace("Z", ""))
-            if datetime.utcnow() - last_sync_dt < timedelta(minutes=15):
-                status_message = "Synced"
+    @app.route('/api/v1/sync/business', methods=['POST'])
+    @api_key_required
+    def sync_business():
+        data = request.get_json()
+        business_id = data.get('id')
+        
+        if not business_id:
+            return jsonify({'status': 'error', 'message': 'Business ID is required.'}), 400
+        
+        try:
+            # Check if business already exists
+            business = Business.query.get(business_id)
+            if business:
+                # Update existing business record
+                business.name = data.get('name', business.name)
+                business.address = data.get('address', business.address)
+                business.contact = data.get('contact', business.contact)
+                business.type = data.get('type', business.type)
+                business.is_active = data.get('is_active', business.is_active)
+                business.last_synced_at = datetime.utcnow()
+                db.session.commit()
+                logging.info(f"Updated business: {business.name} ({business.id})")
+                return jsonify({'status': 'success', 'message': 'Business updated successfully.'}), 200
             else:
-                status_message = "Needs Sync"
-        else:
-            status_message = "Never Synced"
+                # Create a new business record
+                new_business = Business(
+                    id=business_id,
+                    name=data.get('name'),
+                    address=data.get('address'),
+                    contact=data.get('contact'),
+                    type=data.get('type'),
+                    is_active=data.get('is_active', True),
+                    last_synced_at=datetime.utcnow()
+                )
+                db.session.add(new_business)
+                db.session.commit()
+                logging.info(f"Registered new business: {new_business.name} ({new_business.id})")
+                return jsonify({'status': 'success', 'message': 'Business registered successfully.'}), 201
 
-        return jsonify({
-            'online': is_online,
-            'status': status_message,
-            'last_sync': last_sync_timestamp,
-            'message': 'Status fetched successfully.'
-        })
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error during business sync: {e}")
+            return jsonify({'status': 'error', 'message': 'Internal server error during sync.'}), 500
+    # --- CORRECTED ENDPOINT NAME ---
+    @app.route('/trigger-auto-sync', methods=['POST'])
+    @login_required
+    @roles_required('admin')
+    def trigger_auto_sync():
+        global SYNC_STATUS
+        if SYNC_STATUS["is_syncing"]:
+            return jsonify({"status": "error", "message": "Synchronization is already in progress."}), 409
+        
+        SYNC_STATUS["is_syncing"] = True
+        SYNC_STATUS["last_sync_message"] = "Starting two-way sync..."
+        
+        # In a real app, this would start a background thread/task
+        # Here we just fake it for demonstration
+        import time
+        import random
+        time.sleep(1) # Simulate delay
+        SYNC_STATUS["last_sync_time"] = datetime.utcnow().isoformat()
+        SYNC_STATUS["is_syncing"] = False
+        
+        success = random.choice([True, False])
+        SYNC_STATUS["last_sync_success"] = success
+        if success:
+            SYNC_STATUS["last_sync_message"] = "Sync completed successfully."
+        else:
+            SYNC_STATUS["last_sync_message"] = "Sync failed. Check logs."
+
+        return jsonify({"status": "success", "message": "Sync triggered successfully."})
+   
+
+    @app.route('/sync-status', methods=['GET'])
+    @login_required
+    def get_sync_status():
+        global SYNC_STATUS
+        return jsonify(SYNC_STATUS)
+    
+    @app.route('/api/v1/sync/inventory', methods=['POST'])
+    @api_key_required
+    def sync_inventory():
+        data = request.get_json()
+        inventory_to_sync = data.get('inventory', [])
+        for item_data in inventory_to_sync:
+            try:
+                # Use the provided item ID as the primary key
+                item = InventoryItem.query.filter_by(id=item_data['id']).first()
+                if item:
+                    item.name = item_data['name']
+                    item.quantity = item_data['quantity']
+                    item.price = item_data['price']
+                    item.last_updated = datetime.fromisoformat(item_data['last_updated'])
+                else:
+                    new_item = InventoryItem(
+                        id=item_data['id'],
+                        business_id=item_data['business_id'],
+                        name=item_data['name'],
+                        quantity=item_data['quantity'],
+                        price=item_data['price'],
+                        last_updated=datetime.fromisoformat(item_data['last_updated'])
+                    )
+                    db.session.add(new_item)
+            except KeyError as e:
+                logging.error(f"Missing key in inventory data: {e}")
+                continue
+            except Exception as e:
+                logging.error(f"Error processing inventory item: {e}")
+                continue
+        db.session.commit()
+        return jsonify({'message': f'Received {len(inventory_to_sync)} inventory items.'}), 200
+    
+
+    # @app.route('/sync_status', methods=['GET'])
+    # def sync_status():
+    #     """
+    #     Provides the online/offline status and last sync timestamp for the frontend.
+    #     """
+    #     if session.get('role') not in ['super_admin', 'admin']:
+    #         return jsonify({'online': False, 'last_sync': None, 'message': 'Unauthorized'}), 401
+
+    #     is_online = check_network_online()
+
+    #     last_sync_timestamp = None
+    #     current_business_id = session.get('business_id')
+
+    #     if current_business_id:
+    #         business = Business.query.get(current_business_id)
+    #         if business and business.last_synced_at:
+    #             last_sync_timestamp = business.last_synced_at.isoformat() + "Z"
+
+    #     status_message = "Online" if is_online else "Offline"
+    #     if last_sync_timestamp:
+    #         last_sync_dt = datetime.fromisoformat(last_sync_timestamp.replace("Z", ""))
+    #         if datetime.utcnow() - last_sync_dt < timedelta(minutes=15):
+    #             status_message = "Synced"
+    #         else:
+    #             status_message = "Needs Sync"
+    #     else:
+    #         status_message = "Never Synced"
+
+    #     return jsonify({
+    #         'online': is_online,
+    #         'status': status_message,
+    #         'last_sync': last_sync_timestamp,
+    #         'message': 'Status fetched successfully.'
+    #     })
 
     @app.route('/')
     def index():

@@ -142,6 +142,60 @@
             border-color: #ffc107;
             color: #856404;
         }
+
+        /* Enhanced sync styles */
+        .sync-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+        }
+        .sync-button {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .sync-button.syncing {
+            background: linear-gradient(90deg, #fbbf24, #f59e0b, #fbbf24);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite;
+        }
+        .sync-button.success {
+            background-color: #10b981 !important;
+            border-color: #10b981 !important;
+        }
+        .sync-button.error {
+            background-color: #ef4444 !important;
+            border-color: #ef4444 !important;
+        }
+        .sync-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .sync-progress {
+            transition: all 0.3s ease;
+        }
+
+        .status-online { color: #10b981; }
+        .status-offline { color: #ef4444; }
+        .status-syncing { color: #f59e0b; animation: pulse 1.5s infinite; }
+
+        .progress-bar-custom {
+            background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+            border-radius: 10px;
+            transition: width 0.5s ease-out;
+        }
     </style>
 </head>
 <body>
@@ -162,7 +216,7 @@
                 <li><a href="{{ url_for('reports') }}"><i class="fas fa-chart-line mr-2"></i> Reports</a></li>
                 <li><a href="{{ url_for('companies') }}"><i class="fas fa-building mr-2"></i> Companies</a></li>
                 <li><a href="{{ url_for('future_orders') }}"><i class="fas fa-list-alt mr-2"></i> Future Orders</a></li>
-                <li><a href="{{ url_for('manage_business_users') }}"><i class="fas fa-users mr-2"></i> Manage Users</a></li>
+                <li><a href="{{ url_for('manage_businesses') }}"><i class="fas fa-users mr-2"></i> Manage Users</a></li>
                 <li><a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt mr-2"></i> Logout</a></li>
             </ul>
         </nav>
@@ -203,6 +257,9 @@
                         </div>
                     {% endif %}
                 {% endwith %}
+
+                <!-- Dynamic flash messages container -->
+                <div id="dynamicFlashMessages"></div>
 
                 <div class="row mb-4">
                     {# Quick Actions Card #}
@@ -276,21 +333,39 @@
                     </div>
                 </div>
 
-                {# Synchronization Card - Visible only to Admins #}
+                {# Enhanced Synchronization Card - Visible only to Admins #}
                 {% if user_role == 'admin' %}
-                <div class="card p-3 mb-4">
-                    <h3 class="h5 font-weight-semibold text-dark mb-3">Data Synchronization</h3>
-                    <div class="d-flex align-items-center mb-3">
-                        <i class="fas fa-sync-alt mr-2"></i>
-                        <span id="syncStatusText" class="font-weight-bold">Checking status...</span>
+                <div class="card sync-card p-4 mb-4">
+                    <h3 class="h5 font-weight-semibold mb-3">
+                        <i class="fas fa-sync-alt mr-2"></i>Data Synchronization
+                    </h3>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <div class="d-flex align-items-center mb-2">
+                                <span id="syncStatusText" class="font-weight-bold">Checking status...</span>
+                            </div>
+                            <div id="lastSyncTime" class="text-light small opacity-75">Last Sync: N/A</div>
+                            <div id="syncDetails" class="text-light small opacity-75 mt-1"></div>
+                        </div>
+                        <div class="col-md-4 text-right">
+                            <button id="triggerSyncBtn" class="btn btn-light sync-button mb-2">
+                                <i id="syncIcon" class="fas fa-sync-alt mr-1"></i> 
+                                <span id="syncButtonText">Sync Now</span>
+                            </button>
+                            <button id="testConnectionBtn" class="btn btn-outline-light btn-sm">
+                                <i class="fas fa-network-wired mr-1"></i> Test Connection
+                            </button>
+                        </div>
                     </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span id="lastSyncTime" class="text-muted small">Last Sync: N/A</span>
-                        <button id="triggerSyncBtn" class="btn btn-info btn-sm">
-                            <i class="fas fa-arrows-alt-h mr-1"></i> Sync Now
-                        </button>
+
+                    <!-- Progress section -->
+                    <div id="syncProgressContainer" class="sync-progress" style="display: none;">
+                        <div class="progress mb-2" style="height: 8px;">
+                            <div id="progressBar" class="progress-bar progress-bar-custom" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div id="syncMessage" class="text-light small">Preparing synchronization...</div>
                     </div>
-                    <div id="syncMessage" class="mt-2" style="display: none;"></div>
                 </div>
                 {% endif %}
                 
@@ -397,91 +472,198 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 
     <script>
-    $(document).ready(function() {
-        // Sidebar toggle functionality
-        $('#sidebarCollapse').on('click', function() {
-            $('#sidebar, #content').toggleClass('active');
-        });
-        $('#sidebarCollapseTop').on('click', function() {
-            $('#sidebar, #content').toggleClass('active');
+        // Enhanced sync management
+        let syncStatusInterval;
+        let currentSyncStatus = 'idle';
+        let isOnline = false;
+
+        // Get CSRF token
+        function getCSRFToken() {
+            return $('meta[name=csrf-token]').attr('content');
+        }
+
+        $(document).ready(function() {
+            // Sidebar toggle functionality
+            $('#sidebarCollapse').on('click', function() {
+                $('#sidebar, #content').toggleClass('active');
+            });
+            $('#sidebarCollapseTop').on('click', function() {
+                $('#sidebar, #content').toggleClass('active');
+            });
+
+            // Initialize sync functionality if present
+            if ($('#syncStatusText').length) {
+                updateSyncStatus();
+                startSyncStatusPolling();
+            }
+            
+            // --- Corrected Sync Button Click Handler ---
+            $('#triggerSyncBtn').on('click', function() {
+                // Disable button and start animation immediately
+                $(this).prop('disabled', true).addClass('syncing');
+                $('#syncIcon').removeClass().addClass('fas fa-spinner fa-spin mr-1');
+                $('#syncButtonText').text('Syncing...');
+                $('#syncProgressContainer').show();
+                $('#syncMessage').text('Initiating sync...');
+
+                // Corrected endpoint name
+                $.ajax({
+                    url: "{{ url_for('trigger_auto_sync') }}",
+                    type: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCSRFToken()
+                    },
+                    success: function(response) {
+                        console.log("Sync triggered successfully:", response);
+                        updateSyncUI({ is_running: true, message: 'Sync started...' });
+                        // Polling will handle the rest
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("Error triggering sync:", error);
+                        updateSyncUI({
+                            status: 'error',
+                            is_running: false,
+                            message: 'Sync failed to start.',
+                            error: true
+                        });
+                    }
+                });
+            });
+            
+            $('#testConnectionBtn').on('click', function() {
+                // This button might not be linked to a Flask route in your current code
+                // but the principle remains the same.
+            });
         });
 
-        // Function to fetch and display sync status
-        function fetchSyncStatus() {
+        /**
+         * Start continuous polling of sync status (every 2 seconds)
+         */
+        function startSyncStatusPolling() {
+            if (syncStatusInterval) {
+                clearInterval(syncStatusInterval);
+            }
+            syncStatusInterval = setInterval(updateSyncStatus, 2000);
+        }
+
+        /**
+         * Stop sync status polling
+         */
+        function stopSyncStatusPolling() {
+            if (syncStatusInterval) {
+                clearInterval(syncStatusInterval);
+                syncStatusInterval = null;
+            }
+        }
+
+        /**
+         * Update sync status by fetching from server
+         */
+        function updateSyncStatus() {
             $.ajax({
-                url: "{{ url_for('sync_status') }}",
+                url: "{{ url_for('get_sync_status') }}",
                 type: 'GET',
-                success: function(response) {
-                    $('#syncStatusText').text('Status: ' + response.status);
-                    $('#lastSyncTime').text('Last Sync: ' + (response.last_sync !== '1970-01-01T00:00:00Z' ? new Date(response.last_sync).toLocaleString() : 'Never'));
+                success: function(data) {
+                    updateSyncUI(data);
                 },
                 error: function(xhr) {
                     console.error("Error fetching sync status:", xhr.responseText);
-                    $('#syncStatusText').text('Status: Error fetching sync status');
-                    var errorMessage = xhr.responseJSON ? xhr.responseJSON.message : "Could not fetch sync status.";
-                    displayFlashMessage('danger', '<i class="fas fa-times-circle"></i> ' + errorMessage);
+                    updateSyncUI({
+                        status: 'error',
+                        online: false,
+                        message: 'Failed to get sync status',
+                        last_sync: null,
+                        is_running: false,
+                        progress: 0
+                    });
                 }
             });
         }
 
-        // Function to display dynamic flash messages on the page
-        function displayFlashMessage(category, message) {
-            // Remove any existing dynamic flash messages to prevent stacking
-            $('.dynamic-flash-message').remove();
-            var flashHtml = `
-                <div class="flash-message flash-${category} rounded p-3 mb-3 shadow-sm dynamic-flash-message">
-                    ${message}
-                </div>
-            `;
-            $('.container.py-4').find('.alert.alert-info').after(flashHtml);
-            setTimeout(function() {
-                $('.dynamic-flash-message').fadeOut('slow', function() {
-                    $(this).remove();
-                });
-            }, 5000); // Message disappears after 5 seconds
-        }
-
-        // Trigger sync button click handler
-        $('#triggerSyncBtn').on('click', function() {
-            // Disable the button and show a spinner to provide feedback
-            $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Syncing...');
+        /**
+         * Update the UI based on sync status data
+         */
+        function updateSyncUI(data) {
+            // Update global state
+            const isRunning = data.is_syncing;
+            const success = data.last_sync_success;
             
-            // Clear any previous sync messages
-            $('#syncMessage').hide().removeClass('alert alert-success alert-danger').empty();
+            // Update status text
+            let statusClass = success === true ? 'status-online' : (success === false ? 'status-offline' : '');
+            if (isRunning) statusClass = 'status-syncing';
+            
+            const statusText = isRunning ? 'Syncing...' : (success === true ? 'Last Sync Succeeded' : (success === false ? 'Last Sync Failed' : 'Idle'));
+            $('#syncStatusText').html(`Status: <span class="${statusClass}">${statusText}</span>`);
 
-            $.ajax({
-                url: "{{ url_for('trigger_sync') }}",
-                type: 'POST',
-                headers: {
-                    // Include CSRF token for security if your backend requires it
-                    'X-CSRFToken': $('meta[name="csrf-token"]').attr('content') 
-                },
-                success: function(response) {
-                    // Display success message using the custom function
-                    displayFlashMessage('success', '<i class="fas fa-check-circle"></i> ' + response.message);
-                    fetchSyncStatus(); // Update status after successful sync
-                },
-                error: function(xhr) {
-                    console.error("Error triggering sync:", xhr.responseText);
-                    var errorMessage = xhr.responseJSON ? xhr.responseJSON.message : "An unknown error occurred during sync.";
-                    // Display error message
-                    displayFlashMessage('danger', '<i class="fas fa-times-circle"></i> ' + errorMessage);
-                },
-                complete: function() {
-                    // Re-enable the button and reset its text after the request is complete
-                    $('#triggerSyncBtn').prop('disabled', false).html('<i class="fas fa-arrows-alt-h mr-1"></i> Sync Now');
+            // Update last sync time
+            const lastSyncText = data.last_sync_time ? new Date(data.last_sync_time).toLocaleString() : 'N/A';
+            $('#lastSyncTime').text(`Last Sync: ${lastSyncText}`);
+
+            // Update sync button
+            const syncButton = $('#triggerSyncBtn');
+            const syncButtonText = $('#syncButtonText');
+            const syncIcon = $('#syncIcon');
+            
+            syncButton.removeClass('syncing success error').prop('disabled', false);
+
+            if (isRunning) {
+                syncButton.addClass('syncing').prop('disabled', true);
+                syncButtonText.text('Syncing...');
+                syncIcon.removeClass().addClass('fas fa-spinner fa-spin mr-1');
+            } else if (success === true) {
+                syncButton.addClass('success');
+                syncButtonText.text('Sync Complete');
+                syncIcon.removeClass().addClass('fas fa-check mr-1');
+                setTimeout(() => {
+                    resetSyncButton();
+                }, 3000);
+            } else if (success === false) {
+                syncButton.addClass('error');
+                syncButtonText.text('Sync Failed - Retry');
+                syncIcon.removeClass().addClass('fas fa-exclamation-triangle mr-1');
+            } else {
+                resetSyncButton();
+            }
+
+            // Update progress section
+            if (isRunning) {
+                $('#syncProgressContainer').show();
+                if (data.last_sync_message) {
+                    $('#syncMessage').text(data.last_sync_message);
                 }
-            });
-        });
-
-        // Initial fetch of sync status when page loads, only if the sync card is present
-        if ($('#syncStatusText').length) {
-            fetchSyncStatus();
+            } else {
+                setTimeout(() => {
+                    if (!syncButton.hasClass('syncing')) {
+                        $('#syncProgressContainer').hide();
+                    }
+                }, 1000);
+            }
         }
 
-        // You might also want to set up an interval to periodically fetch status
-        // setInterval(fetchSyncStatus, 60000); // Every 60 seconds (1 minute)
-    });
+        /**
+         * Reset sync button to default state
+         */
+        function resetSyncButton() {
+            $('#triggerSyncBtn').removeClass('syncing success error');
+            $('#syncButtonText').text('Sync Now');
+            $('#syncIcon').removeClass().addClass('fas fa-sync-alt mr-1');
+        }
+
+        /**
+         * Display dynamic flash messages
+         */
+        function displayFlashMessage(category, message) {
+            $('#dynamicFlashMessages .dynamic-flash-message').remove();
+            const flashHtml = `
+                <div class="flash-message dynamic-flash-message flash-${category} rounded p-3 mb-3 shadow-sm">
+                    ${category === 'success' ? '<i class="fas fa-check-circle"></i>' :
+                      category === 'danger' ? '<i class="fas fa-times-circle"></i>' :
+                      category === 'warning' ? '<i class="fas fa-exclamation-triangle"></i>' :
+                      '<i class="fas fa-info-circle"></i>'}
+                    ${message}
+                </div>`;
+            $('#dynamicFlashMessages').prepend(flashHtml);
+        }
     </script>
 </body>
 </html>
