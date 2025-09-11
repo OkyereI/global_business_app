@@ -7600,7 +7600,7 @@ def create_app():
     # @login_required
     def manage_businesses():
         # Access control: Only 'super_admin' or 'admin' role can view this page
-        if session.get('role') not in ['super_admin', 'admin']:
+        if session.get('role') not in ['super_admin','admin']:
             flash('You do not have permission to manage businesses.', 'danger')
             return redirect(url_for('dashboard'))
         
