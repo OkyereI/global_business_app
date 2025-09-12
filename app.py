@@ -19,6 +19,13 @@ from flask import current_app
 from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
 import io
 import logging
+from sync_api import sync_api
+from dataclasses import dataclass, asdict
+from typing import Optional, Dict, Any
+import time
+import threading
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 # Load environment variables
 load_dotenv()
 
@@ -55,6 +62,77 @@ SYNC_STATUS = {
     "last_sync_success": None,
     "last_sync_message": "Idle."
 }
+
+# Enhanced Sync Monitoring Variables
+enhanced_sync_status = {
+    'last_sync': None,
+    'sync_conflicts': [],
+    'sync_health': 'healthy',
+    'sync_running': False
+}
+
+# Sync conflict types
+CONFLICT_TYPES = {
+    'DATA_MISMATCH': 'Data mismatch between systems',
+    'TIMESTAMP_CONFLICT': 'Timestamp synchronization conflict',
+    'DUPLICATE_RECORD': 'Duplicate record detected',
+    'VALIDATION_ERROR': 'Data validation error'
+}
+# Enhanced Sync Helper Functions
+def check_sync_conflicts():
+    """Check for potential sync conflicts"""
+    from datetime import datetime
+    import random
+    
+    # Simulate conflict detection (replace with your actual logic)
+    conflicts = []
+    
+    # Example: Check for timestamp conflicts
+    if random.random() > 0.7:  # 30% chance of conflict for demo
+        conflicts.append({
+            'id': f'conflict_{int(datetime.now().timestamp())}',
+            'type': 'TIMESTAMP_CONFLICT', 
+            'description': 'Data timestamp mismatch detected',
+            'severity': 'medium',
+            'created_at': datetime.now().isoformat(),
+            'table_affected': 'sales'
+        })
+    
+    enhanced_sync_status['sync_conflicts'] = conflicts
+    return conflicts
+
+def resolve_sync_conflict(conflict_id, resolution):
+    """Resolve a sync conflict"""
+    for i, conflict in enumerate(enhanced_sync_status['sync_conflicts']):
+        if conflict['id'] == conflict_id:
+            # Mark conflict as resolved
+            conflict['status'] = 'resolved'
+            conflict['resolution'] = resolution
+            conflict['resolved_at'] = datetime.now().isoformat()
+            
+            # Remove from active conflicts
+            enhanced_sync_status['sync_conflicts'].pop(i)
+            
+            return {'success': True, 'message': 'Conflict resolved successfully'}
+    
+    return {'success': False, 'message': 'Conflict not found'}
+
+def get_enhanced_sync_status():
+    """Get current enhanced synchronization status"""
+    from datetime import datetime
+    
+    # Update sync status (replace with your actual logic)
+    check_sync_conflicts()  # Check for new conflicts
+    
+    return {
+        'last_sync': enhanced_sync_status.get('last_sync') or datetime.now().isoformat(),
+        'sync_health': enhanced_sync_status['sync_health'],
+        'sync_running': enhanced_sync_status['sync_running'],
+        'conflicts_count': len(enhanced_sync_status['sync_conflicts']),
+        'conflicts': enhanced_sync_status['sync_conflicts'],
+        'status_updated': datetime.now().isoformat()
+    }
+
 def create_app():
     # This is the application factory function
     app = Flask(__name__)
@@ -211,7 +289,13 @@ def create_app():
             'get_users_for_sync',
             'get_inventory_for_sync',
             'api_upsert_inventory',
-            'api_record_sales'
+            'api_record_sales',
+            'enhanced_sync_dashboard',
+            'api_enhanced_sync_status',
+            'sync_conflicts_page',
+            'api_sync_conflicts',
+            'api_resolve_conflict',
+            'test_connection'
         }
 
         # If the requested endpoint is in our list of public endpoints, allow access.
@@ -1868,6 +1952,131 @@ def create_app():
             logging.error(f"Error pushing sales record: {e}")
             return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
+    @app.route('/api/v1/sales/upsert', methods=['POST'])
+    @api_key_required
+    def upsert_sales_record():
+        """
+        Receives and saves or updates a sales record and its items from an offline app.
+        This function handles both creation and modification.
+        """
+        data = request.json
+        if not data:
+            return jsonify({"message": "Invalid JSON data"}), 400
+
+        try:
+            sale_id = data.get('id')
+            existing_sale = SalesRecord.query.options(db.joinedload(SalesRecord.items)).get(sale_id)
+
+            if existing_sale:
+                # Case 1: The record exists, so we update it.
+                logging.info(f"Updating existing sales record: {sale_id}")
+                existing_sale.business_id = data['business_id']
+                existing_sale.sales_person_id = data['sales_person_id']
+                existing_sale.customer_id = data.get('customer_id')
+                existing_sale.grand_total_amount = data['grand_total_amount']
+                existing_sale.payment_method = data['payment_method']
+                existing_sale.transaction_date = datetime.fromisoformat(data['transaction_date'])
+                existing_sale.synced_to_remote = True
+
+                # Handle sales items: update, add, and delete as necessary.
+                new_items_data = data.get('items', [])
+                new_item_ids = {item_data['id'] for item_data in new_items_data}
+                existing_item_ids = {item.id for item in existing_sale.items}
+
+                # Delete items that are no longer in the new data.
+                items_to_delete = [item for item in existing_sale.items if item.id not in new_item_ids]
+                for item in items_to_delete:
+                    db.session.delete(item)
+                
+                # Update or add new items.
+                for item_data in new_items_data:
+                    item_id = item_data['id']
+                    if item_id in existing_item_ids:
+                        # Update existing item
+                        existing_item = next((i for i in existing_sale.items if i.id == item_id), None)
+                        if existing_item:
+                            existing_item.inventory_item_id = item_data['inventory_item_id']
+                            existing_item.quantity_sold = item_data['quantity_sold']
+                            existing_item.unit_price_at_sale = item_data['unit_price_at_sale']
+                    else:
+                        # Add new item
+                        sale_item = SalesItem(
+                            id=item_id,
+                            sales_record_id=existing_sale.id,
+                            inventory_item_id=item_data['inventory_item_id'],
+                            quantity_sold=item_data['quantity_sold'],
+                            unit_price_at_sale=item_data['unit_price_at_sale']
+                        )
+                        db.session.add(sale_item)
+                
+                db.session.commit()
+                return jsonify({"message": f"Sales record {sale_id} updated successfully"}), 200
+
+            else:
+                # Case 2: The record does not exist, so we create a new one.
+                logging.info(f"Creating new sales record: {sale_id}")
+                sale_record = SalesRecord(
+                    id=sale_id,
+                    business_id=data['business_id'],
+                    sales_person_id=data['sales_person_id'],
+                    customer_id=data.get('customer_id'),
+                    grand_total_amount=data['grand_total_amount'],
+                    payment_method=data['payment_method'],
+                    transaction_date=datetime.fromisoformat(data['transaction_date']),
+                    synced_to_remote=True
+                )
+                db.session.add(sale_record)
+
+                for item_data in data.get('items', []):
+                    sale_item = SalesItem(
+                        id=item_data['id'],
+                        sales_record_id=sale_record.id,
+                        inventory_item_id=item_data['inventory_item_id'],
+                        quantity_sold=item_data['quantity_sold'],
+                        unit_price_at_sale=item_data['unit_price_at_sale']
+                    )
+                    db.session.add(sale_item)
+
+                db.session.commit()
+                return jsonify({"message": "Sales record pushed successfully"}), 201
+
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error upserting sales record: {e}")
+            return jsonify({"message": "An error occurred", "error": str(e)}), 500
+    
+
+    @app.route('/api/v1/sales/get_unsynced', methods=['GET'])
+    @api_key_required
+    def get_unsynced_sales():
+        """
+        Retrieves a list of sales records that have not been synced to the remote server.
+        """
+        try:
+            unsynced_sales = SalesRecord.query.filter_by(synced_to_remote=False).all()
+            if not unsynced_sales:
+                return jsonify({"message": "No unsynced sales records found"}), 200
+
+            sales_list = []
+            for sale in unsynced_sales:
+                sales_list.append({
+                    "id": sale.id,
+                    "business_id": sale.business_id,
+                    "sales_person_id": sale.sales_person_id,
+                    "customer_id": sale.customer_id,
+                    "grand_total_amount": float(sale.grand_total_amount), # Convert Decimal to float for JSON serialization
+                    "payment_method": sale.payment_method,
+                    "transaction_date": sale.transaction_date.isoformat(),
+                    "synced_to_remote": sale.synced_to_remote
+                })
+            
+            return jsonify(sales_list), 200
+
+        except Exception as e:
+            logging.error(f"Error fetching unsynced sales records: {e}")
+            return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
+
     @app.route('/api/businesses')
     def api_businesses():
         """
@@ -2025,6 +2234,24 @@ def create_app():
             db.session.rollback()
             print(f"Error during full sync: {e}")
             return False, f"Error during full sync: {e}"
+    def sync_data_in_background(business_id, is_superadmin=False):
+        """
+        Function to be run in a separate thread for data synchronization.
+        """
+        try:
+            # The actual sync logic, which can take a long time
+            if is_superadmin:
+                # Placeholder for superadmin sync logic
+                # This is where the actual superadmin data sync would happen
+                print("Starting superadmin data sync in background...")
+                time.sleep(5)  # Simulate a long process
+                print("Superadmin data sync complete.")
+            else:
+                sync_api.sync_admin_data(business_id)
+                print(f"Admin data sync for business ID {business_id} complete.")
+        except Exception as e:
+            # In a real app, you might log this error to a file or database
+            logging.error(f'Background sync thread error: {e}')
 
 
     def admin_sync(business_id, remote_api_key):
@@ -2479,7 +2706,7 @@ def create_app():
             flash(message, 'danger')
             logging.error(f"Synchronization failed with an unexpected error: {e}")
             return redirect(url_for('super_admin_dashboard'))  
-
+    
     @app.route('/api/v1/full_sync_data', methods=['GET'])
     @api_key_required
     def get_full_sync_data():
@@ -2606,15 +2833,32 @@ def create_app():
         return jsonify({"status": "success", "message": "Sync triggered successfully."})
    
 
-    @app.route('/sync-status', methods=['GET'])
+    @app.route('/sync_status', methods=['GET'])
     @login_required
-    def get_sync_status():
+    def sync_status():
         global SYNC_STATUS
-        return jsonify(SYNC_STATUS)
+        # Add online status check by testing connectivity to remote server
+        remote_url = os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')
+        online_status = False
+        
+        try:
+            # Quick connectivity test (shorter timeout for status check)
+            response = requests.get(f"{remote_url}/sync_status", timeout=5)
+            online_status = response.status_code == 200
+        except:
+            online_status = False
+        
+        # Return enhanced status with online field
+        enhanced_status = SYNC_STATUS.copy()
+        enhanced_status['online'] = online_status
+        enhanced_status['remote_url'] = remote_url
+        enhanced_status['last_sync'] = SYNC_STATUS.get('last_sync_time')
+        
+        return jsonify(enhanced_status)
     
     @app.route('/api/v1/sync/inventory', methods=['POST'])
     @api_key_required
-    def sync_inventory():
+    def sync_inventory_data():
         data = request.get_json()
         inventory_to_sync = data.get('inventory', [])
         for item_data in inventory_to_sync:
@@ -2822,7 +3066,7 @@ def create_app():
         if api_key != os.getenv('REMOTE_ADMIN_API_KEY'):
             return jsonify({"error": "API Key is missing or invalid."}), 401
 
-        inventory_items = Inventory.query.filter_by(business_id=business_id).all()
+        inventory_items = InventoryItem.query.filter_by(business_id=business_id).all()
         inventory_data = [item.to_dict() for item in inventory_items]
         return jsonify(inventory_data)
 
@@ -2989,6 +3233,7 @@ def create_app():
                             # General
                             recent_activity=recent_activity,
                             current_year=datetime.now().year)
+    
     # In your app.py file
     @app.route('/super_admin_dashboard')
     @login_required
@@ -7777,43 +8022,43 @@ def create_app():
     #         print(f"Superadmin user '{super_admin_username}' created successfully.")
     #     else:
     #         print(f"Superadmin user '{super_admin_username}' already exists. No new user created.")
-    with app.app_context():
-        # Check and create the super_admin_business first
-        superadmin_business_id = 'super_admin_business'
-        superadmin_business = db.session.get(Business, superadmin_business_id)
+    # with app.app_context():
+    #     # Check and create the super_admin_business first
+    #     superadmin_business_id = 'super_admin_business'
+    #     superadmin_business = db.session.get(Business, superadmin_business_id)
 
-        if not superadmin_business:
-            logging.info("Superadmin business not found. Creating a new one...")
-            superadmin_business = Business(
-                id=superadmin_business_id,
-                name='Admin Business',
-                type='headquarters',
-                remote_id='super_admin_business',
-                last_synced_at=datetime.utcnow()
-            )
-            db.session.add(superadmin_business)
-            db.session.commit()
-            logging.info("Superadmin business created successfully.")
+    #     if not superadmin_business:
+    #         logging.info("Superadmin business not found. Creating a new one...")
+    #         superadmin_business = Business(
+    #             id=superadmin_business_id,
+    #             name='Admin Business',
+    #             type='headquarters',
+    #             remote_id='super_admin_business',
+    #             last_synced_at=datetime.utcnow()
+    #         )
+    #         db.session.add(superadmin_business)
+    #         db.session.commit()
+    #         logging.info("Superadmin business created successfully.")
 
-        # Now, check and create the superadmin user
-        superadmin_user = db.session.get(User, 'superadmin')
-        if not superadmin_user:
-            logging.info("Superadmin user not found. Creating new superadmin...")
-            superadmin_password = os.getenv('SUPERADMIN_PASSWORD', 'superpassword')
-            new_superadmin = User(
-                id='superadmin',
-                username='superadmin',
-                password=generate_password_hash(superadmin_password),
-                role='super_admin',
-                business_id=superadmin_business.id,  # Link to the existing or new business
-                is_active=True,
-                created_at=datetime.utcnow()
-            )
-            db.session.add(new_superadmin)
-            db.session.commit()
-            logging.info("Superadmin user created successfully.")
-        else:
-            logging.info("Superadmin user 'superadmin' already exists. No new user created.")
+    #     # Now, check and create the superadmin user
+    #     superadmin_user = db.session.get(User, 'superadmin')
+    #     if not superadmin_user:
+    #         logging.info("Superadmin user not found. Creating new superadmin...")
+    #         superadmin_password = os.getenv('SUPERADMIN_PASSWORD', 'superpassword')
+    #         new_superadmin = User(
+    #             id='superadmin',
+    #             username='superadmin',
+    #             password=generate_password_hash(superadmin_password),
+    #             role='super_admin',
+    #             business_id=superadmin_business.id,  # Link to the existing or new business
+    #             is_active=True,
+    #             created_at=datetime.utcnow()
+    #         )
+    #         db.session.add(new_superadmin)
+    #         db.session.commit()
+    #         logging.info("Superadmin user created successfully.")
+    #     else:
+    #         logging.info("Superadmin user 'superadmin' already exists. No new user created.")
 
 
     # NEW: Jinja2 filter to safely format a date or datetime object
@@ -7895,11 +8140,207 @@ def create_app():
     def check_business_id():
         current_business_id = session.get('business_id')
         return f"Your current business ID is: {current_business_id}"
+    # @app.route('/sync-superadmin-data')
+    # @login_required('super_admin')
+    # def sync_superadmin_data_endpoint():
+    #     # Start the sync process in a new thread
+    #     sync_thread = threading.Thread(target=sync_data_in_background, args=(current_user.business_id, True))
+    #     sync_thread.start()
+        
+    #     return jsonify({'status': 'success', 'message': 'Superadmin data sync has started in the background.'})
 
+    # @app.route('/sync/admin_data', methods=['GET'])
+    # @login_required('admin')
+    # def sync_admin_data_endpoint():
+    #     try:
+    #         # Start the sync process in a new thread
+    #         sync_thread = threading.Thread(target=sync_data_in_background, args=(current_user.business_id,))
+    #         sync_thread.start()
+            
+    #         flash('Admin data sync started successfully.', 'success')
+    #     except Exception as e:
+    #         flash(f'Error starting sync: {e}', 'danger')
+    #         logging.error(f'Admin sync endpoint error: {e}')
+    #     return redirect(url_for('dashboard'))
+    @app.template_filter('format_currency')
+    def format_currency(value):
+        # Check if the value is a number before formatting
+        if isinstance(value, (int, float)):
+            # Format the number with a currency symbol (using Ghana Cedi as an example)
+            # You can change the symbol to fit your needs, e.g., 'GHS', '$', etc.
+            return f"₵{value:,.2f}"
+        return value
+
+    
     @app.template_filter('format_date')
     def format_date(value, format='%Y-%m-%d'):
         if isinstance(value, (datetime, date)):
             return value.strftime(format)
+    
+    # Enhanced Sync Routes
+    @app.route('/sync/enhanced/dashboard')
+    def enhanced_sync_dashboard():
+        """Enhanced synchronization monitoring dashboard"""
+        try:
+            status = get_enhanced_sync_status()
+            return render_template('enhanced_sync_dashboard.html', 
+                                 sync_status=status)
+        except Exception as e:
+            return f"Error loading sync dashboard: {str(e)}", 500
+
+    @app.route('/api/sync/enhanced/status')
+    def api_enhanced_sync_status():
+        """API endpoint for enhanced sync status"""
+        try:
+            status = get_enhanced_sync_status()
+            return jsonify(status)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/sync/conflicts')
+    def sync_conflicts_page():
+        """Page for viewing and resolving sync conflicts"""
+        try:
+            conflicts = enhanced_sync_status['sync_conflicts']
+            return render_template('sync_conflicts.html', 
+                                 conflicts=conflicts)
+        except Exception as e:
+            return f"Error loading conflicts page: {str(e)}", 500
+
+    @app.route('/api/sync/conflicts')
+    def api_sync_conflicts():
+        """API endpoint for getting sync conflicts"""
+        try:
+            return jsonify(enhanced_sync_status['sync_conflicts'])
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/sync/resolve_conflict', methods=['POST'])
+    def api_resolve_conflict():
+        """API endpoint for resolving sync conflicts"""
+        try:
+            data = request.get_json()
+            if not data or 'conflict_id' not in data:
+                return jsonify({'error': 'Missing conflict_id'}), 400
+                
+            result = resolve_sync_conflict(
+                data.get('conflict_id'), 
+                data.get('resolution', 'manual_override')
+            )
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/test_connection', methods=['GET'])
+    @login_required
+    def test_connection():
+        """Test connection to remote server and sync status"""
+        try:
+            remote_url = os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')
+            
+            # Test basic connectivity
+            response = requests.get(f"{remote_url}/sync_status", timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Connection successful',
+                    'remote_status': data,
+                    'remote_url': remote_url
+                })
+            else:
+                return jsonify({
+                    'status': 'failed',
+                    'message': f'Server responded with status {response.status_code}',
+                    'remote_url': remote_url
+                })
+                
+        except requests.exceptions.Timeout:
+            return jsonify({
+                'status': 'failed',
+                'message': 'Connection timeout - server took too long to respond',
+                'remote_url': remote_url
+            })
+        except requests.exceptions.ConnectionError:
+            return jsonify({
+                'status': 'failed',
+                'message': 'Connection failed - server is not reachable',
+                'remote_url': remote_url
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'failed',
+                'message': f'Unexpected error: {str(e)}',
+                'remote_url': remote_url
+            })
+    
+    @app.route('/dashboard-data')
+    @login_required
+    def dashboard_data():
+        try:
+            business_id = current_user.business_id
+            today = date.today()
+            
+            # Sales data
+            sales_today = db.session.query(func.sum(SalesRecord.amount)).filter(
+                SalesRecord.business_id == business_id,
+                cast(SalesRecord.transaction_date, date) == today
+            ).scalar() or 0
+
+            sales_last_7_days = db.session.query(func.sum(SalesRecord.amount)).filter(
+                SalesRecord.business_id == business_id,
+                cast(SalesRecord.transaction_date, date) >= today - timedelta(days=7)
+            ).scalar() or 0
+
+            # Inventory value
+            total_inventory_value = db.session.query(func.sum(InventoryItem.unit_price * InventoryItem.quantity_in_stock)).filter(
+                InventoryItem.business_id == business_id
+            ).scalar() or 0
+
+            # Outstanding debt
+            total_debt = db.session.query(func.sum(Debtor.amount)).filter(
+                Debtor.business_id == business_id,
+                Debtor.status == 'unpaid'
+            ).scalar() or 0
+
+            # Recent transactions
+            recent_sales = SalesRecord.query.filter_by(business_id=business_id).order_by(SalesRecord.transaction_date.desc()).limit(10).all()
+            recent_rentals = RentalRecord.query.filter_by(business_id=business_id).order_by(RentalRecord.rental_start_date.desc()).limit(10).all()
+
+            # Chart data (last 30 days of sales)
+            sales_history = db.session.query(
+                cast(SalesRecord.transaction_date, date),
+                func.sum(SalesRecord.amount)
+            ).filter(
+                SalesRecord.business_id == business_id,
+                cast(SalesRecord.transaction_date, date) >= today - timedelta(days=30)
+            ).group_by(
+                cast(SalesRecord.transaction_date, date)
+            ).order_by(
+                cast(SalesRecord.transaction_date, date)
+            ).all()
+
+            sales_dates = [d.strftime('%Y-%m-%d') for d, _ in sales_history]
+            sales_amounts = [a for _, a in sales_history]
+
+            return jsonify({
+                'sales_today': sales_today,
+                'sales_last_7_days': sales_last_7_days,
+                'total_inventory_value': total_inventory_value,
+                'total_debt': total_debt,
+                'recent_sales': [s.to_dict() for s in recent_sales],
+                'recent_rentals': [r.to_dict() for r in recent_rentals],
+                'sales_chart_data': {
+                    'labels': sales_dates,
+                    'data': sales_amounts
+                }
+            })
+        except Exception as e:
+            app.logger.error(f"Error fetching dashboard data: {e}")
+            return jsonify({'error': 'An internal error occurred.'}), 500
+
+
     return app
 
     # The final Flask app instance is created here
@@ -7907,4 +8348,50 @@ app = create_app()
 
     # This part is for running the app directly
 if __name__ == '__main__':
+    
+
+    # The context block is the correct place to run startup tasks.
+    # The original traceback suggests a problem where a function that requires
+    # a request context is being called from within create_app, but placing
+    # all startup logic here is the standard and correct practice.
+    with app.app_context():
+        print("Starting application setup...")
+        
+        # Create all database tables
+        print("Creating database tables if they don't exist...")
+        db.create_all()
+        print("Database tables are up to date.")
+        from models import User
+        # Check for and create the superadmin user
+        super_admin_username = os.getenv('SUPER_ADMIN_USERNAME') or 'superadmin'
+        super_admin_password = os.getenv('SUPER_ADMIN_PASSWORD') or 'superpassword'
+
+        existing_super_admin = User.query.filter_by(username=super_admin_username).first()
+        
+        if existing_super_admin:
+            print(f"Superadmin user '{super_admin_username}' already exists. Updating password...")
+            # Delete the existing user to ensure the password hash is fresh and correct
+            db.session.delete(existing_super_admin)
+            db.session.commit()
+            print("Existing superadmin deleted to re-create with new password.")
+            
+        print("Creating new superadmin user...")
+        # Use a consistent hashing method. werkzeug's generate_password_hash defaults to a strong algorithm.
+        hashed_password = generate_password_hash(super_admin_password)
+        
+        super_admin = User(
+            id='superadmin',
+            username=super_admin_username,
+            _password_hash=hashed_password,
+            role='super_admin',
+            business_id='super_admin_business',
+            is_active=True,
+            created_at=datetime.utcnow()
+        )
+        db.session.add(super_admin)
+        db.session.commit()
+        print(f"Superadmin user '{super_admin_username}' created successfully!")
+        print(f"Please use the username '{super_admin_username}' and password '{super_admin_password}' to log in.")
+        print(f"Superadmin Business ID: '{super_admin.business_id}'")
+
     app.run(debug=True, host='0.0.0.0', port=os.getenv('PORT', 5000))
