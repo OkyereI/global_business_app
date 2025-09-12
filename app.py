@@ -888,17 +888,21 @@ def create_app():
         """Pulls inventory data for a specific business from the remote server."""
         try:
             api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/v1/inventory/business/{business_id}"
-            logging.info(f"Attempting to fetch inventory from: {api_endpoint}")
+            
+            # Mask API key for logging
+            masked_key = api_key[:3] + "*" * (len(api_key) - 6) + api_key[-3:] if api_key else "None"
+            logging.info(f"[SYNC][Inventory Pull] Fetching inventory from: {api_endpoint}")
+            logging.info(f"[SYNC][Inventory Pull] Using API Key: {masked_key}")
 
             headers = {'X-API-Key': api_key}
             response = requests.get(api_endpoint, timeout=30, headers=headers)
             response.raise_for_status()
 
             remote_inventory_data = response.json()
-            logging.info(f"Received {len(remote_inventory_data)} inventory items.")
+            logging.info(f"[SYNC][Inventory Pull] Received {len(remote_inventory_data)} inventory items.")
 
             if not isinstance(remote_inventory_data, list):
-                logging.warning("Remote inventory data is not a list. Wrapping in a list.")
+                logging.warning("[SYNC][Inventory Pull] Remote inventory data is not a list. Wrapping in a list.")
                 remote_inventory_data = [remote_inventory_data]
 
             new_items_count = 0
@@ -906,18 +910,17 @@ def create_app():
 
             for item_data in remote_inventory_data:
                 if not isinstance(item_data, dict):
-                    logging.warning("Skipping malformed inventory entry from remote data.")
+                    logging.warning("[SYNC][Inventory Pull] Skipping malformed inventory entry.")
                     continue
                     
                 remote_id = item_data.get('id')
                 if not remote_id:
-                    logging.warning("Skipping inventory entry with no ID.")
+                    logging.warning("[SYNC][Inventory Pull] Skipping inventory entry with no ID.")
                     continue
                 
                 local_product = Product.query.filter_by(remote_id=remote_id).first()
 
                 if not local_product:
-                    # Item does not exist, create a new one
                     new_product = Product(
                         name=item_data.get('name', 'Unknown Product'),
                         business_id=item_data.get('business_id', business_id),
@@ -928,20 +931,23 @@ def create_app():
                     db.session.add(new_product)
                     new_items_count += 1
                 else:
-                    # Item exists, update its details
                     local_product.name = item_data.get('name', local_product.name)
                     local_product.quantity = item_data.get('quantity', local_product.quantity)
                     local_product.unit_price = item_data.get('unit_price', local_product.unit_price)
                     updated_items_count += 1
             
             db.session.commit()
+            logging.info(f"[SYNC][Inventory Pull] Completed. {new_items_count} new items, {updated_items_count} updated.")
             return True, f"Inventory synchronized successfully. {new_items_count} new items added, {updated_items_count} items updated."
 
         except requests.exceptions.RequestException as e:
+            logging.error(f"[SYNC][Inventory Pull] Network error: {e}")
             return False, f"Network error during inventory sync: {e}"
         except json.JSONDecodeError as e:
+            logging.error(f"[SYNC][Inventory Pull] JSON decode error: {e}. Raw response: {response.text[:200]}...")
             return False, f"Error decoding JSON response during inventory sync: {e}. Server responded with: '{response.text[:100]}...'"
         except Exception as e:
+            logging.exception("[SYNC][Inventory Pull] Unexpected error")
             return False, f"An unexpected error occurred during inventory sync: {e}"
 
     def pull_business_data(api_key):
@@ -1186,46 +1192,63 @@ def create_app():
         except Exception as e:
             return False, f"Failed to push inventory data to remote server: {e}"
 
+    # def perform_sync(business_id, api_key):
+    #     """Orchestrates the full synchronization process."""
+    #     try:
+    #         # Pull phase
+    #         success_pull_biz, msg_pull_biz = pull_business_data(api_key)
+    #         if not success_pull_biz:
+    #             return False, f"Business pull failed: {msg_pull_biz}"
+
+    #         # Push phase
+    #         success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
+    #         if not success_push_inv:
+    #             return False, f"Inventory push failed: {msg_push_inv}"
+            
+    #         return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
+
+    #     except Exception as e:
+    #         db.session.rollback()
+    #         return False, f"An unexpected error occurred during full sync: {e}"
+
     def perform_sync(business_id, api_key):
         """Orchestrates the full synchronization process."""
         try:
-            # Pull phase
+            # --- Log the API key being used (masked for security) ---
+            masked_key = api_key[:3] + "*" * (len(api_key) - 6) + api_key[-3:] if api_key else "None"
+            logging.info(f"[SYNC] Using API Key: {masked_key}")
+
+            # --- Step 1: Pull business + user data ---
             success_pull_biz, msg_pull_biz = pull_business_data(api_key)
             if not success_pull_biz:
+                logging.error(f"[SYNC] Business pull failed: {msg_pull_biz}")
                 return False, f"Business pull failed: {msg_pull_biz}"
 
-            # Push phase
+            # --- Step 2: Pull inventory data for this specific business ---
+            success_pull_inv, msg_pull_inv = pull_inventory_data(api_key, business_id)
+            if not success_pull_inv:
+                logging.error(f"[SYNC] Inventory pull failed: {msg_pull_inv}")
+                return False, f"Inventory pull failed: {msg_pull_inv}"
+
+            # --- Step 3: Push local inventory changes (if any) ---
             success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
             if not success_push_inv:
+                logging.error(f"[SYNC] Inventory push failed: {msg_push_inv}")
                 return False, f"Inventory push failed: {msg_push_inv}"
-            
-            return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
+
+            # --- Final status ---
+            logging.info(f"[SYNC] Success! {msg_pull_biz}. {msg_pull_inv}. {msg_push_inv}")
+            return True, (
+                f"Full synchronization successful. "
+                f"{msg_pull_biz}. {msg_pull_inv}. {msg_push_inv}"
+            )
 
         except Exception as e:
             db.session.rollback()
+            logging.exception("[SYNC] Unexpected error during full sync")
             return False, f"An unexpected error occurred during full sync: {e}"
 
-
-    def perform_sync(business_id, api_key):
-        """Orchestrates the full synchronization process."""
-        try:
-            # Pull phase
-            success_pull_biz, msg_pull_biz = pull_business_data(api_key)
-            if not success_pull_biz:
-                return False, f"Business pull failed: {msg_pull_biz}"
-
-            # Push phase
-            success_push_inv, msg_push_inv = push_inventory_data(business_id, api_key)
-            if not success_push_inv:
-                return False, f"Inventory push failed: {msg_push_inv}"
-
-            # You had a line here that was not defined, so I will remove it for now to avoid errors
-            
-            return True, f"Full synchronization successful. {msg_pull_biz}. {msg_push_inv}"
-
-        except Exception as e:
-            db.session.rollback()
-            return False, f"An unexpected error occurred during full sync: {e}"
+  
 
 
     @app.route('/api/debug_key', methods=['GET'])
@@ -2856,40 +2879,50 @@ def create_app():
         
         return jsonify(enhanced_status)
     
-    @app.route('/api/v1/sync/inventory', methods=['POST'])
-    @api_key_required
-    def sync_inventory_data():
-        data = request.get_json()
-        inventory_to_sync = data.get('inventory', [])
-        for item_data in inventory_to_sync:
-            try:
-                # Use the provided item ID as the primary key
-                item = InventoryItem.query.filter_by(id=item_data['id']).first()
-                if item:
-                    item.name = item_data['name']
-                    item.quantity = item_data['quantity']
-                    item.price = item_data['price']
-                    item.last_updated = datetime.fromisoformat(item_data['last_updated'])
-                else:
-                    new_item = InventoryItem(
-                        id=item_data['id'],
-                        business_id=item_data['business_id'],
-                        name=item_data['name'],
-                        quantity=item_data['quantity'],
-                        price=item_data['price'],
-                        last_updated=datetime.fromisoformat(item_data['last_updated'])
-                    )
-                    db.session.add(new_item)
-            except KeyError as e:
-                logging.error(f"Missing key in inventory data: {e}")
-                continue
-            except Exception as e:
-                logging.error(f"Error processing inventory item: {e}")
-                continue
-        db.session.commit()
-        return jsonify({'message': f'Received {len(inventory_to_sync)} inventory items.'}), 200
+    # @app.route('/api/v1/sync/inventory', methods=['POST'])
+    # @super_admin_required
+    # def sync_inventory_data():
+    #     data = request.get_json()
+    #     inventory_to_sync = data.get('inventory', [])
+    #     for item_data in inventory_to_sync:
+    #         try:
+    #             # Use the provided item ID as the primary key
+    #             item = InventoryItem.query.filter_by(id=item_data['id']).first()
+    #             if item:
+    #                 item.name = item_data['name']
+    #                 item.quantity = item_data['quantity']
+    #                 item.price = item_data['price']
+    #                 item.last_updated = datetime.fromisoformat(item_data['last_updated'])
+    #             else:
+    #                 new_item = InventoryItem(
+    #                     id=item_data['id'],
+    #                     business_id=item_data['business_id'],
+    #                     name=item_data['name'],
+    #                     quantity=item_data['quantity'],
+    #                     price=item_data['price'],
+    #                     last_updated=datetime.fromisoformat(item_data['last_updated'])
+    #                 )
+    #                 db.session.add(new_item)
+    #         except KeyError as e:
+    #             logging.error(f"Missing key in inventory data: {e}")
+    #             continue
+    #         except Exception as e:
+    #             logging.error(f"Error processing inventory item: {e}")
+    #             continue
+    #     db.session.commit()
+    #     return jsonify({'message': f'Received {len(inventory_to_sync)} inventory items.'}), 200
     
+    @app.route('/api/v1/sync/inventory', methods=['POST'])
+    @roles_required('super_admin', 'admin')
+    def sync_inventory_data():
+        # Now only SuperAdmin and Admin (via login session) can trigger this
+        business_id = session.get('business_id')
+        if not business_id:
+            return jsonify({"success": False, "message": "No business ID found in session."}), 400
 
+        success, msg = perform_sync(business_id, api_key=None)  # no API key needed
+        status_code = 200 if success else 500
+        return jsonify({"success": success, "message": msg}), status_code
     # @app.route('/sync_status', methods=['GET'])
     # def sync_status():
     #     """

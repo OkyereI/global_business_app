@@ -471,314 +471,190 @@
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 
-    <script>
-        // Enhanced sync management
-        let syncStatusInterval;
-        let currentSyncStatus = 'idle';
-        let isOnline = false;
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 
-        // Get CSRF token
-        function getCSRFToken() {
-            return $('meta[name=csrf-token]').attr('content');
-        }
+<script>
+    let syncStatusInterval;
+    let currentSyncStatus = 'idle';
+    let isOnline = false;
 
-        $(document).ready(function() {
-            // Sidebar toggle functionality
-            $('#sidebarCollapse').on('click', function() {
-                $('#sidebar, #content').toggleClass('active');
-            });
-            $('#sidebarCollapseTop').on('click', function() {
-                $('#sidebar, #content').toggleClass('active');
-            });
+    function getCSRFToken() {
+        return $('meta[name=csrf-token]').attr('content');
+    }
 
-            // Initialize sync functionality if present
-            if ($('#syncStatusText').length) {
-                updateSyncStatus();
-                startSyncStatusPolling();
-            }
+    $(document).ready(function() {
+        $('#sidebarCollapse, #sidebarCollapseTop').on('click', function() {
+            $('#sidebar, #content').toggleClass('active');
         });
 
-        /**
-         * Start continuous polling of sync status (every 2 seconds)
-         */
-        function startSyncStatusPolling() {
-            if (syncStatusInterval) {
-                clearInterval(syncStatusInterval);
+        if ($('#syncStatusText').length) {
+            updateSyncStatus();
+            startSyncStatusPolling();
+        }
+    });
+
+    function startSyncStatusPolling() {
+        if (syncStatusInterval) clearInterval(syncStatusInterval);
+        syncStatusInterval = setInterval(updateSyncStatus, 2000);
+    }
+    function stopSyncStatusPolling() {
+        if (syncStatusInterval) clearInterval(syncStatusInterval);
+    }
+
+    function updateSyncStatus() {
+        $.ajax({
+            url: "{{ url_for('sync_status') }}",
+            type: 'GET',
+            success: function(data) {
+                updateSyncUI(data);
+            },
+            error: function(xhr) {
+                console.error("Error fetching sync status:", xhr.responseText);
+                updateSyncUI({ status: 'error', online: false, message: 'Failed to get sync status', is_running: false, progress: 0 });
             }
-            syncStatusInterval = setInterval(updateSyncStatus, 2000);
+        });
+    }
+
+    function updateSyncUI(data) {
+        currentSyncStatus = data.status || 'idle';
+        isOnline = data.online !== false;
+        const isRunning = data.is_running || currentSyncStatus === 'in_progress';
+        const progress = data.progress || 0;
+
+        let statusClass = isOnline ? 'status-online' : 'status-offline';
+        if (isRunning) statusClass = 'status-syncing';
+        const statusText = isOnline ? (isRunning ? 'Syncing' : 'Online') : 'Offline';
+        $('#syncStatusText').html(`Status: <span class="${statusClass}">${statusText}</span>`);
+
+        const lastSyncText = data.last_sync ? new Date(data.last_sync).toLocaleString() : 'Never';
+        $('#lastSyncTime').text(`Last Sync: ${lastSyncText}`);
+
+        let details = [];
+        if (data.current_operation) details.push(`Operation: ${data.current_operation}`);
+        if (typeof data.local_businesses === 'number') details.push(`Businesses: ${data.local_businesses}`);
+        if (typeof data.local_inventory_items === 'number') details.push(`Inventory: ${data.local_inventory_items}`);
+        $('#syncDetails').text(details.join(' | '));
+
+        const syncButton = $('#triggerSyncBtn');
+        const syncButtonText = $('#syncButtonText');
+        const syncIcon = $('#syncIcon');
+        
+        syncButton.removeClass('syncing success error').prop('disabled', false);
+
+        if (isRunning) {
+            syncButton.addClass('syncing').prop('disabled', true);
+            syncButtonText.text('Syncing...');
+            syncIcon.removeClass().addClass('fas fa-spinner fa-spin mr-1');
+        } else if (currentSyncStatus === 'completed') {
+            syncButton.addClass('success');
+            syncButtonText.text('Sync Complete');
+            syncIcon.removeClass().addClass('fas fa-check mr-1');
+            setTimeout(() => { if (currentSyncStatus !== 'in_progress') resetSyncButton(); }, 3000);
+        } else if (currentSyncStatus === 'error' || data.error) {
+            syncButton.addClass('error');
+            syncButtonText.text('Sync Failed - Retry');
+            syncIcon.removeClass().addClass('fas fa-exclamation-triangle mr-1');
+        } else if (!isOnline) {
+            syncButton.prop('disabled', true);
+            syncButtonText.text('Offline');
+            syncIcon.removeClass().addClass('fas fa-wifi mr-1');
+        } else {
+            resetSyncButton();
         }
 
-        /**
-         * Stop sync status polling
-         */
-        function stopSyncStatusPolling() {
-            if (syncStatusInterval) {
-                clearInterval(syncStatusInterval);
-                syncStatusInterval = null;
-            }
+        if (isRunning && (data.message || progress > 0)) {
+            $('#syncProgressContainer').show();
+            $('#progressBar').css('width', progress + '%');
+            if (data.message) $('#syncMessage').text(data.message);
+        } else if (!isRunning) {
+            setTimeout(() => {
+                if (!syncButton.hasClass('syncing')) $('#syncProgressContainer').hide();
+            }, 1000);
         }
+    }
 
-        /**
-         * Update sync status by fetching from server
-         */
-        function updateSyncStatus() {
-            $.ajax({
-                url: "{{ url_for('sync_status') }}",
-                type: 'GET',
-                success: function(data) {
-                    updateSyncUI(data);
-                },
-                error: function(xhr) {
-                    console.error("Error fetching sync status:", xhr.responseText);
-                    updateSyncUI({
-                        status: 'error',
-                        online: false,
-                        message: 'Failed to get sync status',
-                        last_sync: null,
-                        is_running: false,
-                        progress: 0
+    function resetSyncButton() {
+        $('#triggerSyncBtn').removeClass('syncing success error');
+        $('#syncButtonText').text('Sync Now');
+        $('#syncIcon').removeClass().addClass('fas fa-sync-alt mr-1');
+    }
+
+    function displayFlashMessage(category, message) {
+        $('#dynamicFlashMessages .dynamic-flash-message').remove();
+        const flashHtml = `
+            <div class="flash-message flash-${category} rounded p-3 mb-3 shadow-sm dynamic-flash-message">
+                ${message}
+            </div>`;
+        $('#dynamicFlashMessages').html(flashHtml);
+        setTimeout(() => $('.dynamic-flash-message').fadeOut('slow', function() { $(this).remove(); }), 5000);
+    }
+
+    // ✅ New unified Sync button handler
+  document.addEventListener("DOMContentLoaded", function () {
+        const syncBtn = document.getElementById("triggerSyncBtn");
+        const syncIcon = document.getElementById("syncIcon");
+        const syncButtonText = document.getElementById("syncButtonText");
+        const flashContainer = document.getElementById("dynamicFlashMessages");
+
+        if (syncBtn) {
+            syncBtn.addEventListener("click", async function () {
+                if (currentSyncStatus === 'in_progress' || !isOnline) return;
+
+                syncBtn.disabled = true;
+                syncBtn.classList.add("syncing");
+                syncIcon.classList.add("fa-spin");
+                syncButtonText.textContent = "Syncing...";
+
+                try {
+                    const response = await fetch("/api/v1/sync/inventory", {
+                        method: "POST",
+                        headers: { 
+                            "Content-Type": "application/json",
+                            "X-Requested-With": "XMLHttpRequest",
+                            "X-CSRFToken": getCSRFToken()  <!-- ✅ send CSRF -->
+                        },
+                        body: JSON.stringify({}) <!-- ✅ Flask-WTF requires body -->
                     });
-                }
-            });
-        }
+                    const data = await response.json();
 
-        /**
-         * Update the UI based on sync status data
-         */
-        function updateSyncUI(data) {
-            // Update global state
-            currentSyncStatus = data.status || 'idle';
-            isOnline = data.online !== false;
-            const isRunning = data.is_running || currentSyncStatus === 'in_progress';
-            const progress = data.progress || 0;
+                    flashContainer.innerHTML = "";
+                    const alertDiv = document.createElement("div");
+                    alertDiv.classList.add("flash-message", "rounded", "p-3", "mb-3", "shadow-sm");
 
-            // Update status text
-            let statusClass = isOnline ? 'status-online' : 'status-offline';
-            if (isRunning) statusClass = 'status-syncing';
-            
-            const statusText = isOnline ? (isRunning ? 'Syncing' : 'Online') : 'Offline';
-            $('#syncStatusText').html(`Status: <span class="${statusClass}">${statusText}</span>`);
-
-            // Update last sync time
-            const lastSyncText = data.last_sync ? new Date(data.last_sync).toLocaleString() : 'Never';
-            $('#lastSyncTime').text(`Last Sync: ${lastSyncText}`);
-
-            // Update details
-            let details = [];
-            if (data.current_operation) {
-                details.push(`Operation: ${data.current_operation}`);
-            }
-            if (typeof data.local_businesses === 'number') {
-                details.push(`Businesses: ${data.local_businesses}`);
-            }
-            if (typeof data.local_inventory_items === 'number') {
-                details.push(`Inventory: ${data.local_inventory_items}`);
-            }
-            $('#syncDetails').text(details.join(' | '));
-
-            // Update sync button
-            const syncButton = $('#triggerSyncBtn');
-            const syncButtonText = $('#syncButtonText');
-            const syncIcon = $('#syncIcon');
-            
-            syncButton.removeClass('syncing success error').prop('disabled', false);
-
-            if (isRunning) {
-                syncButton.addClass('syncing').prop('disabled', true);
-                syncButtonText.text('Syncing...');
-                syncIcon.removeClass().addClass('fas fa-spinner fa-spin mr-1');
-            } else if (currentSyncStatus === 'completed') {
-                syncButton.addClass('success');
-                syncButtonText.text('Sync Complete');
-                syncIcon.removeClass().addClass('fas fa-check mr-1');
-                // Reset after 3 seconds
-                setTimeout(() => {
-                    if (currentSyncStatus !== 'in_progress') {
-                        resetSyncButton();
+                    if (data.success) {
+                        alertDiv.classList.add("flash-success");
+                        alertDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${data.message}`;
+                        syncBtn.classList.remove("error");
+                        syncBtn.classList.add("success");
+                    } else {
+                        alertDiv.classList.add("flash-danger");
+                        alertDiv.innerHTML = `<i class="fas fa-times-circle"></i> ${data.message}`;
+                        syncBtn.classList.remove("success");
+                        syncBtn.classList.add("error");
                     }
-                }, 3000);
-            } else if (currentSyncStatus === 'error' || data.error) {
-                syncButton.addClass('error');
-                syncButtonText.text('Sync Failed - Retry');
-                syncIcon.removeClass().addClass('fas fa-exclamation-triangle mr-1');
-            } else if (!isOnline) {
-                syncButton.prop('disabled', true);
-                syncButtonText.text('Offline');
-                syncIcon.removeClass().addClass('fas fa-wifi mr-1');
-            } else {
-                resetSyncButton();
-            }
+                    flashContainer.appendChild(alertDiv);
 
-            // Update progress section
-            if (isRunning && (data.message || progress > 0)) {
-                $('#syncProgressContainer').show();
-                $('#progressBar').css('width', progress + '%');
-                if (data.message) {
-                    $('#syncMessage').text(data.message);
-                }
-            } else if (!isRunning) {
-                setTimeout(() => {
-                    if (!syncButton.hasClass('syncing')) {
-                        $('#syncProgressContainer').hide();
-                    }
-                }, 1000);
-            }
-        }
-
-        /**
-         * Reset sync button to default state
-         */
-        function resetSyncButton() {
-            $('#triggerSyncBtn').removeClass('syncing success error');
-            $('#syncButtonText').text('Sync Now');
-            $('#syncIcon').removeClass().addClass('fas fa-sync-alt mr-1');
-        }
-
-        /**
-         * Display dynamic flash messages
-         */
-        function displayFlashMessage(category, message) {
-            $('#dynamicFlashMessages .dynamic-flash-message').remove();
-            const flashHtml = `
-                <div class="flash-message flash-${category} rounded p-3 mb-3 shadow-sm dynamic-flash-message">
-                    ${message}
-                </div>
-            `;
-            $('#dynamicFlashMessages').html(flashHtml);
-            setTimeout(function() {
-                $('.dynamic-flash-message').fadeOut('slow', function() {
-                    $(this).remove();
-                });
-            }, 5000);
-        }
-
-        /**
-         * Start synchronization process
-         */
-        $('#triggerSyncBtn').on('click', function() {
-            if (currentSyncStatus === 'in_progress' || !isOnline) {
-                return;
-            }
-
-            if (!confirm('Starting data synchronization. This will fetch new data from online and push local unsynced sales. This might take a moment. Do you want to proceed?')) {
-                return;
-            }
-
-            // Immediately update UI
-            updateSyncUI({
-                status: 'in_progress',
-                is_running: true,
-                message: 'Starting synchronization...',
-                progress: 5,
-                online: true
-            });
-
-            $.ajax({
-                url: "{{ url_for('sync_inventory_data') }}",
-                type: 'POST',
-                headers: {
-                    'X-CSRFToken': getCSRFToken(),
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                success: function(data) {
-                    displayFlashMessage('success', '<i class="fas fa-check-circle"></i> ' + (data.message || 'Synchronization started successfully'));
-                    console.log('Sync started successfully:', data);
-                },
-                error: function(xhr) {
-                    console.error("Error triggering sync:", xhr.responseText);
-                    const errorMessage = xhr.responseJSON ? xhr.responseJSON.message : "An unknown error occurred during sync.";
-                    displayFlashMessage('danger', '<i class="fas fa-times-circle"></i> ' + errorMessage);
-                    updateSyncUI({
-                        status: 'error',
-                        message: errorMessage,
-                        is_running: false,
-                        progress: 0,
-                        online: isOnline
-                    });
-                }
-            });
-        });
-
-        /**
-         * Test connection to remote server
-         */
-        $('#testConnectionBtn').on('click', function() {
-            const testButton = $(this);
-            const originalText = testButton.html();
-            
-            testButton.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Testing...');
-
-            $.ajax({
-                url: "{{ url_for('test_connection') }}",
-                type: 'POST',
-                headers: {
-                    'X-CSRFToken': getCSRFToken(),
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                success: function(data) {
-                    updateSyncUI({
-                        status: data.success ? 'ready' : 'error',
-                        message: data.message,
-                        online: data.success,
-                        is_running: false
-                    });
-
-                    // Show temporary feedback
-                    testButton.html(data.success 
-                        ? '<i class="fas fa-check mr-1"></i> Connected!' 
-                        : '<i class="fas fa-times mr-1"></i> Failed');
-                    testButton.toggleClass('btn-outline-light btn-outline-success', data.success)
-                             .toggleClass('btn-outline-danger', !data.success);
-
+                } catch (err) {
+                    console.error("Sync request failed:", err);
+                    flashContainer.innerHTML = `
+                        <div class="flash-message flash-danger rounded p-3 mb-3 shadow-sm">
+                            <i class="fas fa-times-circle"></i> Sync failed due to a network error.
+                        </div>`;
+                    syncBtn.classList.add("error");
+                } finally {
                     setTimeout(() => {
-                        testButton.html(originalText)
-                                 .removeClass('btn-outline-success btn-outline-danger')
-                                 .addClass('btn-outline-light')
-                                 .prop('disabled', false);
-                    }, 2000);
-
-                    displayFlashMessage(data.success ? 'success' : 'danger', 
-                        `<i class="fas fa-${data.success ? 'check' : 'times'}-circle"></i> ${data.message}`);
-                },
-                error: function(xhr) {
-                    console.error('Error testing connection:', xhr.responseText);
-                    testButton.html('<i class="fas fa-times mr-1"></i> Error')
-                             .removeClass('btn-outline-light')
-                             .addClass('btn-outline-danger');
-                    
-                    setTimeout(() => {
-                        testButton.html(originalText)
-                                 .removeClass('btn-outline-danger')
-                                 .addClass('btn-outline-light')
-                                 .prop('disabled', false);
-                    }, 2000);
-
-                    updateSyncUI({
-                        status: 'error',
-                        message: 'Connection test failed',
-                        online: false,
-                        is_running: false
-                    });
-
-                    displayFlashMessage('danger', '<i class="fas fa-times-circle"></i> Connection test failed');
+                        syncBtn.disabled = false;
+                        syncBtn.classList.remove("syncing", "success", "error");
+                        syncIcon.classList.remove("fa-spin");
+                        syncButtonText.textContent = "Sync Now";
+                    }, 3000);
                 }
             });
-        });
+        }
+    });
+</script>
 
-        // Cleanup and visibility handling
-        $(window).on('beforeunload', function() {
-            stopSyncStatusPolling();
-        });
-
-        $(document).on('visibilitychange', function() {
-            if (document.hidden) {
-                stopSyncStatusPolling();
-            } else {
-                if ($('#syncStatusText').length) {
-                    startSyncStatusPolling();
-                }
-            }
-        });
-    </script>
 </body>
 </html>
