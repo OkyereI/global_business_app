@@ -3881,7 +3881,74 @@ def create_app():
 
         return render_template('transfer_inventory.html', businesses=all_businesses, categories=all_categories, user_role=session.get('role'), business_types=all_item_types, current_year=datetime.now().year)
 
+    @app.route('/api/v1/inventory/<business_id>', methods=['GET'])
+    @api_key_required
+    def get_business_inventory(business_id):
+        """Return all inventory items for a specific business"""
+        try:
+            inventory_items = InventoryItem.query.filter_by(
+                business_id=business_id,
+                is_active=True
+            ).all()
+            
+            serialized_items = [serialize_inventory_item(item) for item in inventory_items]
+            
+            return jsonify({
+                'success': True,
+                'business_id': business_id,
+                'inventory_items': serialized_items,
+                'count': len(serialized_items)
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
 
+    @app.route('/api/v1/inventory/upsert', methods=['POST'])
+    @api_key_required
+    def upsert_business_inventory():
+        """Create or update inventory items from offline app"""
+        try:
+            data = request.get_json()
+            business_id = data.get('business_id')
+            inventory_items = data.get('inventory_items', [])
+            
+            updated = 0
+            created = 0
+            
+            for item_data in inventory_items:
+                existing = InventoryItem.query.filter_by(
+                    business_id=business_id,
+                    product_name=item_data['product_name']
+                ).first()
+                
+                if existing:
+                    # Update existing item
+                    for key, value in item_data.items():
+                        if hasattr(existing, key) and key != 'id':
+                            setattr(existing, key, value)
+                    updated += 1
+                else:
+                    # Create new item
+                    new_item = InventoryItem(**item_data)
+                    db.session.add(new_item)
+                    created += 1
+            
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': f'Processed {len(inventory_items)} items',
+                'created': created,
+                'updated': updated
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
     # --- Business User Management ---
 
     @app.route('/manage_business_users')

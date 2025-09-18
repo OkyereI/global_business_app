@@ -1,3 +1,4 @@
+
 {% extends 'base.html' %}
 
 {% block head %}
@@ -34,6 +35,102 @@
         
         .hidden {
             display: none;
+        }
+
+        /* Searchable Dropdown Styles */
+        .searchable-dropdown {
+            position: relative;
+            width: 100%;
+        }
+        
+        .searchable-dropdown-input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background-color: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 2.5rem;
+        }
+        
+        .searchable-dropdown-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .searchable-dropdown-placeholder {
+            color: #9ca3af;
+            flex-grow: 1;
+        }
+        
+        .searchable-dropdown-arrow {
+            margin-left: 0.5rem;
+            transition: transform 0.2s;
+        }
+        
+        .searchable-dropdown-arrow.open {
+            transform: rotate(180deg);
+        }
+        
+        .searchable-dropdown-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .searchable-dropdown-list.open {
+            display: block;
+        }
+        
+        .searchable-dropdown-search {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-bottom: 1px solid #e5e7eb;
+            outline: none;
+            font-size: 0.875rem;
+        }
+        
+        .searchable-dropdown-option {
+            padding: 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+        }
+        
+        .searchable-dropdown-option:hover,
+        .searchable-dropdown-option.highlighted {
+            background-color: #f3f4f6;
+        }
+        
+        .searchable-dropdown-option.selected {
+            background-color: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .searchable-dropdown-option:last-child {
+            border-bottom: none;
+        }
+        
+        .no-results {
+            padding: 0.75rem;
+            text-align: center;
+            color: #6b7280;
+            font-style: italic;
         }
 
         /* Barcode scanner styles */
@@ -247,6 +344,228 @@
         let scannerActive = false;
         let QuaggaInstance = null;
 
+        // Searchable Dropdown Component
+        class SearchableDropdown {
+            constructor(container, options = {}) {
+                this.container = container;
+                this.options = options;
+                this.isOpen = false;
+                this.selectedOption = null;
+                this.filteredOptions = [];
+                this.highlightedIndex = -1;
+                
+                this.createDropdown();
+                this.bindEvents();
+            }
+            
+            createDropdown() {
+                this.container.innerHTML = `
+                    <div class="searchable-dropdown-input" tabindex="0">
+                        <span class="searchable-dropdown-placeholder">Select a Product</span>
+                        <i class="fas fa-chevron-down searchable-dropdown-arrow"></i>
+                    </div>
+                    <div class="searchable-dropdown-list">
+                        <input type="text" class="searchable-dropdown-search" placeholder="Search products..." />
+                        <div class="searchable-dropdown-options"></div>
+                    </div>
+                `;
+                
+                this.inputElement = this.container.querySelector('.searchable-dropdown-input');
+                this.placeholderElement = this.container.querySelector('.searchable-dropdown-placeholder');
+                this.arrowElement = this.container.querySelector('.searchable-dropdown-arrow');
+                this.listElement = this.container.querySelector('.searchable-dropdown-list');
+                this.searchElement = this.container.querySelector('.searchable-dropdown-search');
+                this.optionsContainer = this.container.querySelector('.searchable-dropdown-options');
+            }
+            
+            bindEvents() {
+                // Toggle dropdown on click
+                this.inputElement.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggle();
+                });
+                
+                // Handle search input
+                this.searchElement.addEventListener('input', (e) => {
+                    this.filterOptions(e.target.value);
+                });
+                
+                // Handle keyboard navigation
+                this.searchElement.addEventListener('keydown', (e) => {
+                    this.handleKeyDown(e);
+                });
+                
+                this.inputElement.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.toggle();
+                    }
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!this.container.contains(e.target)) {
+                        this.close();
+                    }
+                });
+            }
+            
+            setOptions(options) {
+                this.allOptions = options;
+                this.filteredOptions = [...options];
+                this.renderOptions();
+            }
+            
+            filterOptions(searchTerm) {
+                const term = searchTerm.toLowerCase();
+                this.filteredOptions = this.allOptions.filter(option => 
+                    option.text.toLowerCase().includes(term) ||
+                    option.productName.toLowerCase().includes(term)
+                );
+                this.highlightedIndex = -1;
+                this.renderOptions();
+            }
+            
+            renderOptions() {
+                if (this.filteredOptions.length === 0) {
+                    this.optionsContainer.innerHTML = '<div class="no-results">No products found</div>';
+                    return;
+                }
+                
+                this.optionsContainer.innerHTML = this.filteredOptions.map((option, index) => `
+                    <div class="searchable-dropdown-option" data-value="${option.value}" data-index="${index}">
+                        ${option.text}
+                    </div>
+                `).join('');
+                
+                // Bind option click events
+                this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((optionEl, index) => {
+                    optionEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.selectOption(index);
+                    });
+                });
+            }
+            
+            handleKeyDown(e) {
+                switch (e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        this.highlightNext();
+                        break;
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        this.highlightPrevious();
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        if (this.highlightedIndex >= 0) {
+                            this.selectOption(this.highlightedIndex);
+                        }
+                        break;
+                    case 'Escape':
+                        this.close();
+                        break;
+                }
+            }
+            
+            highlightNext() {
+                this.highlightedIndex = Math.min(this.highlightedIndex + 1, this.filteredOptions.length - 1);
+                this.updateHighlight();
+            }
+            
+            highlightPrevious() {
+                this.highlightedIndex = Math.max(this.highlightedIndex - 1, 0);
+                this.updateHighlight();
+            }
+            
+            updateHighlight() {
+                this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((el, index) => {
+                    el.classList.toggle('highlighted', index === this.highlightedIndex);
+                });
+                
+                // Scroll highlighted option into view
+                if (this.highlightedIndex >= 0) {
+                    const highlightedEl = this.optionsContainer.querySelector('.highlighted');
+                    if (highlightedEl) {
+                        highlightedEl.scrollIntoView({ block: 'nearest' });
+                    }
+                }
+            }
+            
+            selectOption(index) {
+                if (index < 0 || index >= this.filteredOptions.length) return;
+                
+                const option = this.filteredOptions[index];
+                this.selectedOption = option;
+                this.placeholderElement.textContent = option.productName;
+                this.placeholderElement.classList.remove('searchable-dropdown-placeholder');
+                
+                // Mark selected in options
+                this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((el, i) => {
+                    el.classList.toggle('selected', i === index);
+                });
+                
+                this.close();
+                
+                // Trigger change event
+                if (this.options.onChange) {
+                    this.options.onChange(option);
+                }
+            }
+            
+            getValue() {
+                return this.selectedOption ? this.selectedOption.value : '';
+            }
+            
+            getSelectedOption() {
+                return this.selectedOption;
+            }
+            
+            setValue(value) {
+                const option = this.allOptions.find(opt => opt.value === value);
+                if (option) {
+                    const index = this.filteredOptions.findIndex(opt => opt.value === value);
+                    if (index >= 0) {
+                        this.selectOption(index);
+                    }
+                }
+            }
+            
+            reset() {
+                this.selectedOption = null;
+                this.placeholderElement.textContent = 'Select a Product';
+                this.placeholderElement.classList.add('searchable-dropdown-placeholder');
+                this.searchElement.value = '';
+                this.filterOptions('');
+                this.close();
+            }
+            
+            toggle() {
+                if (this.isOpen) {
+                    this.close();
+                } else {
+                    this.open();
+                }
+            }
+            
+            open() {
+                this.isOpen = true;
+                this.listElement.classList.add('open');
+                this.arrowElement.classList.add('open');
+                this.searchElement.focus();
+                this.filterOptions('');
+            }
+            
+            close() {
+                this.isOpen = false;
+                this.listElement.classList.remove('open');
+                this.arrowElement.classList.remove('open');
+                this.highlightedIndex = -1;
+                this.searchElement.value = '';
+            }
+        }
+
         function flashMessage(message, category) {
             const existingAlerts = document.querySelectorAll('.alert.dynamic-alert');
             existingAlerts.forEach(alert => alert.remove());
@@ -272,7 +591,7 @@
             row.innerHTML = `
                 <div class="form-group col-span-full md:col-span-2">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Product</label>
-                    <select class="product-select form-input w-full p-2 rounded-md border-gray-300"></select>
+                    <div class="searchable-dropdown"></div>
                 </div>
                 <div class="form-group">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Unit Type</label>
@@ -300,46 +619,51 @@
                 </div>
             `;
 
-            const productSelect = row.querySelector('.product-select');
+            const dropdownContainer = row.querySelector('.searchable-dropdown');
             const unitTypeSelect = row.querySelector('.unit-type-select');
             const quantityInput = row.querySelector('.quantity-input');
             const unitPriceInput = row.querySelector('.unit-price-input');
             const itemTotalDisplay = row.querySelector('.item-total-display');
             const removeItemBtn = row.querySelector('.remove-item-btn');
 
-            let defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = 'Select a Product';
-            defaultOption.disabled = true;
-            defaultOption.selected = true;
-            productSelect.appendChild(defaultOption);
-
-            inventoryItems.filter(item => !item.product_name.startsWith('Serialization Error')).forEach(item => {
-                const currentStock = parseFloat(item.current_stock) || 0;
-                const salePrice = parseFloat(item.sale_price) || 0;
-                const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
-                const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
-
-                const option = document.createElement('option');
-                option.value = item.id;
-                option.textContent = `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`;
-                option.dataset.productName = item.product_name;
-                option.dataset.salePrice = salePrice;
-                option.dataset.currentStock = currentStock;
-                option.dataset.numberOfTabs = parseFloat(item.number_of_tabs) || 1;
-                option.dataset.unitPricePerTab = unitPricePerTab;
-                option.dataset.isFixedPrice = item.is_fixed_price;
-                option.dataset.fixedSalePrice = parseFloat(item.fixed_sale_price) || 0;
-                option.dataset.barcode = item.barcode || '';
-                option.dataset.itemType = item.item_type || '';
-                option.dataset.purchasePrice = parseFloat(item.purchase_price) || 0;
-                option.dataset.markupPercentagePharmacy = parseFloat(item.markup_percentage_pharmacy) || 0;
-                productSelect.appendChild(option);
+            // Create searchable dropdown
+            const productDropdown = new SearchableDropdown(dropdownContainer, {
+                onChange: (selectedOption) => {
+                    updateRowCalculations();
+                }
             });
 
+            // Populate dropdown options
+            const dropdownOptions = inventoryItems
+                .filter(item => !item.product_name.startsWith('Serialization Error'))
+                .map(item => {
+                    const currentStock = parseFloat(item.current_stock) || 0;
+                    const salePrice = parseFloat(item.sale_price) || 0;
+                    const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
+                    const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+                    
+                    return {
+                        value: item.id,
+                        text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
+                        productName: item.product_name,
+                        salePrice: salePrice,
+                        currentStock: currentStock,
+                        numberOfTabs: parseFloat(item.number_of_tabs) || 1,
+                        unitPricePerTab: unitPricePerTab,
+                        isFixedPrice: item.is_fixed_price,
+                        fixedSalePrice: parseFloat(item.fixed_sale_price) || 0,
+                        barcode: item.barcode || '',
+                        itemType: item.item_type || '',
+                        purchasePrice: parseFloat(item.purchase_price) || 0,
+                        markupPercentagePharmacy: parseFloat(item.markup_percentage_pharmacy) || 0
+                    };
+                });
+            
+            productDropdown.setOptions(dropdownOptions);
+
             const updateRowCalculations = () => {
-                const selectedOption = productSelect.options[productSelect.selectedIndex];
-                if (!selectedOption || !selectedOption.value) {
+                const selectedOption = productDropdown.getSelectedOption();
+                if (!selectedOption) {
                     unitPriceInput.value = '0.00';
                     unitPriceInput.readOnly = true;
                     itemTotalDisplay.value = '0.00';
@@ -367,7 +691,7 @@
                 const purchasePrice = parseFloat(product.purchase_price || 0);
                 const markupPercentagePharmacy = parseFloat(product.markup_percentage_pharmacy) || 0;
 
-                if (selectedOption.dataset.isFixedPrice === 'true') {
+                if (selectedOption.isFixedPrice === 'true') {
                     unitPriceInput.readOnly = true;
                     if (unitType === 'pack') {
                         price = fixedSalePrice;
@@ -410,7 +734,6 @@
                 updateGrandTotal();
             };
 
-            productSelect.addEventListener('change', updateRowCalculations);
             unitTypeSelect.addEventListener('change', updateRowCalculations);
             quantityInput.addEventListener('input', updateRowCalculations);
             unitPriceInput.addEventListener('input', updateRowCalculations);
@@ -423,24 +746,7 @@
             if (Object.keys(itemData).length > 0) {
                 const productToPopulate = inventoryItems.find(item => item.id == itemData.product_id);
                 if (productToPopulate) {
-                    if (!productSelect.querySelector(`option[value="${productToPopulate.id}"]`)) {
-                        const option = document.createElement('option');
-                        option.value = productToPopulate.id;
-                        option.textContent = `${productToPopulate.product_name} (Stock: ${productToPopulate.current_stock.toFixed(2)}) - GH₵${(productToPopulate.sale_price || 0).toFixed(2)}`;
-                        option.dataset.productName = productToPopulate.product_name;
-                        option.dataset.salePrice = productToPopulate.sale_price;
-                        option.dataset.currentStock = productToPopulate.current_stock;
-                        option.dataset.numberOfTabs = productToPopulate.number_of_tabs || 1;
-                        option.dataset.unitPricePerTab = productToPopulate.unit_price_per_tab || 0;
-                        option.dataset.isFixedPrice = productToPopulate.is_fixed_price;
-                        option.dataset.fixedSalePrice = productToPopulate.fixed_sale_price || 0;
-                        option.dataset.barcode = productToPopulate.barcode || '';
-                        option.dataset.itemType = productToPopulate.item_type || '';
-                        option.dataset.purchasePrice = parseFloat(productToPopulate.purchase_price) || 0;
-                        option.dataset.markupPercentagePharmacy = parseFloat(productToPopulate.markup_percentage_pharmacy) || 0;
-                        productSelect.appendChild(option);
-                    }
-                    productSelect.value = itemData.product_id;
+                    productDropdown.setValue(itemData.product_id);
                     unitTypeSelect.value = itemData.sale_unit_type;
                     quantityInput.value = itemData.quantity_sold;
                     unitPriceInput.value = parseFloat(itemData.price_at_time_per_unit_sold).toFixed(2);
@@ -451,6 +757,9 @@
                 unitPriceInput.readOnly = true;
             }
 
+            // Store reference to dropdown for external access
+            row.productDropdown = productDropdown;
+            
             return row;
         }
 
@@ -460,15 +769,15 @@
             cart = [];
 
             itemRows.forEach(row => {
-                const productSelect = row.querySelector('.product-select');
+                const productDropdown = row.productDropdown;
                 const quantityInput = row.querySelector('.quantity-input');
                 const unitPriceInput = row.querySelector('.unit-price-input');
                 const itemTotalDisplay = row.querySelector('.item-total-display');
                 const unitTypeSelect = row.querySelector('.unit-type-select');
 
-                const productId = productSelect.value;
-                const selectedOption = productSelect.options[productSelect.selectedIndex];
-                const productName = selectedOption ? selectedOption.dataset.productName : '';
+                const selectedOption = productDropdown.getSelectedOption();
+                const productId = selectedOption ? selectedOption.value : '';
+                const productName = selectedOption ? selectedOption.productName : '';
                 const quantity = parseFloat(quantityInput.value) || 0;
                 const unitPrice = parseFloat(unitPriceInput.value) || 0;
                 const itemTotal = parseFloat(itemTotalDisplay.value) || 0;
@@ -574,8 +883,8 @@
             if (barcode) {
                 let targetRow = null;
                 document.querySelectorAll('.item-row').forEach(row => {
-                    const productSelect = row.querySelector('.product-select');
-                    if (productSelect.value === '') {
+                    const productDropdown = row.productDropdown;
+                    if (!productDropdown.getValue()) {
                         targetRow = row;
                     }
                 });
@@ -617,9 +926,7 @@
                     updateGrandTotal();
                 } else {
                     flashMessage(data.message || 'Product not found.', 'warning');
-                    const productSelect = rowElement.querySelector('.product-select');
-                    productSelect.value = '';
-                    productSelect.dispatchEvent(new Event('change'));
+                    rowElement.productDropdown.reset();
                     barcodeInput.value = '';
                     updateGrandTotal();
                 }
@@ -633,31 +940,34 @@
         }
 
         function populateProductRow(rowElement, product) {
-            const productSelect = rowElement.querySelector('.product-select');
+            const productDropdown = rowElement.productDropdown;
             const unitTypeSelect = rowElement.querySelector('.unit-type-select');
             const quantityInput = rowElement.querySelector('.quantity-input');
-            const unitPriceInput = rowElement.querySelector('.unit-price-input');
-            const itemTotalDisplay = rowElement.querySelector('.item-total-display');
 
-            if (!productSelect.querySelector(`option[value="${product.id}"]`)) {
-                const option = document.createElement('option');
-                option.value = product.id;
+            // Add product to dropdown if not exists
+            const existingOptions = productDropdown.allOptions || [];
+            if (!existingOptions.find(opt => opt.value === product.id)) {
                 const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
-                option.textContent = `${product.product_name} (Stock: ${product.current_stock.toFixed(2)}) - GH₵${(product.sale_price || 0).toFixed(2)} / GH₵${(product.unit_price_per_tab || 0).toFixed(2)} per ${unitLabel}`;
-                option.dataset.productName = product.product_name;
-                option.dataset.salePrice = product.sale_price;
-                option.dataset.currentStock = product.current_stock;
-                option.dataset.numberOfTabs = product.number_of_tabs || 1;
-                option.dataset.unitPricePerTab = product.unit_price_per_tab || 0;
-                option.dataset.isFixedPrice = product.is_fixed_price;
-                option.dataset.fixedSalePrice = product.fixed_sale_price || 0;
-                option.dataset.barcode = product.barcode || '';
-                option.dataset.itemType = product.item_type || '';
-                option.dataset.purchasePrice = product.purchase_price || 0;
-                option.dataset.markupPercentagePharmacy = product.markup_percentage_pharmacy || 0;
-                productSelect.appendChild(option);
+                const newOption = {
+                    value: product.id,
+                    text: `${product.product_name} (Stock: ${product.current_stock.toFixed(2)}) - GH₵${(product.sale_price || 0).toFixed(2)} / GH₵${(product.unit_price_per_tab || 0).toFixed(2)} per ${unitLabel}`,
+                    productName: product.product_name,
+                    salePrice: product.sale_price,
+                    currentStock: product.current_stock,
+                    numberOfTabs: product.number_of_tabs || 1,
+                    unitPricePerTab: product.unit_price_per_tab || 0,
+                    isFixedPrice: product.is_fixed_price,
+                    fixedSalePrice: product.fixed_sale_price || 0,
+                    barcode: product.barcode || '',
+                    itemType: product.item_type || '',
+                    purchasePrice: product.purchase_price || 0,
+                    markupPercentagePharmacy: product.markup_percentage_pharmacy || 0
+                };
+                existingOptions.push(newOption);
+                productDropdown.setOptions(existingOptions);
             }
-            productSelect.value = product.id;
+            
+            productDropdown.setValue(product.id);
 
             if (parseFloat(product.unit_price_per_tab || 0) > 0 && (product.item_type === 'Pharmacy' || product.item_type === 'Hardware Material')) {
                 unitTypeSelect.value = 'piece';
@@ -667,11 +977,9 @@
             }
 
             quantityInput.value = 1;
-            unitPriceInput.readOnly = true;
-            updateRowCalculations();
         }
         
-        // This function will now generate the receipt HTML directly
+        // Receipt generation functions
         function generateReceiptHtml(transactionDetails) {
             if (!transactionDetails || !transactionDetails.last_transaction_details || transactionDetails.last_transaction_details.length === 0) {
                 return '<h3 class="text-xl font-bold text-center text-gray-800">No transaction details found.</h3>';
@@ -819,7 +1127,7 @@
                 cartItemsContainer.appendChild(createItemRow());
             });
 
-            // This is the new logic to handle the redirect from the server
+            // Handle print-ready logic
             const printReady = {{ print_ready | tojson }};
             const autoPrint = {{ auto_print | tojson }};
 
@@ -838,18 +1146,16 @@
                 if (autoPrint) {
                     window.setTimeout(() => {
                         printReceiptBtn.click();
-                    }, 500); // Small delay to ensure modal is rendered
+                    }, 500);
                 }
             }
         });
 
         saleForm.addEventListener('submit', async function(event) {
-            // Note: We no longer prevent the default form submission.
-            // The Flask redirect handles the navigation.
             updateGrandTotal();
             
             if (cart.length === 0 || cart.some(item => item.quantity_sold <= 0 || item.product_id === '')) {
-                event.preventDefault(); // Prevent submission if validation fails
+                event.preventDefault();
                 flashMessage('Please add at least one valid item with a quantity greater than zero.', 'danger');
                 return;
             }
