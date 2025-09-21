@@ -153,13 +153,33 @@ def get_enhanced_sync_status():
     check_sync_conflicts()  # Check for new conflicts
     
     return {
-        'last_sync': enhanced_sync_status.get('last_sync') or datetime.now().isoformat(),
+        'last_sync': enhanced_sync_status.get('last_sync') or SYNC_STATUS.get('last_sync_time') or 'Never',
         'sync_health': enhanced_sync_status['sync_health'],
         'sync_running': enhanced_sync_status['sync_running'],
         'conflicts_count': len(enhanced_sync_status['sync_conflicts']),
         'conflicts': enhanced_sync_status['sync_conflicts'],
         'status_updated': datetime.now().isoformat()
     }
+
+def update_sync_status(sync_type, success, message):
+    """Update sync status for different sync types"""
+    from datetime import datetime
+    
+    timestamp = datetime.now().isoformat()
+    
+    if sync_type == 'inventory':
+        enhanced_sync_status['last_inventory_sync'] = timestamp
+        enhanced_sync_status['last_inventory_sync_success'] = success
+        enhanced_sync_status['last_inventory_sync_message'] = message
+    
+    enhanced_sync_status['last_sync'] = timestamp
+    enhanced_sync_status['sync_health'] = 'healthy' if success else 'error'
+    enhanced_sync_status['sync_running'] = False
+    
+    # Also update global SYNC_STATUS
+    SYNC_STATUS['last_sync_time'] = timestamp
+    SYNC_STATUS['last_sync_success'] = success
+    SYNC_STATUS['last_sync_message'] = message
 
 def create_app():
     # This is the application factory function
@@ -957,37 +977,79 @@ def create_app():
                     logging.warning("[SYNC][Inventory Pull] Skipping inventory entry with no ID.")
                     continue
                 
-                local_product = Product.query.filter_by(remote_id=remote_id).first()
+                # Use InventoryItem model instead of Product
+                local_item = InventoryItem.query.filter_by(remote_id=remote_id).first()
 
-                if not local_product:
-                    new_product = Product(
-                        name=item_data.get('name', 'Unknown Product'),
+                if not local_item:
+                    # Create new inventory item with proper field mapping
+                    new_item = InventoryItem(
+                        product_name=item_data.get('product_name', item_data.get('name', 'Unknown Product')),
                         business_id=item_data.get('business_id', business_id),
-                        quantity=item_data.get('quantity', 0),
-                        unit_price=item_data.get('unit_price', 0.0),
-                        remote_id=remote_id
+                        current_stock=item_data.get('current_stock', item_data.get('quantity', 0)),
+                        sale_price=item_data.get('sale_price', item_data.get('unit_price', 0.0)),
+                        purchase_price=item_data.get('purchase_price', item_data.get('sale_price', 0.0)),
+                        category=item_data.get('category', 'General'),
+                        item_type=item_data.get('item_type', 'product'),
+                        batch_number=item_data.get('batch_number'),
+                        number_of_tabs=item_data.get('number_of_tabs', 1),
+                        unit_price_per_tab=item_data.get('unit_price_per_tab', 0.0),
+                        expiry_date=item_data.get('expiry_date'),
+                        is_fixed_price=item_data.get('is_fixed_price', False),
+                        fixed_sale_price=item_data.get('fixed_sale_price', 0.0),
+                        is_active=item_data.get('is_active', True),
+                        barcode=item_data.get('barcode'),
+                        markup_percentage_pharmacy=item_data.get('markup_percentage_pharmacy', 0.0),
+                        remote_id=remote_id,
+                        synced_to_remote=True
                     )
-                    db.session.add(new_product)
+                    db.session.add(new_item)
                     new_items_count += 1
+                    logging.info(f"[SYNC][Inventory Pull] Creating new item: {new_item.product_name}")
                 else:
-                    local_product.name = item_data.get('name', local_product.name)
-                    local_product.quantity = item_data.get('quantity', local_product.quantity)
-                    local_product.unit_price = item_data.get('unit_price', local_product.unit_price)
+                    # Update existing inventory item with proper field mapping  
+                    local_item.product_name = item_data.get('product_name', item_data.get('name', local_item.product_name))
+                    local_item.current_stock = item_data.get('current_stock', item_data.get('quantity', local_item.current_stock))
+                    local_item.sale_price = item_data.get('sale_price', item_data.get('unit_price', local_item.sale_price))
+                    local_item.purchase_price = item_data.get('purchase_price', local_item.purchase_price)
+                    local_item.category = item_data.get('category', local_item.category)
+                    local_item.item_type = item_data.get('item_type', local_item.item_type)
+                    local_item.batch_number = item_data.get('batch_number', local_item.batch_number)
+                    local_item.number_of_tabs = item_data.get('number_of_tabs', local_item.number_of_tabs)
+                    local_item.unit_price_per_tab = item_data.get('unit_price_per_tab', local_item.unit_price_per_tab)
+                    local_item.expiry_date = item_data.get('expiry_date', local_item.expiry_date)
+                    local_item.is_fixed_price = item_data.get('is_fixed_price', local_item.is_fixed_price)
+                    local_item.fixed_sale_price = item_data.get('fixed_sale_price', local_item.fixed_sale_price)
+                    local_item.is_active = item_data.get('is_active', local_item.is_active)
+                    local_item.barcode = item_data.get('barcode', local_item.barcode)
+                    local_item.markup_percentage_pharmacy = item_data.get('markup_percentage_pharmacy', local_item.markup_percentage_pharmacy)
+                    local_item.synced_to_remote = True
+                    local_item.last_updated = datetime.now()
                     updated_items_count += 1
+                    logging.info(f"[SYNC][Inventory Pull] Updating item: {local_item.product_name}")
             
             db.session.commit()
             logging.info(f"[SYNC][Inventory Pull] Completed. {new_items_count} new items, {updated_items_count} updated.")
-            return True, f"Inventory synchronized successfully. {new_items_count} new items added, {updated_items_count} items updated."
+            
+            success_message = f"Inventory synchronized successfully. {new_items_count} new items added, {updated_items_count} items updated."
+            update_sync_status('inventory', True, success_message)
+            
+            return True, success_message
 
         except requests.exceptions.RequestException as e:
             logging.error(f"[SYNC][Inventory Pull] Network error: {e}")
-            return False, f"Network error during inventory sync: {e}"
+            error_message = f"Network error during inventory sync: {e}"
+            update_sync_status('inventory', False, error_message)
+            return False, error_message
         except json.JSONDecodeError as e:
             logging.error(f"[SYNC][Inventory Pull] JSON decode error: {e}. Raw response: {response.text[:200]}...")
-            return False, f"Error decoding JSON response during inventory sync: {e}. Server responded with: '{response.text[:100]}...'"
+            error_message = f"Error decoding JSON response during inventory sync: {e}. Server responded with: '{response.text[:100]}...'"
+            update_sync_status('inventory', False, error_message)
+            return False, error_message
         except Exception as e:
             logging.exception("[SYNC][Inventory Pull] Unexpected error")
-            return False, f"An unexpected error occurred during inventory sync: {e}"
+            error_message = f"An unexpected error occurred during inventory sync: {e}"
+            update_sync_status('inventory', False, error_message)
+            return False, error_message
 
     def pull_business_data(api_key):
         """Pulls business and user data from the remote server."""
@@ -2962,6 +3024,33 @@ def create_app():
         success, msg = perform_sync(business_id, api_key=None)  # no API key needed
         status_code = 200 if success else 500
         return jsonify({"success": success, "message": msg}), status_code
+
+    @app.route('/api/v1/pull/inventory', methods=['POST'])
+    @roles_required('super_admin', 'admin')
+    def pull_inventory_only():
+        """Specific route for pulling inventory data only"""
+        business_id = session.get('business_id')
+        if not business_id:
+            return jsonify({"success": False, "message": "No business ID found in session."}), 400
+        
+        # Get API key for the business
+        business = Business.query.get(business_id)
+        if not business:
+            return jsonify({"success": False, "message": "Business not found."}), 404
+            
+        # For now, we'll use the admin API key from environment or session
+        api_key = session.get('api_key') or os.getenv('REMOTE_ADMIN_API_KEY')
+        if not api_key:
+            return jsonify({"success": False, "message": "No API key available for sync."}), 400
+        
+        # Pull inventory data
+        enhanced_sync_status['sync_running'] = True
+        try:
+            success, message = pull_inventory_data(api_key, business_id)
+            status_code = 200 if success else 500
+            return jsonify({"success": success, "message": message}), status_code
+        finally:
+            enhanced_sync_status['sync_running'] = False
     # @app.route('/sync_status', methods=['GET'])
     # def sync_status():
     #     """

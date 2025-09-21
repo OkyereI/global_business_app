@@ -125,6 +125,7 @@ class InventoryItem(db.Model):
     barcode = db.Column(db.String(100), nullable=True)
     markup_percentage_pharmacy = db.Column(db.Float, default=0.0, nullable=False)
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+    remote_id = db.Column(db.String(36), nullable=True)  # For tracking remote inventory items
     
     business = db.relationship('Business', back_populates='inventory_items')
 
