@@ -355,6 +355,8 @@ def create_app():
         except UnicodeEncodeError:
             return f"{label}: GHS{amount:.2f}"
 
+        # Then replace the problematic line with:
+        print(safe_currency_print(total_displayed_sales, "DEBUG: Total displayed sales"))
     def serialize_inventory_item(item):
         """
         Serializes an InventoryItem object to a dictionary for JSON conversion.
@@ -434,7 +436,6 @@ def create_app():
                 "batch_number": "N/A",
                 "is_active": False
             }
-
     def calculate_company_balance_details(company_id):
         """
         Calculates the balance, total debtors, and total creditors for a single company
@@ -464,7 +465,6 @@ def create_app():
             'total_debtors': total_debtors,
             'total_creditors': total_creditors
         }
-
     def serialize_sale_record(sale):
         """Converts a SaleRecord SQLAlchemy object to a JSON-serializable dictionary."""
         return {
@@ -574,326 +574,325 @@ def create_app():
             print(f"Network check error: {e}")
             return False
     def pull_data_from_remote(business_id, access_token):
-            """
-            Pulls data for a specific business from the remote server.
-            """
-            remote_url = get_remote_flask_base_url()
-            headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
-            
-            if not business_id:
-                print("Error: No business ID provided for synchronization.")
-                return False, "Synchronization failed: Business ID not found."
-
-            try:
-                # --- Step 1: Pull Business Data ---
-                print(f"Pulling data for business ID: {business_id}")
-                business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
-                business_response.raise_for_status()
-                
-                if not business_response.text:
-                    print("Error: Received an empty response body for /api/v1/businesses/{business_id}")
-                    return False, "Synchronization failed: Remote server returned empty data for business."
-                
-                business_data = business_response.json()
-                
-                with app.app_context():
-                    business = db.session.get(Business, business_data['id'])
-                    if business:
-                        business.name = business_data['name']
-                        business.address = business_data['address']
-                        business.location = business_data['location']
-                        business.contact = business_data['contact']
-                        business.type = business_data['type']
-                        business.is_active = business_data['is_active']
-                        business.last_updated = datetime.fromisoformat(business_data['last_updated'])
-                    else:
-                        new_business = Business(
-                            id=business_data['id'],
-                            name=business_data['name'],
-                            address=business_data['address'],
-                            location=business_data['location'],
-                            contact=business_data['contact'],
-                            type=business_data['type'],
-                            is_active=business_data['is_active'],
-                            last_updated=datetime.fromisoformat(business_data['last_updated'])
-                        )
-                        db.session.add(new_business)
-                    db.session.commit()
-                    print("Successfully pulled and replaced business data.")
-                
-                # --- Step 2: Pull Users for this Business ---
-                print("Pulling users for this business...")
-                users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
-                users_response.raise_for_status()
-                
-                if not users_response.text:
-                    print("Error: Received an empty response body for /api/v1/users/business/{business_id}")
-                    return False, "Synchronization failed: Remote server returned empty data for users."
-                    
-                users_data = users_response.json()
-                
-                with app.app_context():
-                    User.query.filter_by(business_id=business_id).delete()
-                    for user_data in users_data:
-                        user = User(
-                            id=user_data['id'],
-                            username=user_data['username'],
-                            password=user_data['password'],
-                            role=user_data['role'],
-                            business_id=user_data['business_id'],
-                            is_active=user_data['is_active'],
-                            created_at=datetime.fromisoformat(user_data['created_at'])
-                        )
-                        db.session.add(user)
-                    db.session.commit()
-                    print("Successfully pulled and replaced user data.")
-
-                # --- Step 3: Pull Inventory for this Business ---
-                print("Pulling inventory for this business...")
-                inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
-                inventory_response.raise_for_status()
-
-                if not inventory_response.text:
-                    print("Error: Received an empty response body for /api/v1/inventory/business/{business_id}")
-                    return False, "Synchronization failed: Remote server returned empty data for inventory."
-
-                inventory_data = inventory_response.json()
-
-                with app.app_context():
-                    InventoryItem.query.filter_by(business_id=business_id).delete()
-                    for item_data in inventory_data:
-                        item = InventoryItem(
-                            id=item_data['id'],
-                            business_id=item_data['business_id'],
-                            product_name=item_data['product_name'],
-                            category=item_data['category'],
-                            purchase_price=item_data['purchase_price'],
-                            sale_price=item_data['sale_price'],
-                            current_stock=item_data['current_stock'],
-                            last_updated=datetime.fromisoformat(item_data['last_updated']),
-                            batch_number=item_data['batch_number'],
-                            number_of_tabs=item_data['number_of_tabs'],
-                            unit_price_per_tab=item_data['unit_price_per_tab'],
-                            item_type=item_data['item_type'],
-                            expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
-                            is_fixed_price=item_data['is_fixed_price'],
-                            fixed_sale_price=item_data['fixed_sale_price'],
-                            is_active=item_data['is_active']
-                        )
-                        db.session.add(item)
-                    db.session.commit()
-                    print("Successfully pulled and replaced inventory data.")
-
-                return True, "Synchronization successful."
-
-            except requests.exceptions.RequestException as e:
-                db.session.rollback()
-                print(f"Error during sync: {e}")
-                return False, f"Synchronization failed due to a network or server error: {e}"
-            except json.JSONDecodeError as e:
-                db.session.rollback()
-                print(f"JSON decoding error: {e}. Raw response text was: {e.doc}")
-                return False, f"Synchronization failed: Invalid data format received from the server."
-            except Exception as e:
-                db.session.rollback()
-                print(f"An unexpected error occurred: {e}")
-                return False, f"An unexpected error occurred: {e}"
-        # def pull_data_from_remote(business_id, access_token):
-        #     """
-        #     Pulls data for a specific business from the remote server.
-        #     """
-        #     remote_url = get_remote_flask_base_url()
-        #     headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
-            
-        #     # Check for a valid business ID
-        #     if not business_id:
-        #         print("Error: No business ID provided for synchronization.")
-        #         return False, "Synchronization failed: Business ID not found."
-
-        #     try:
-        #         # --- Step 1: Pull Business Data ---
-        #         print(f"Pulling data for business ID: {business_id}")
-        #         business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
-        #         business_response.raise_for_status()
-                
-        #         # Check for empty response body before decoding
-        #         if not business_response.text.strip():
-        #             print("Error: Received an empty response for business data. Possible server issue.")
-        #             return False, "Synchronization failed: Received an empty response from business API."
-                
-        #         business_data = business_response.json()
-                
-        #         with app.app_context():
-        #             business = db.session.get(Business, business_data['id'])
-        #             if business:
-        #                 # Update existing business
-        #                 business.name = business_data['name']
-        #                 business.address = business_data['address']
-        #                 business.location = business_data['location']
-        #                 business.contact = business_data['contact']
-        #                 business.type = business_data['type']
-        #                 business.is_active = business_data['is_active']
-        #                 business.last_updated = datetime.fromisoformat(business_data['last_updated'])
-        #             else:
-        #                 # Add new business
-        #                 new_business = Business(
-        #                     id=business_data['id'],
-        #                     name=business_data['name'],
-        #                     address=business_data['address'],
-        #                     location=business_data['location'],
-        #                     contact=business_data['contact'],
-        #                     type=business_data['type'],
-        #                     is_active=business_data['is_active'],
-        #                     last_updated=datetime.fromisoformat(business_data['last_updated'])
-        #                 )
-        #                 db.session.add(new_business)
-        #             db.session.commit()
-        #             print("Successfully pulled and replaced business data.")
-                
-        #         # --- Step 2: Pull Users for this Business ---
-        #         print("Pulling users for this business...")
-        #         users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
-        #         users_response.raise_for_status()
-                
-        #         if not users_response.text.strip():
-        #             print("Error: Received an empty response for user data. Skipping user sync.")
-        #             # Continue with the rest of the sync instead of failing
-        #         else:
-        #             users_data = users_response.json()
-        #             with app.app_context():
-        #                 User.query.filter_by(business_id=business_id).delete()
-        #                 for user_data in users_data:
-        #                     user = User(
-        #                         id=user_data['id'],
-        #                         username=user_data['username'],
-        #                         password=user_data['password'],
-        #                         role=user_data['role'],
-        #                         business_id=user_data['business_id'],
-        #                         is_active=user_data['is_active'],
-        #                         created_at=datetime.fromisoformat(user_data['created_at'])
-        #                     )
-        #                     db.session.add(user)
-        #                 db.session.commit()
-        #                 print("Successfully pulled and replaced user data.")
-
-        #         # --- Step 3: Pull Inventory for this Business ---
-        #         print("Pulling inventory for this business...")
-        #         inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
-        #         inventory_response.raise_for_status()
-
-        #         if not inventory_response.text.strip():
-        #             print("Error: Received an empty response for inventory data. Skipping inventory sync.")
-        #         else:
-        #             inventory_data = inventory_response.json()
-        #             with app.app_context():
-        #                 InventoryItem.query.filter_by(business_id=business_id).delete()
-        #                 for item_data in inventory_data:
-        #                     item = InventoryItem(
-        #                         id=item_data['id'],
-        #                         business_id=item_data['business_id'],
-        #                         product_name=item_data['product_name'],
-        #                         category=item_data['category'],
-        #                         purchase_price=item_data['purchase_price'],
-        #                         sale_price=item_data['sale_price'],
-        #                         current_stock=item_data['current_stock'],
-        #                         last_updated=datetime.fromisoformat(item_data['last_updated']),
-        #                         batch_number=item_data['batch_number'],
-        #                         number_of_tabs=item_data['number_of_tabs'],
-        #                         unit_price_per_tab=item_data['unit_price_per_tab'],
-        #                         item_type=item_data['item_type'],
-        #                         expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
-        #                         is_fixed_price=item_data['is_fixed_price'],
-        #                         fixed_sale_price=item_data['fixed_sale_price'],
-        #                         is_active=item_data['is_active']
-        #                     )
-        #                     db.session.add(item)
-        #                 db.session.commit()
-        #                 print("Successfully pulled and replaced inventory data.")
-
-        #         return True, "Synchronization successful."
-
-        #     except requests.exceptions.RequestException as e:
-        #         db.session.rollback()
-        #         print(f"Error during sync: {e}")
-        #         return False, f"Synchronization failed: {e}"
-        #     except Exception as e:
-        #         db.session.rollback()
-        #         print(f"An unexpected error occurred: {e}")
-        #         return False, f"An unexpected error occurred: {e}"
+        """
+        Pulls data for a specific business from the remote server.
+        """
+        remote_url = get_remote_flask_base_url()
+        headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
         
+        if not business_id:
+            print("Error: No business ID provided for synchronization.")
+            return False, "Synchronization failed: Business ID not found."
+
+        try:
+            # --- Step 1: Pull Business Data ---
+            print(f"Pulling data for business ID: {business_id}")
+            business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
+            business_response.raise_for_status()
+            
+            if not business_response.text:
+                print("Error: Received an empty response body for /api/v1/businesses/{business_id}")
+                return False, "Synchronization failed: Remote server returned empty data for business."
+            
+            business_data = business_response.json()
+            
+            with app.app_context():
+                business = db.session.get(Business, business_data['id'])
+                if business:
+                    business.name = business_data['name']
+                    business.address = business_data['address']
+                    business.location = business_data['location']
+                    business.contact = business_data['contact']
+                    business.type = business_data['type']
+                    business.is_active = business_data['is_active']
+                    business.last_updated = datetime.fromisoformat(business_data['last_updated'])
+                else:
+                    new_business = Business(
+                        id=business_data['id'],
+                        name=business_data['name'],
+                        address=business_data['address'],
+                        location=business_data['location'],
+                        contact=business_data['contact'],
+                        type=business_data['type'],
+                        is_active=business_data['is_active'],
+                        last_updated=datetime.fromisoformat(business_data['last_updated'])
+                    )
+                    db.session.add(new_business)
+                db.session.commit()
+                print("Successfully pulled and replaced business data.")
+            
+            # --- Step 2: Pull Users for this Business ---
+            print("Pulling users for this business...")
+            users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
+            users_response.raise_for_status()
+            
+            if not users_response.text:
+                print("Error: Received an empty response body for /api/v1/users/business/{business_id}")
+                return False, "Synchronization failed: Remote server returned empty data for users."
+                
+            users_data = users_response.json()
+            
+            with app.app_context():
+                User.query.filter_by(business_id=business_id).delete()
+                for user_data in users_data:
+                    user = User(
+                        id=user_data['id'],
+                        username=user_data['username'],
+                        password=user_data['password'],
+                        role=user_data['role'],
+                        business_id=user_data['business_id'],
+                        is_active=user_data['is_active'],
+                        created_at=datetime.fromisoformat(user_data['created_at'])
+                    )
+                    db.session.add(user)
+                db.session.commit()
+                print("Successfully pulled and replaced user data.")
+
+            # --- Step 3: Pull Inventory for this Business ---
+            print("Pulling inventory for this business...")
+            inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
+            inventory_response.raise_for_status()
+
+            if not inventory_response.text:
+                print("Error: Received an empty response body for /api/v1/inventory/business/{business_id}")
+                return False, "Synchronization failed: Remote server returned empty data for inventory."
+
+            inventory_data = inventory_response.json()
+
+            with app.app_context():
+                InventoryItem.query.filter_by(business_id=business_id).delete()
+                for item_data in inventory_data:
+                    item = InventoryItem(
+                        id=item_data['id'],
+                        business_id=item_data['business_id'],
+                        product_name=item_data['product_name'],
+                        category=item_data['category'],
+                        purchase_price=item_data['purchase_price'],
+                        sale_price=item_data['sale_price'],
+                        current_stock=item_data['current_stock'],
+                        last_updated=datetime.fromisoformat(item_data['last_updated']),
+                        batch_number=item_data['batch_number'],
+                        number_of_tabs=item_data['number_of_tabs'],
+                        unit_price_per_tab=item_data['unit_price_per_tab'],
+                        item_type=item_data['item_type'],
+                        expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+                        is_fixed_price=item_data['is_fixed_price'],
+                        fixed_sale_price=item_data['fixed_sale_price'],
+                        is_active=item_data['is_active']
+                    )
+                    db.session.add(item)
+                db.session.commit()
+                print("Successfully pulled and replaced inventory data.")
+
+            return True, "Synchronization successful."
+
+        except requests.exceptions.RequestException as e:
+            db.session.rollback()
+            print(f"Error during sync: {e}")
+            return False, f"Synchronization failed due to a network or server error: {e}"
+        except json.JSONDecodeError as e:
+            db.session.rollback()
+            print(f"JSON decoding error: {e}. Raw response text was: {e.doc}")
+            return False, f"Synchronization failed: Invalid data format received from the server."
+        except Exception as e:
+            db.session.rollback()
+            print(f"An unexpected error occurred: {e}")
+            return False, f"An unexpected error occurred: {e}"
+    # def pull_data_from_remote(business_id, access_token):
+    #     """
+    #     Pulls data for a specific business from the remote server.
+    #     """
+    #     remote_url = get_remote_flask_base_url()
+    #     headers = {'Authorization': f'Bearer {access_token}'} if access_token else {}
+        
+    #     # Check for a valid business ID
+    #     if not business_id:
+    #         print("Error: No business ID provided for synchronization.")
+    #         return False, "Synchronization failed: Business ID not found."
+
+    #     try:
+    #         # --- Step 1: Pull Business Data ---
+    #         print(f"Pulling data for business ID: {business_id}")
+    #         business_response = requests.get(f"{remote_url}/api/v1/businesses/{business_id}", headers=headers)
+    #         business_response.raise_for_status()
+            
+    #         # Check for empty response body before decoding
+    #         if not business_response.text.strip():
+    #             print("Error: Received an empty response for business data. Possible server issue.")
+    #             return False, "Synchronization failed: Received an empty response from business API."
+            
+    #         business_data = business_response.json()
+            
+    #         with app.app_context():
+    #             business = db.session.get(Business, business_data['id'])
+    #             if business:
+    #                 # Update existing business
+    #                 business.name = business_data['name']
+    #                 business.address = business_data['address']
+    #                 business.location = business_data['location']
+    #                 business.contact = business_data['contact']
+    #                 business.type = business_data['type']
+    #                 business.is_active = business_data['is_active']
+    #                 business.last_updated = datetime.fromisoformat(business_data['last_updated'])
+    #             else:
+    #                 # Add new business
+    #                 new_business = Business(
+    #                     id=business_data['id'],
+    #                     name=business_data['name'],
+    #                     address=business_data['address'],
+    #                     location=business_data['location'],
+    #                     contact=business_data['contact'],
+    #                     type=business_data['type'],
+    #                     is_active=business_data['is_active'],
+    #                     last_updated=datetime.fromisoformat(business_data['last_updated'])
+    #                 )
+    #                 db.session.add(new_business)
+    #             db.session.commit()
+    #             print("Successfully pulled and replaced business data.")
+            
+    #         # --- Step 2: Pull Users for this Business ---
+    #         print("Pulling users for this business...")
+    #         users_response = requests.get(f"{remote_url}/api/v1/users/business/{business_id}", headers=headers)
+    #         users_response.raise_for_status()
+            
+    #         if not users_response.text.strip():
+    #             print("Error: Received an empty response for user data. Skipping user sync.")
+    #             # Continue with the rest of the sync instead of failing
+    #         else:
+    #             users_data = users_response.json()
+    #             with app.app_context():
+    #                 User.query.filter_by(business_id=business_id).delete()
+    #                 for user_data in users_data:
+    #                     user = User(
+    #                         id=user_data['id'],
+    #                         username=user_data['username'],
+    #                         password=user_data['password'],
+    #                         role=user_data['role'],
+    #                         business_id=user_data['business_id'],
+    #                         is_active=user_data['is_active'],
+    #                         created_at=datetime.fromisoformat(user_data['created_at'])
+    #                     )
+    #                     db.session.add(user)
+    #                 db.session.commit()
+    #                 print("Successfully pulled and replaced user data.")
+
+    #         # --- Step 3: Pull Inventory for this Business ---
+    #         print("Pulling inventory for this business...")
+    #         inventory_response = requests.get(f"{remote_url}/api/v1/inventory/business/{business_id}", headers=headers)
+    #         inventory_response.raise_for_status()
+
+    #         if not inventory_response.text.strip():
+    #             print("Error: Received an empty response for inventory data. Skipping inventory sync.")
+    #         else:
+    #             inventory_data = inventory_response.json()
+    #             with app.app_context():
+    #                 InventoryItem.query.filter_by(business_id=business_id).delete()
+    #                 for item_data in inventory_data:
+    #                     item = InventoryItem(
+    #                         id=item_data['id'],
+    #                         business_id=item_data['business_id'],
+    #                         product_name=item_data['product_name'],
+    #                         category=item_data['category'],
+    #                         purchase_price=item_data['purchase_price'],
+    #                         sale_price=item_data['sale_price'],
+    #                         current_stock=item_data['current_stock'],
+    #                         last_updated=datetime.fromisoformat(item_data['last_updated']),
+    #                         batch_number=item_data['batch_number'],
+    #                         number_of_tabs=item_data['number_of_tabs'],
+    #                         unit_price_per_tab=item_data['unit_price_per_tab'],
+    #                         item_type=item_data['item_type'],
+    #                         expiry_date=datetime.fromisoformat(item_data['expiry_date']).date() if item_data['expiry_date'] else None,
+    #                         is_fixed_price=item_data['is_fixed_price'],
+    #                         fixed_sale_price=item_data['fixed_sale_price'],
+    #                         is_active=item_data['is_active']
+    #                     )
+    #                     db.session.add(item)
+    #                 db.session.commit()
+    #                 print("Successfully pulled and replaced inventory data.")
+
+    #         return True, "Synchronization successful."
+
+    #     except requests.exceptions.RequestException as e:
+    #         db.session.rollback()
+    #         print(f"Error during sync: {e}")
+    #         return False, f"Synchronization failed: {e}"
+    #     except Exception as e:
+    #         db.session.rollback()
+    #         print(f"An unexpected error occurred: {e}")
+    #         return False, f"An unexpected error occurred: {e}"
+    
 
     def push_data_to_remote(remote_business_id, api_key):
-            remote_url = get_remote_flask_base_url()
-            headers = {'Content-Type': 'application/json'} # API expects JSON
-            
-            # 1. Push pending Sales Records (those not yet marked as synced in local DB)
-            with app.app_context(): # Ensure we are in app context for DB operations
-                pending_sales = SalesRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
-                if pending_sales:
-                    sales_data = [serialize_sale_record_api(s) for s in pending_sales]
-                    try:
-                        sales_response = requests.post(f"{remote_url}/api/v1/sales", json=sales_data, headers=headers)
-                        sales_response.raise_for_status()
-                        response_json = sales_response.json()
-                        if response_json.get('message') == 'Sales records synchronized successfully.':
-                            for sale in pending_sales:
-                                sale.synced_to_remote = True # Mark as synced locally
-                            db.session.commit()
-                            print(f"Pushed {len(pending_sales)} sales to remote. Response: {response_json}")
-                            return True, f"Pushed {len(pending_sales)} sales."
-                        else:
-                            print(f"Error pushing sales (remote message): {response_json.get('message')}")
-                            return False, f"Error pushing sales: {response_json.get('message')}"
-                    except requests.exceptions.RequestException as e:
-                        print(f"Error pushing sales: {e}")
-                        db.session.rollback() # Rollback if API call fails
-                        return False, f"Error pushing sales: {e}"
-                    except Exception as e:
-                        print(f"Unexpected error pushing sales: {e}")
-                        db.session.rollback()
-                        return False, f"Unexpected error pushing sales: {e}"
-                else:
-                    print("No pending sales to push.")
-                    return True, "No pending sales to push."
+        remote_url = get_remote_flask_base_url()
+        headers = {'Content-Type': 'application/json'} # API expects JSON
+        
+        # 1. Push pending Sales Records (those not yet marked as synced in local DB)
+        with app.app_context(): # Ensure we are in app context for DB operations
+            pending_sales = SalesRecord.query.filter_by(business_id=remote_business_id, synced_to_remote=False).all()
+            if pending_sales:
+                sales_data = [serialize_sale_record_api(s) for s in pending_sales]
+                try:
+                    sales_response = requests.post(f"{remote_url}/api/v1/sales", json=sales_data, headers=headers)
+                    sales_response.raise_for_status()
+                    response_json = sales_response.json()
+                    if response_json.get('message') == 'Sales records synchronized successfully.':
+                        for sale in pending_sales:
+                            sale.synced_to_remote = True # Mark as synced locally
+                        db.session.commit()
+                        print(f"Pushed {len(pending_sales)} sales to remote. Response: {response_json}")
+                        return True, f"Pushed {len(pending_sales)} sales."
+                    else:
+                        print(f"Error pushing sales (remote message): {response_json.get('message')}")
+                        return False, f"Error pushing sales: {response_json.get('message')}"
+                except requests.exceptions.RequestException as e:
+                    print(f"Error pushing sales: {e}")
+                    db.session.rollback() # Rollback if API call fails
+                    return False, f"Error pushing sales: {e}"
+                except Exception as e:
+                    print(f"Unexpected error pushing sales: {e}")
+                    db.session.rollback()
+                    return False, f"Unexpected error pushing sales: {e}"
+            else:
+                print("No pending sales to push.")
+                return True, "No pending sales to push."
 
-            # NOTE: If you enable local inventory modifications, you'd need a similar
-            # push logic for InventoryItem objects here, possibly using a `synced_to_remote` flag
-            # on InventoryItem as well. For now, we assume inventory is primarily pulled.
+        # NOTE: If you enable local inventory modifications, you'd need a similar
+        # push logic for InventoryItem objects here, possibly using a `synced_to_remote` flag
+        # on InventoryItem as well. For now, we assume inventory is primarily pulled.
 
-        # In your app.py or wherever your sync logic resides
+    # In your app.py or wherever your sync logic resides
 
     def perform_sync(business_id):
-            try:
-                # Step 1: Check if the business is registered on the remote server
-                business = Business.query.get(business_id)
-                if not business.remote_id: # Assuming you add a remote_id field to your Business model
-                    print("Business not registered remotely. Attempting to register...")
-                    register_url = 'http://localhost:5000/api/v1/register_business'
-                    payload = {'business_name': business.name, '...': '...'} # Add other business details
-                    response = requests.post(register_url, json=payload)
-                    response.raise_for_status()
-                    
-                    # Get the new remote ID from the server's response and save it locally
-                    new_remote_id = response.json().get('business_id')
-                    business.remote_id = new_remote_id
-                    db.session.commit()
-                    print(f"Successfully registered business. New remote ID: {new_remote_id}")
+        try:
+            # Step 1: Check if the business is registered on the remote server
+            business = Business.query.get(business_id)
+            if not business.remote_id: # Assuming you add a remote_id field to your Business model
+                print("Business not registered remotely. Attempting to register...")
+                register_url = 'http://localhost:5000/api/v1/register_business'
+                payload = {'business_name': business.name, '...': '...'} # Add other business details
+                response = requests.post(register_url, json=payload)
+                response.raise_for_status()
+                
+                # Get the new remote ID from the server's response and save it locally
+                new_remote_id = response.json().get('business_id')
+                business.remote_id = new_remote_id
+                db.session.commit()
+                print(f"Successfully registered business. New remote ID: {new_remote_id}")
 
-                # Step 2: Now that we have a valid remote ID, proceed with sync
-                remote_business_id = business.remote_id if business.remote_id else business.id # Use the remote ID if it exists
-                
-                # Pull users
-                users_url = f'http://localhost:5000/api/v1/users?business_id={remote_business_id}'
-                response = requests.get(users_url)
-                response.raise_for_status() # This will now work correctly
-                
-                # ... proceed to pull inventory, sales, etc. ...
-                
-                return True, "Synchronization successful."
-            except requests.exceptions.RequestException as e:
-                return False, f"Error during synchronization: {e}"
+            # Step 2: Now that we have a valid remote ID, proceed with sync
+            remote_business_id = business.remote_id if business.remote_id else business.id # Use the remote ID if it exists
+            
+            # Pull users
+            users_url = f'http://localhost:5000/api/v1/users?business_id={remote_business_id}'
+            response = requests.get(users_url)
+            response.raise_for_status() # This will now work correctly
+            
+            # ... proceed to pull inventory, sales, etc. ...
+            
+            return True, "Synchronization successful."
+        except requests.exceptions.RequestException as e:
+            return False, f"Error during synchronization: {e}"
     def pull_inventory_data(api_key, business_id):
-
         """Pulls inventory data for a specific business from the remote server."""
         try:
             api_endpoint = f"{os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')}/api/v1/inventory/business/{business_id}"
@@ -1072,7 +1071,7 @@ def create_app():
         except Exception as e:
             return False, f"An unexpected error occurred during business sync: {e}"
 
-
+  
     def pull_business_data(api_key):
         """Pulls business and user data from the remote server."""
         try:
@@ -5683,8 +5682,153 @@ def create_app():
                             last_transaction_date=sales_record.transaction_date.strftime('%Y-%m-%d %H:%M:%S'),
                             current_year=datetime.now().year)
 
+    # Add these routes to your app.py file
+
+    @app.route('/sales/returns/print/<return_id>')
+    @login_required
+    def print_return_receipt(return_id):
+        """Generate printable return receipt"""
+        business_id = get_current_business_id()
+        if not business_id:
+            flash('No business selected. Please select a business first.', 'warning')
+            return redirect(url_for('dashboard'))
+        
+        # Get the return record
+        return_record = ReturnRecord.query.filter_by(
+            id=return_id,
+            business_id=business_id
+        ).first()
+        
+        if not return_record:
+            flash('Return record not found.', 'error')
+            return redirect(url_for('returns_history'))
+        
+        # Get business information
+        business = Business.query.get(business_id)
+        
+        return render_template('print_return_receipt.html',
+                            return_record=return_record,
+                            business=business,
+                            current_year=datetime.now().year)
+
+    @app.route('/sales/returns/send_sms', methods=['POST'])
+    @login_required
+    def send_return_sms():
+        """Send return receipt via SMS"""
+        try:
+            business_id = get_current_business_id()
+            if not business_id:
+                return jsonify({
+                    'success': False,
+                    'message': 'No business selected'
+                }), 400
+            
+            return_id = request.form.get('return_id')
+            phone_number = request.form.get('phone_number')
+            
+            if not return_id or not phone_number:
+                return jsonify({
+                    'success': False,
+                    'message': 'Missing return ID or phone number'
+                }), 400
+            
+            # Get the return record
+            return_record = ReturnRecord.query.filter_by(
+                id=return_id,
+                business_id=business_id
+            ).first()
+            
+            if not return_record:
+                return jsonify({
+                    'success': False,
+                    'message': 'Return record not found'
+                }), 404
+            
+            # Get business information
+            business = Business.query.get(business_id)
+            
+            # Format return items for SMS
+            returned_items = return_record.get_returned_items()
+            items_text = "\n".join([
+                f"- {item['product_name']}: {item['quantity_returned']} @ GH₵{item['sale_price']:.2f} = GH₵{item['refund_amount']:.2f}"
+                for item in returned_items
+            ])
+            
+            # Create SMS message
+            sms_message = f"""
+    🧾 RETURN RECEIPT - {business.name}
+    📍 {business.location or 'N/A'}
+    📞 {business.contact or 'N/A'}
+
+    🔄 Return Receipt: {return_record.return_receipt_number}
+    📅 Date: {return_record.return_date.strftime('%Y-%m-%d %H:%M')}
+    🎯 Original Receipt: {return_record.original_receipt_number}
+    👤 Processed by: {return_record.processed_by}
+
+    📦 RETURNED ITEMS:
+    {items_text}
+
+    💰 TOTAL REFUND: GH₵{return_record.total_refund_amount:.2f}
+    🔄 Method: {return_record.payment_method or 'Not specified'}
+    📝 Reason: {return_record.return_reason or 'Not specified'}
+
+    Thank you for your business!
+    """.strip()
+            
+            # Send SMS using Arkesel API (similar to your existing SMS functionality)
+            sms_success = send_sms_via_arkesel(phone_number, sms_message)
+            
+            if sms_success:
+                return jsonify({
+                    'success': True,
+                    'message': f'Return receipt sent to {phone_number}'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to send SMS. Please check phone number and try again.'
+                }), 500
+                
+        except Exception as e:
+            logging.error(f"Error sending return SMS: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Internal server error'
+            }), 500
+
+    def send_sms_via_arkesel(phone_number, message):
+        """Send SMS using Arkesel API - reuse your existing SMS function"""
+        try:
+            # Clean phone number
+            phone = phone_number.strip()
+            if phone.startswith('0'):
+                phone = '233' + phone[1:]
+            elif not phone.startswith('233'):
+                phone = '233' + phone
+            
+            # Prepare SMS payload
+            sms_payload = {
+                'key': ARKESEL_API_KEY,
+                'to': phone,
+                'msg': message,
+                'sender': ARKESEL_SENDER_ID
+            }
+            
+            # Send SMS
+            response = requests.post(ARKESEL_SMS_URL, data=sms_payload, timeout=30)
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                return response_data.get('code') == '200'
+            else:
+                return False
+                
+        except Exception as e:
+            logging.error(f"Arkesel SMS error: {str(e)}")
+            return False
     # Returns Processing Route
     @app.route('/sales/add_return', methods=['GET', 'POST'])
+    @csrf.exempt
     @login_required  # Only require login, not specific roles
     def add_return():
         business_id = get_current_business_id()
@@ -6823,70 +6967,70 @@ def create_app():
                             current_year=datetime.now().year)
 
     @app.route('/company/print_last_receipt')
-    # @login_required # Uncomment this decorator if you want to enforce login for printing
+# @login_required # Uncomment this decorator if you want to enforce login for printing
     def print_last_company_transaction_receipt():
-            """
-            Renders a dedicated, minimal page for printing the last recorded company transaction receipt.
-            This page is designed to be immediately printed.
-            """
-            business_id = get_current_business_id() # Ensure this utility function is accessible
+        """
+        Renders a dedicated, minimal page for printing the last recorded company transaction receipt.
+        This page is designed to be immediately printed.
+        """
+        business_id = get_current_business_id() # Ensure this utility function is accessible
 
-            # Retrieve last transaction details from session
-            # Using .pop() will remove them from the session after retrieval, preventing re-prints on refresh
-            last_company_transaction_details = session.pop('last_company_transaction_details', None)
-            
-            # Optionally, you might want to retrieve and pop the ID as well, though not used in this function
-            # last_company_transaction_id = session.pop('last_company_transaction_id', None)
+        # Retrieve last transaction details from session
+        # Using .pop() will remove them from the session after retrieval, preventing re-prints on refresh
+        last_company_transaction_details = session.pop('last_company_transaction_details', None)
+        
+        # Optionally, you might want to retrieve and pop the ID as well, though not used in this function
+        # last_company_transaction_id = session.pop('last_company_transaction_id', None)
 
-            if not last_company_transaction_details:
-                flash('No recent transaction details found for printing.', 'warning')
-                return redirect(url_for('companies')) # Redirect to the companies list or dashboard
+        if not last_company_transaction_details:
+            flash('No recent transaction details found for printing.', 'warning')
+            return redirect(url_for('companies')) # Redirect to the companies list or dashboard
 
-            # Fetch the company details using the company_id from the stored transaction details
-            company = None
-            try:
-                company = Company.query.filter_by(
-                    id=last_company_transaction_details['company_id'], 
-                    business_id=business_id
-                ).first()
-            except KeyError:
-                # Handle cases where 'company_id' might be missing from session details (shouldn't happen with correct flow)
-                flash('Error: Company ID missing in transaction details.', 'danger')
-                return redirect(url_for('companies'))
+        # Fetch the company details using the company_id from the stored transaction details
+        company = None
+        try:
+            company = Company.query.filter_by(
+                id=last_company_transaction_details['company_id'], 
+                business_id=business_id
+            ).first()
+        except KeyError:
+            # Handle cases where 'company_id' might be missing from session details (shouldn't happen with correct flow)
+            flash('Error: Company ID missing in transaction details.', 'danger')
+            return redirect(url_for('companies'))
 
-            if not company: 
-                flash('Company not found for the last transaction.', 'danger')
-                return redirect(url_for('companies'))
+        if not company: 
+            flash('Company not found for the last transaction.', 'danger')
+            return redirect(url_for('companies'))
 
-            # Fetch or construct business information for the receipt
-            business_info = session.get('business_info', {})
-            if not business_info or not business_info.get('name'):
-                business_details = Business.query.filter_by(id=business_id).first()
-                if business_details:
-                    business_info = {
-                        'name': business_details.name,
-                        'address': business_details.address,
-                        'location': business_details.location,
-                        'phone': business_details.contact,
-                        'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
-                    }
-                else:
-                    # Fallback to default enterprise details if business details aren't found
-                    business_info = {
-                        'name': "Your Enterprise Name",
-                        'address': "Your Enterprise Address",
-                        'location': "Your Enterprise Location",
-                        'phone': "Your Enterprise Contact",
-                        'email': 'info@example.com'
-                    }
+        # Fetch or construct business information for the receipt
+        business_info = session.get('business_info', {})
+        if not business_info or not business_info.get('name'):
+            business_details = Business.query.filter_by(id=business_id).first()
+            if business_details:
+                business_info = {
+                    'name': business_details.name,
+                    'address': business_details.address,
+                    'location': business_details.location,
+                    'phone': business_details.contact,
+                    'email': business_details.email if hasattr(business_details, 'email') else 'N/A'
+                }
+            else:
+                # Fallback to default enterprise details if business details aren't found
+                business_info = {
+                    'name': "Your Enterprise Name",
+                    'address': "Your Enterprise Address",
+                    'location': "Your Enterprise Location",
+                    'phone': "Your Enterprise Contact",
+                    'email': 'info@example.com'
+                }
 
-            current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        current_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            return render_template('company_last_receipt_print.html',
-                                transaction_details=last_company_transaction_details,
-                                company=company,
-                                business_info=business_info,
-                                current_date=current_date)
+        return render_template('company_last_receipt_print.html',
+                            transaction_details=last_company_transaction_details,
+                            company=company,
+                            business_info=business_info,
+                            current_date=current_date)
 
 
     # NEW ROUTE: Send SMS for a specific Company Transaction
@@ -6894,66 +7038,66 @@ def create_app():
     @app.route('/company/transaction/send_sms/<string:transaction_id>')
     # @login_required # Ensure this decorator is uncommented in your actual app if needed
     def send_company_transaction_sms(transaction_id):
-            # ACCESS CONTROL: Allows admin, sales roles
-            if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
-                flash('You do not have permission to send SMS receipts or no business selected.', 'danger')
-                return redirect(url_for('dashboard'))
-            
-            if get_current_business_type() != 'Hardware':
-                flash('This feature is only available for Hardware businesses.', 'warning')
-                return redirect(url_for('dashboard'))
+        # ACCESS CONTROL: Allows admin, sales roles
+        if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
+            flash('You do not have permission to send SMS receipts or no business selected.', 'danger')
+            return redirect(url_for('dashboard'))
+        
+        if get_current_business_type() != 'Hardware':
+            flash('This feature is only available for Hardware businesses.', 'warning')
+            return redirect(url_for('dashboard'))
 
-            business_id = get_current_business_id()
-            transaction = CompanyTransaction.query.filter_by(id=transaction_id, business_id=business_id).first_or_404()
-            company = Company.query.filter_by(id=transaction.company_id, business_id=business_id).first_or_404()
+        business_id = get_current_business_id()
+        transaction = CompanyTransaction.query.filter_by(id=transaction_id, business_id=business_id).first_or_404()
+        company = Company.query.filter_by(id=transaction.company_id, business_id=business_id).first_or_404()
 
-            # Corrected: Use company.phone_number instead of company.phone
-            if not company.phone_number:
-                flash(f'SMS receipt not sent: No phone number configured for company {company.name}.', 'warning')
-                return redirect(url_for('company_transaction', company_id=company.id))
-
-            business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
-            
-            # Calculate balance dynamically for the SMS
-            current_company_balance = company.calculate_current_balance()
-            current_balance_str = f"GH₵{current_company_balance:.2f}" if current_company_balance >= 0 else f"-GH₵{abs(current_company_balance):.2f}"
-            
-            sms_message = (
-                f"{business_name_for_sms} Transaction Alert for {company.name}:\n"
-                f"Type: {transaction.transaction_type}\n" # Correct attribute name from .type to .transaction_type
-                f"Amount: GH₵{transaction.amount:.2f}\n"
-                f"New Balance: {current_balance_str}\n"
-                f"Date: {transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S')}\n" # Correct attribute name from .date to .transaction_date
-                f"Description: {transaction.description if transaction.description else 'N/A'}\n"
-                f"Recorded By: {User.query.get(transaction.recorded_by).username}\n\n" # Look up username from recorded_by ID
-                f"Thank you for your business!\n"
-                f"From: {business_name_for_sms}"
-            )
-            
-            sms_payload = {
-                'action': 'send-sms',
-                'api_key': ARKESEL_API_KEY,
-                'to': company.phone_number, # Corrected: Use company.phone_number
-                'from': ARKESEL_SENDER_ID,
-                'sms': sms_message
-            }
-            
-            try:
-                sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
-                sms_response.raise_for_status()
-                sms_result = sms_response.json()
-
-                if sms_result.get('status') == 'success':
-                    flash(f'SMS receipt sent to {company.name} successfully!', 'success')
-                else:
-                    error_message = sms_result.get('message', 'Unknown error from SMS provider.')
-                    flash(f'Failed to send SMS receipt to {company.name}. Error: {error_message}', 'danger')
-            except requests.exceptions.RequestException as e:
-                flash(f'Network error sending SMS receipt: {e}', 'danger')
-            except json.JSONDecodeError:
-                flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
-                
+        # Corrected: Use company.phone_number instead of company.phone
+        if not company.phone_number:
+            flash(f'SMS receipt not sent: No phone number configured for company {company.name}.', 'warning')
             return redirect(url_for('company_transaction', company_id=company.id))
+
+        business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+        
+        # Calculate balance dynamically for the SMS
+        current_company_balance = company.calculate_current_balance()
+        current_balance_str = f"GH₵{current_company_balance:.2f}" if current_company_balance >= 0 else f"-GH₵{abs(current_company_balance):.2f}"
+        
+        sms_message = (
+            f"{business_name_for_sms} Transaction Alert for {company.name}:\n"
+            f"Type: {transaction.transaction_type}\n" # Correct attribute name from .type to .transaction_type
+            f"Amount: GH₵{transaction.amount:.2f}\n"
+            f"New Balance: {current_balance_str}\n"
+            f"Date: {transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S')}\n" # Correct attribute name from .date to .transaction_date
+            f"Description: {transaction.description if transaction.description else 'N/A'}\n"
+            f"Recorded By: {User.query.get(transaction.recorded_by).username}\n\n" # Look up username from recorded_by ID
+            f"Thank you for your business!\n"
+            f"From: {business_name_for_sms}"
+        )
+        
+        sms_payload = {
+            'action': 'send-sms',
+            'api_key': ARKESEL_API_KEY,
+            'to': company.phone_number, # Corrected: Use company.phone_number
+            'from': ARKESEL_SENDER_ID,
+            'sms': sms_message
+        }
+        
+        try:
+            sms_response = requests.get(ARKESEL_SMS_URL, params=sms_payload)
+            sms_response.raise_for_status()
+            sms_result = sms_response.json()
+
+            if sms_result.get('status') == 'success':
+                flash(f'SMS receipt sent to {company.name} successfully!', 'success')
+            else:
+                error_message = sms_result.get('message', 'Unknown error from SMS provider.')
+                flash(f'Failed to send SMS receipt to {company.name}. Error: {error_message}', 'danger')
+        except requests.exceptions.RequestException as e:
+            flash(f'Network error sending SMS receipt: {e}', 'danger')
+        except json.JSONDecodeError:
+            flash('Failed to parse SMS provider response. The response might not be in JSON format.', 'danger')
+            
+        return redirect(url_for('company_transaction', company_id=company.id))
 
     @app.route('/print_company_receipt/<string:transaction_id>')
     # @login_required
