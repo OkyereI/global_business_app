@@ -1,0 +1,300 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Return Receipt - {{ return_record.return_receipt_number }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #000;
+            background: #fff;
+            width: 80mm;
+            margin: 0 auto;
+            padding: 10px;
+        }
+        
+        .receipt {
+            width: 100%;
+            max-width: 80mm;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+        }
+        
+        .business-name {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .business-info {
+            font-size: 10px;
+            margin-bottom: 3px;
+        }
+        
+        .receipt-title {
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            margin: 15px 0;
+            background: #000;
+            color: #fff;
+            padding: 5px;
+        }
+        
+        .receipt-info {
+            margin-bottom: 15px;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+        }
+        
+        .label {
+            font-weight: bold;
+        }
+        
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        
+        .items-table th,
+        .items-table td {
+            text-align: left;
+            padding: 3px 2px;
+            border-bottom: 1px dashed #ccc;
+        }
+        
+        .items-table th {
+            font-weight: bold;
+            border-bottom: 2px solid #000;
+        }
+        
+        .item-name {
+            font-weight: bold;
+        }
+        
+        .total-section {
+            border-top: 2px solid #000;
+            padding-top: 10px;
+            margin-top: 15px;
+        }
+        
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .refund-amount {
+            background: #000;
+            color: #fff;
+            padding: 5px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px dashed #000;
+            font-size: 10px;
+        }
+        
+        .return-policy {
+            font-size: 8px;
+            text-align: center;
+            margin-top: 10px;
+            padding: 5px;
+            border: 1px solid #ccc;
+        }
+        
+        @media print {
+            body {
+                width: 80mm;
+                margin: 0;
+                padding: 5px;
+            }
+            
+            .no-print {
+                display: none;
+            }
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .print-button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button no-print" onclick="window.print()">🖨️ Print</button>
+    
+    <div class="receipt">
+        <!-- Header -->
+        <div class="header">
+            <div class="business-name">{{ business.name }}</div>
+            {% if business.address %}
+            <div class="business-info">{{ business.address }}</div>
+            {% endif %}
+            {% if business.location %}
+            <div class="business-info">{{ business.location }}</div>
+            {% endif %}
+            {% if business.contact %}
+            <div class="business-info">📞 {{ business.contact }}</div>
+            {% endif %}
+            {% if business.email %}
+            <div class="business-info">📧 {{ business.email }}</div>
+            {% endif %}
+        </div>
+        
+        <!-- Return Receipt Title -->
+        <div class="receipt-title">🔄 RETURN RECEIPT</div>
+        
+        <!-- Receipt Information -->
+        <div class="receipt-info">
+            <div class="info-row">
+                <span class="label">Return Receipt:</span>
+                <span>{{ return_record.return_receipt_number }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Original Receipt:</span>
+                <span>{{ return_record.original_receipt_number }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Return Date:</span>
+                <span>{{ return_record.return_date.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="info-row">
+                <span class="label">Processed By:</span>
+                <span>{{ return_record.processed_by }}</span>
+            </div>
+            {% if return_record.customer_name %}
+            <div class="info-row">
+                <span class="label">Customer:</span>
+                <span>{{ return_record.customer_name }}</span>
+            </div>
+            {% endif %}
+            {% if return_record.customer_phone %}
+            <div class="info-row">
+                <span class="label">Phone:</span>
+                <span>{{ return_record.customer_phone }}</span>
+            </div>
+            {% endif %}
+            {% if return_record.return_reason %}
+            <div class="info-row">
+                <span class="label">Reason:</span>
+                <span>{{ return_record.return_reason }}</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Returned Items -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Refund</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set returned_items = return_record.get_returned_items() %}
+                {% for item in returned_items %}
+                <tr>
+                    <td class="item-name">{{ item['product_name'] }}</td>
+                    <td>{{ "%.2f"|format(item['return_quantity']) }}</td>
+                    <td>GH₵{{ "%.2f"|format(item['unit_price']) }}</td>
+                    <td>GH₵{{ "%.2f"|format(item['refund_amount']) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <!-- Total Section -->
+        <div class="total-section">
+            <div class="refund-amount">
+                TOTAL REFUND: GH₵{{ "%.2f"|format(return_record.total_refund_amount) }}
+            </div>
+            
+            {% if return_record.payment_method %}
+            <div class="info-row">
+                <span class="label">Refund Method:</span>
+                <span>{{ return_record.payment_method }}</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Notes -->
+        {% if return_record.notes %}
+        <div class="receipt-info">
+            <div class="label">Notes:</div>
+            <div style="margin-top: 5px; font-style: italic;">{{ return_record.notes }}</div>
+        </div>
+        {% endif %}
+        
+        <!-- Footer -->
+        <div class="footer">
+            <div>Thank you for your business!</div>
+            <div>{{ return_record.return_date.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+            <div>Return processed successfully</div>
+        </div>
+        
+        <!-- Return Policy -->
+        <div class="return-policy">
+            <strong>RETURN POLICY:</strong><br>
+            Items returned within policy guidelines. 
+            Please keep this receipt for your records.
+            For questions, contact us at {{ business.contact or 'store location' }}.
+        </div>
+    </div>
+    
+    <script>
+        // Auto-print when page loads (optional)
+        // window.onload = function() {
+        //     window.print();
+        // }
+        
+        // Close window after printing (optional)
+        window.onafterprint = function() {
+            // window.close();
+        }
+    </script>
+</body>
+</html>
