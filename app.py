@@ -295,7 +295,10 @@ def create_app():
             'sync_conflicts_page',
             'api_sync_conflicts',
             'api_resolve_conflict',
-            'test_connection'
+            'test_connection',
+            'get_inventory_for_business',    # This fixes your inventory sync!
+            'get_businesses',                
+            'get_users_for_business' 
         }
 
         # If the requested endpoint is in our list of public endpoints, allow access.
