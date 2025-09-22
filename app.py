@@ -2890,6 +2890,45 @@ def create_app():
         
         return jsonify(enhanced_status)
     
+    @app.route('/backup_status', methods=['GET'])
+    @login_required
+    def backup_status():
+        """Display database backup status and information"""
+        # ACCESS CONTROL: Only admin can view backup status
+        if session.get('role') != 'admin':
+            flash('You do not have permission to view backup status.', 'danger')
+            return redirect(url_for('dashboard'))
+
+        business_id = get_current_business_id()
+        if not business_id:
+            flash('No business selected. Please select a business.', 'warning')
+            return redirect(url_for('dashboard'))
+
+        # Basic backup status information
+        backup_info = {
+            'database_size': 'Unknown',
+            'last_backup': 'Not configured',
+            'backup_location': 'Local database',
+            'status': 'Active',
+            'auto_backup_enabled': False
+        }
+
+        # Check if database file exists and get basic info
+        try:
+            import os
+            db_path = os.path.join('instance', 'instance_data.db')
+            if os.path.exists(db_path):
+                size = os.path.getsize(db_path)
+                backup_info['database_size'] = f"{size / (1024*1024):.2f} MB"
+                backup_info['last_backup'] = "Real-time (SQLite)"
+        except Exception as e:
+            logging.error(f"Error getting backup info: {e}")
+
+        return render_template('backup_status.html', 
+                             backup_info=backup_info,
+                             user_role=session.get('role'),
+                             current_year=datetime.now().year)
+    
     # @app.route('/api/v1/sync/inventory', methods=['POST'])
     # @super_admin_required
     # def sync_inventory_data():
