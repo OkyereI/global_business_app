@@ -1860,7 +1860,7 @@ def create_app():
         else:
             return jsonify({'success': False, 'message': message}), 500
     
-    @app.route('/api/v1/business/<uuid:business_id>', methods=['GET'])
+    @app.route('/api/v1/business/<string:business_id>', methods=['GET'])
     @api_key_required
     def get_business_by_id(business_id):
         """Returns a single business record by its UUID."""
@@ -1883,7 +1883,7 @@ def create_app():
             logging.error(f"Error getting business: {e}")
             abort(500)
 
-    @app.route('/api/v1/businesses/<uuid:business_id>/inventory', methods=['GET'])
+    @app.route('/api/v1/businesses/<string:business_id>/inventory', methods=['GET'])
     @api_key_required
     def get_inventory_for_business(business_id):
         """Returns a list of all inventory items for a specific business."""
