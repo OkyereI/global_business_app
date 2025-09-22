@@ -170,7 +170,7 @@ def create_app():
     login_manager.login_message_category = 'info'
     
     # Import models after the extensions have been initialized
-    from models import User, Business, SalesRecord, InventoryItem, HirableItem, RentalRecord, Creditor, Debtor, CompanyTransaction, FutureOrder, Company, Customer
+    from models import User, Business, SalesRecord, InventoryItem, HirableItem, RentalRecord, Creditor, Debtor, CompanyTransaction, FutureOrder, Company, Customer, ReturnRecord
     @login_manager.user_loader
     def load_user(user_id):
         # This function is called after tables are created, so it will work.
@@ -348,7 +348,15 @@ def create_app():
             # Catch specific conversion errors and return default
             return default
 
+    def safe_currency_print(amount, label="Amount"):
+        """Print currency safely with fallback for encoding issues."""
+        try:
+            return f"{label}: GH₵{amount:.2f}"
+        except UnicodeEncodeError:
+            return f"{label}: GHS{amount:.2f}"
 
+        # Then replace the problematic line with:
+        print(safe_currency_print(total_displayed_sales, "DEBUG: Total displayed sales"))
     def serialize_inventory_item(item):
         """
         Serializes an InventoryItem object to a dictionary for JSON conversion.
@@ -5010,7 +5018,7 @@ def create_app():
         
         # Calculate total for currently displayed sales (using grand_total_amount from each record)
         total_displayed_sales = sum(t['grand_total_amount'] for t in sorted_transactions)
-        print(f"DEBUG: Total displayed sales: GH₵{total_displayed_sales:.2f}")
+        print(f"DEBUG: Total displayed sales: GHS{total_displayed_sales:.2f}")
 
         return render_template('sales.html',
                             transactions=sorted_transactions, 
@@ -5674,16 +5682,347 @@ def create_app():
                             last_transaction_date=sales_record.transaction_date.strftime('%Y-%m-%d %H:%M:%S'),
                             current_year=datetime.now().year)
 
-    # NEW: Add a route for returns. For now, it just redirects to sales list.
+    # Add these routes to your app.py file
+
+    @app.route('/sales/returns/print/<return_id>')
+    @login_required
+    def print_return_receipt(return_id):
+        """Generate printable return receipt"""
+        business_id = get_current_business_id()
+        if not business_id:
+            flash('No business selected. Please select a business first.', 'warning')
+            return redirect(url_for('dashboard'))
+        
+        # Get the return record
+        return_record = ReturnRecord.query.filter_by(
+            id=return_id,
+            business_id=business_id
+        ).first()
+        
+        if not return_record:
+            flash('Return record not found.', 'error')
+            return redirect(url_for('returns_history'))
+        
+        # Get business information
+        business = Business.query.get(business_id)
+        
+        return render_template('print_return_receipt.html',
+                            return_record=return_record,
+                            business=business,
+                            current_year=datetime.now().year)
+
+    @app.route('/sales/returns/send_sms', methods=['POST'])
+    @login_required
+    def send_return_sms():
+        """Send return receipt via SMS"""
+        try:
+            business_id = get_current_business_id()
+            if not business_id:
+                return jsonify({
+                    'success': False,
+                    'message': 'No business selected'
+                }), 400
+            
+            return_id = request.form.get('return_id')
+            phone_number = request.form.get('phone_number')
+            
+            if not return_id or not phone_number:
+                return jsonify({
+                    'success': False,
+                    'message': 'Missing return ID or phone number'
+                }), 400
+            
+            # Get the return record
+            return_record = ReturnRecord.query.filter_by(
+                id=return_id,
+                business_id=business_id
+            ).first()
+            
+            if not return_record:
+                return jsonify({
+                    'success': False,
+                    'message': 'Return record not found'
+                }), 404
+            
+            # Get business information
+            business = Business.query.get(business_id)
+            
+            # Format return items for SMS
+            returned_items = return_record.get_returned_items()
+            items_text = "\n".join([
+                f"- {item['product_name']}: {item['quantity_returned']} @ GH₵{item['sale_price']:.2f} = GH₵{item['refund_amount']:.2f}"
+                for item in returned_items
+            ])
+            
+            # Create SMS message
+            sms_message = f"""
+    🧾 RETURN RECEIPT - {business.name}
+    📍 {business.location or 'N/A'}
+    📞 {business.contact or 'N/A'}
+
+    🔄 Return Receipt: {return_record.return_receipt_number}
+    📅 Date: {return_record.return_date.strftime('%Y-%m-%d %H:%M')}
+    🎯 Original Receipt: {return_record.original_receipt_number}
+    👤 Processed by: {return_record.processed_by}
+
+    📦 RETURNED ITEMS:
+    {items_text}
+
+    💰 TOTAL REFUND: GH₵{return_record.total_refund_amount:.2f}
+    🔄 Method: {return_record.payment_method or 'Not specified'}
+    📝 Reason: {return_record.return_reason or 'Not specified'}
+
+    Thank you for your business!
+    """.strip()
+            
+            # Send SMS using Arkesel API (similar to your existing SMS functionality)
+            sms_success = send_sms_via_arkesel(phone_number, sms_message)
+            
+            if sms_success:
+                return jsonify({
+                    'success': True,
+                    'message': f'Return receipt sent to {phone_number}'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to send SMS. Please check phone number and try again.'
+                }), 500
+                
+        except Exception as e:
+            logging.error(f"Error sending return SMS: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Internal server error'
+            }), 500
+
+    def send_sms_via_arkesel(phone_number, message):
+        """Send SMS using Arkesel API - reuse your existing SMS function"""
+        try:
+            # Clean phone number
+            phone = phone_number.strip()
+            if phone.startswith('0'):
+                phone = '233' + phone[1:]
+            elif not phone.startswith('233'):
+                phone = '233' + phone
+            
+            # Prepare SMS payload
+            sms_payload = {
+                'key': ARKESEL_API_KEY,
+                'to': phone,
+                'msg': message,
+                'sender': ARKESEL_SENDER_ID
+            }
+            
+            # Send SMS
+            response = requests.post(ARKESEL_SMS_URL, data=sms_payload, timeout=30)
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                return response_data.get('code') == '200'
+            else:
+                return False
+                
+        except Exception as e:
+            logging.error(f"Arkesel SMS error: {str(e)}")
+            return False
+    # Returns Processing Route
     @app.route('/sales/add_return', methods=['GET', 'POST'])
-    # @login_required
-    @roles_required(['admin', 'sales']) # Adjust permissions as needed
+    @csrf.exempt
+    @login_required  # Only require login, not specific roles
     def add_return():
-        flash('This is the Add Return page. Functionality to be implemented.', 'info')
-        # You would typically render a new template here for return forms:
-        # return render_template('add_edit_return.html', title='Add Return')
-        # For now, redirect to sales list.
-        return redirect(url_for('sales'))
+        business_id = get_current_business_id()
+        if not business_id:
+            flash('No business selected. Please select a business first.', 'warning')
+            return redirect(url_for('dashboard'))
+        
+        if request.method == 'GET':
+            # Handle search for sale record
+            receipt_number = request.args.get('receipt_number', '').strip()
+            sale_record = None
+            
+            if receipt_number:
+                # Search for the sale record by receipt number
+                sale_record = SalesRecord.query.filter_by(
+                    receipt_number=receipt_number,
+                    business_id=business_id
+                ).first()
+            
+            return render_template('add_edit_return.html', 
+                                 title='Process Return',
+                                 sale_record=sale_record,
+                                 current_year=datetime.now().year)
+        
+        elif request.method == 'POST':
+            # Process the return
+            try:
+                # Get form data
+                original_receipt_number = request.form.get('original_receipt_number', '').strip()
+                original_sale_id = request.form.get('original_sale_id', '').strip()
+                customer_name = request.form.get('customer_name', '').strip()
+                customer_phone = request.form.get('customer_phone', '').strip()
+                return_reason = request.form.get('return_reason', '').strip()
+                payment_method = request.form.get('payment_method', '').strip()
+                notes = request.form.get('notes', '').strip()
+                
+                # Get selected items for return
+                return_items = request.form.getlist('return_items')
+                return_quantities = request.form.getlist('return_quantities')
+                item_names = request.form.getlist('item_names')
+                original_quantities = request.form.getlist('original_quantities')
+                unit_prices = request.form.getlist('unit_prices')
+                sale_unit_types = request.form.getlist('sale_unit_types')
+                
+                if not return_items:
+                    flash('Please select at least one item to return.', 'danger')
+                    return redirect(url_for('add_return', receipt_number=original_receipt_number))
+                
+                if not return_reason or not payment_method:
+                    flash('Please provide a return reason and refund method.', 'danger')
+                    return redirect(url_for('add_return', receipt_number=original_receipt_number))
+                
+                # Verify the original sale exists
+                original_sale = SalesRecord.query.filter_by(
+                    id=original_sale_id,
+                    business_id=business_id
+                ).first()
+                
+                if not original_sale:
+                    flash('Original sale record not found.', 'danger')
+                    return redirect(url_for('add_return'))
+                
+                # Process returned items and calculate refund
+                returned_items = []
+                total_refund = 0.0
+                
+                for i, item_index in enumerate(return_items):
+                    item_idx = int(item_index)
+                    return_quantity = float(return_quantities[item_idx])
+                    
+                    if return_quantity <= 0:
+                        continue
+                    
+                    # Get item details
+                    item_name = item_names[item_idx]
+                    original_quantity = float(original_quantities[item_idx])
+                    unit_price = float(unit_prices[item_idx])
+                    unit_type = sale_unit_types[item_idx]
+                    
+                    # Validate return quantity
+                    if return_quantity > original_quantity:
+                        flash(f'Return quantity for {item_name} cannot exceed original quantity of {original_quantity}.', 'danger')
+                        return redirect(url_for('add_return', receipt_number=original_receipt_number))
+                    
+                    # Calculate refund for this item
+                    item_refund = return_quantity * unit_price
+                    total_refund += item_refund
+                    
+                    # Add to returned items list
+                    returned_items.append({
+                        'product_name': item_name,
+                        'return_quantity': return_quantity,
+                        'original_quantity': original_quantity,
+                        'unit_price': unit_price,
+                        'sale_unit_type': unit_type,
+                        'refund_amount': item_refund
+                    })
+                    
+                    # Update inventory - Add returned items back to stock
+                    inventory_item = InventoryItem.query.filter_by(
+                        product_name=item_name,
+                        business_id=business_id
+                    ).first()
+                    
+                    if inventory_item:
+                        inventory_item.current_stock += return_quantity
+                        inventory_item.last_updated = datetime.now()
+                        print(f"DEBUG: Added {return_quantity} {unit_type} of {item_name} back to inventory. New stock: {inventory_item.current_stock}")
+                    else:
+                        print(f"WARNING: Could not find inventory item '{item_name}' to update stock")
+                
+                if total_refund <= 0:
+                    flash('No valid items selected for return.', 'danger')
+                    return redirect(url_for('add_return', receipt_number=original_receipt_number))
+                
+                # Generate return receipt number
+                return_receipt_number = f"RET-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6].upper()}"
+                
+                # Create return record
+                return_record = ReturnRecord(
+                    business_id=business_id,
+                    original_receipt_number=original_receipt_number,
+                    return_receipt_number=return_receipt_number,
+                    return_date=datetime.now(),
+                    customer_phone=customer_phone or original_sale.customer_phone,
+                    customer_name=customer_name,
+                    processed_by=current_user.username,
+                    return_reason=return_reason,
+                    total_refund_amount=total_refund,
+                    payment_method=payment_method,
+                    notes=notes
+                )
+                
+                # Set returned items as JSON
+                return_record.set_returned_items(returned_items)
+                
+                # Save to database
+                db.session.add(return_record)
+                db.session.commit()
+                
+                print(f"DEBUG: Return processed successfully. Return receipt: {return_receipt_number}, Total refund: GHS{total_refund:.2f}")
+                
+                # Success message with details
+                items_summary = ", ".join([f"{item['product_name']} ({item['return_quantity']} {item['sale_unit_type']})" for item in returned_items])
+                flash(f'Return processed successfully! Return Receipt: {return_receipt_number}. Refunded GHS{total_refund:.2f} for: {items_summary}', 'success')
+                
+                return redirect(url_for('sales'))
+                
+            except Exception as e:
+                db.session.rollback()
+                print(f"ERROR: Failed to process return: {str(e)}")
+                flash(f'Error processing return: {str(e)}', 'danger')
+                return redirect(url_for('add_return', receipt_number=request.form.get('original_receipt_number', '')))
+
+    # Returns History Route
+    @app.route('/sales/returns')
+    @login_required
+    def returns_history():
+        business_id = get_current_business_id()
+        if not business_id:
+            flash('No business selected. Please select a business first.', 'warning')
+            return redirect(url_for('dashboard'))
+        
+        # Get search parameters
+        search_query = request.args.get('search', '').strip()
+        
+        # Base query for returns
+        returns_query = ReturnRecord.query.filter_by(business_id=business_id)
+        
+        # Apply search filter if provided
+        if search_query:
+            returns_query = returns_query.filter(
+                db.or_(
+                    ReturnRecord.return_receipt_number.ilike(f'%{search_query}%'),
+                    ReturnRecord.original_receipt_number.ilike(f'%{search_query}%'),
+                    ReturnRecord.customer_phone.ilike(f'%{search_query}%'),
+                    ReturnRecord.customer_name.ilike(f'%{search_query}%'),
+                    ReturnRecord.processed_by.ilike(f'%{search_query}%')
+                )
+            )
+        
+        # Order by most recent first
+        returns = returns_query.order_by(ReturnRecord.return_date.desc()).all()
+        
+        # Calculate total refunds
+        total_refunds = sum(return_record.total_refund_amount for return_record in returns)
+        
+        return render_template('returns_history.html', 
+                             title='Returns History',
+                             returns=returns,
+                             total_refunds=total_refunds,
+                             search_query=search_query,
+                             current_year=datetime.now().year)
+    
     # --- Reports Route ---
     @app.route('/register', methods=['GET'])
     def show_registration_form():
@@ -8440,7 +8779,7 @@ def create_app():
             app.logger.error(f"Error fetching dashboard data: {e}")
             return jsonify({'error': 'An internal error occurred.'}), 500
 
-
+    
     return app
 
     # The final Flask app instance is created here

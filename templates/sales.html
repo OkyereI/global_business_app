@@ -1,3 +1,4 @@
+
 {% extends 'base.html' %}
 
 {% block head %}
@@ -156,6 +157,7 @@
             background-color: #ffffff; /* bg-white */
             border-radius: 0.5rem; /* rounded-lg */
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05); /* shadow-md */
+            table-layout: fixed; /* Fix table layout for consistent column widths */
         }
         thead {
             background-color: #e2e8f0; /* bg-gray-200 */
@@ -164,6 +166,31 @@
             padding: 12px 15px; /* py-3 px-4 */
             text-align: left; /* text-left */
             border-bottom: 1px solid #e2e8f0; /* border-b border-gray-200 */
+        }
+        /* Fixed column widths for better receipt number display */
+        th:nth-child(1), td:nth-child(1) { /* Receipt # column */
+            width: 220px;
+            min-width: 220px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            word-wrap: break-word;
+            white-space: normal;
+            line-height: 1.3;
+        }
+        th:nth-child(2), td:nth-child(2) { /* Date column */
+            width: 160px;
+        }
+        th:nth-child(3), td:nth-child(3) { /* Customer Phone column */
+            width: 130px;
+        }
+        th:nth-child(4), td:nth-child(4) { /* Sales Person column */
+            width: 120px;
+        }
+        th:nth-child(5), td:nth-child(5) { /* Total Amount column */
+            width: 120px;
+        }
+        th:nth-child(6), td:nth-child(6) { /* Actions column */
+            width: 150px;
         }
         th {
             font-weight: 600; /* font-semibold */
@@ -179,6 +206,23 @@
         }
         tbody tr:hover {
             background-color: #f0f4f7; /* hover:bg-gray-50 */
+        }
+        /* Receipt number specific styling */
+        .receipt-number {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            color: #374151;
+            background-color: #f9fafb;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+            display: inline-block;
+            max-width: 200px;
+            word-wrap: break-word;
+            white-space: normal;
+            line-height: 1.2;
+            cursor: help; /* Show tooltip on hover */
         }
         .action-buttons {
             display: flex; /* flex */
@@ -302,6 +346,9 @@
                 <a href="{{ url_for('add_return') }}" class="btn btn-danger">
                     <i class="fas fa-undo mr-2"></i> Process Return
                 </a>
+                <a href="{{ url_for('returns_history') }}" class="btn btn-secondary">
+                    <i class="fas fa-history mr-2"></i> View Returns
+                </a>
             </div>
         </div>
 
@@ -355,7 +402,7 @@
                                 <tr class="border-b border-gray-200 hover:bg-gray-100" 
                                     data-search-terms="{{ transaction.id|lower }} {{ transaction.receipt_number|lower }} {{ transaction.customer_phone|lower }} {{ transaction.sales_person_name|lower }} {% for item in transaction['items'] %}{{ item.product_name|lower }} {% endfor %}"> {# FIX: transaction['items'] #}
                                     <td class="py-3 px-6 text-left whitespace-nowrap">
-                                        <div class="font-medium text-gray-800">{{ transaction.receipt_number[:8].upper() }}</div>
+                                        <div class="receipt-number" title="{{ transaction.receipt_number }}">{{ transaction.receipt_number }}</div>
                                     </td>
                                     <td class="py-3 px-6 text-left">
                                         {{ transaction.sale_date | default('N/A') }}
@@ -379,9 +426,9 @@
                                             <a href="{{ url_for('edit_sale_transaction', transaction_id=transaction.receipt_number) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            {# Pass the transaction.receipt_number for deleting the whole transaction #}
+                                            {# Pass the transaction.receipt_number for deleting the whole transaction - FIXED: Show full receipt number #}
                                             <a href="{{ url_for('delete_sale_transaction', transaction_id=transaction.receipt_number) }}" class="w-4 mr-2 transform hover:text-purple-500 hover:scale-110"
-                                               onclick="return confirm('Are you sure you want to delete this sale transaction (Receipt #: {{ transaction.receipt_number[:8].upper() }})? This will return stock to inventory for all items in this transaction.');">
+                                               onclick="return confirm('Are you sure you want to delete this sale transaction (Receipt #: {{ transaction.receipt_number }})? This will return stock to inventory for all items in this transaction.');">
                                                 <i class="fas fa-trash"></i>
                                             </a>
                                             {% endif %}

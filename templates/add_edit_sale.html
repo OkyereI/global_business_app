@@ -3,6 +3,7 @@
 
 {% block head %}
     {{ super() }}
+    <meta charset="UTF-8">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -270,7 +271,7 @@
             </button>
 
             <div class="mt-6 text-right">
-                <p class="text-2xl font-bold text-gray-900">Grand Total: GH₵<span id="grand-total">0.00</span></p>
+                <p class="text-2xl font-bold text-gray-900">Grand Total: GH&#8373;<span id="grand-total">0.00</span></p>
             </div>
 
             <div class="form-group mt-6 flex items-center">
@@ -605,12 +606,12 @@
                     <input type="number" step="any" min="0" class="quantity-input form-input w-full p-2 rounded-md border-gray-300" value="0">
                 </div>
                 <div class="form-group">
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH₵)</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH&#8373;)</label>
                     <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
                 </div>
                 <div class="form-group col-span-full md:col-span-1 flex items-end justify-between">
                     <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Item Total (GH₵)</label>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Item Total (GH&#8373;)</label>
                         <input type="text" class="item-total-display form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
                     </div>
                     <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 focus:outline-none p-2 rounded-full">
@@ -644,7 +645,7 @@
                     
                     return {
                         value: item.id,
-                        text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GH₵${salePrice.toFixed(2)} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
+                        text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GHS${salePrice.toFixed(2)} / GHS${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
                         productName: item.product_name,
                         salePrice: salePrice,
                         currentStock: currentStock,
@@ -950,7 +951,7 @@
                 const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
                 const newOption = {
                     value: product.id,
-                    text: `${product.product_name} (Stock: ${product.current_stock.toFixed(2)}) - GH₵${(product.sale_price || 0).toFixed(2)} / GH₵${(product.unit_price_per_tab || 0).toFixed(2)} per ${unitLabel}`,
+                    text: `${product.product_name} (Stock: ${product.current_stock.toFixed(2)}) - GHS${(product.sale_price || 0).toFixed(2)} / GHS${(product.unit_price_per_tab || 0).toFixed(2)} per ${unitLabel}`,
                     productName: product.product_name,
                     salePrice: product.sale_price,
                     currentStock: product.current_stock,
@@ -989,7 +990,7 @@
                 <div class="flex justify-between py-1 border-b border-dashed border-gray-400">
                     <span class="flex-1">${item.product_name}</span>
                     <span class="w-16 text-center">${item.quantity_sold}</span>
-                    <span class="w-20 text-right">GH₵${parseFloat(item.item_total_amount).toFixed(2)}</span>
+                    <span class="w-20 text-right">GHS${parseFloat(item.item_total_amount).toFixed(2)}</span>
                 </div>
             `).join('');
 
@@ -1000,7 +1001,7 @@
                     <p class="text-xs">Contact: {{ pharmacy_info.contact or 'N/A' }}</p>
                     <div class="my-4 border-t border-b border-dashed border-gray-400 py-2">
                         <p class="text-sm">Receipt</p>
-                        <p class="text-xs">Transaction ID: ${transactionDetails.last_transaction_id.substring(0, 8).toUpperCase()}</p>
+                        <p class="text-xs">Transaction ID: ${transactionDetails.last_transaction_id}</p>
                         <p class="text-xs">Date: ${transactionDetails.last_transaction_date}</p>
                         <p class="text-xs">Sales Person: ${transactionDetails.last_transaction_sales_person}</p>
                         ${transactionDetails.last_transaction_customer_phone ? `<p class="text-xs">Customer Phone: ${transactionDetails.last_transaction_customer_phone}</p>` : ''}
@@ -1015,7 +1016,7 @@
                     
                     <div class="mt-4 pt-2 border-t border-dashed border-gray-400 flex justify-between font-bold text-lg">
                         <span>Grand Total:</span>
-                        <span>GH₵${parseFloat(transactionDetails.last_transaction_grand_total).toFixed(2)}</span>
+                        <span>GHS${parseFloat(transactionDetails.last_transaction_grand_total).toFixed(2)}</span>
                     </div>
                     
                     <div class="mt-6 text-xs text-gray-600">

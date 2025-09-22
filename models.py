@@ -34,6 +34,7 @@ class Business(db.Model):
     # company_transactions = db.relationship('CompanyTransaction', back_populates='business', lazy=True)
     future_orders = db.relationship('FutureOrder', back_populates='business', lazy=True)
     company_transactions = db.relationship('CompanyTransaction', back_populates='business', lazy=True)
+    return_records = db.relationship('ReturnRecord', back_populates='business', lazy=True)
     def __repr__(self):
         return f'<Business {self.name} ({self.type})>'
 
@@ -354,4 +355,41 @@ class Customer(db.Model):
 
     def __repr__(self):
         return f'<Customer {self.customer_name} ({self.phone_number})>'
+
+class ReturnRecord(db.Model):
+    __tablename__ = 'return_records'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    original_receipt_number = db.Column(db.String(50), nullable=False)  # The original sale receipt
+    return_receipt_number = db.Column(db.String(50), unique=True, nullable=False)  # Unique return receipt
+    return_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    customer_phone = db.Column(db.String(20), nullable=True)
+    customer_name = db.Column(db.String(255), nullable=True)
+    processed_by = db.Column(db.String(100), nullable=False)  # Staff member who processed return
+    return_reason = db.Column(db.String(255), nullable=True)  # Reason for return
+    total_refund_amount = db.Column(db.Float, nullable=False, default=0.0)
+    payment_method = db.Column(db.String(50), nullable=True)  # How refund was given
+    
+    # JSON field to store returned items details
+    returned_items_json = db.Column(db.Text, nullable=False, default='[]')
+    
+    notes = db.Column(db.Text, nullable=True)
+    is_synced = db.Column(db.Boolean, default=False, nullable=False)
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # Relationship to Business
+    business = db.relationship('Business', back_populates='return_records')
+    
+    def set_returned_items(self, items_list):
+        """Store returned items as JSON"""
+        self.returned_items_json = json.dumps(items_list)
+    
+    def get_returned_items(self):
+        """Retrieve returned items from JSON"""
+        if self.returned_items_json:
+            return json.loads(self.returned_items_json)
+        return []
+    
+    def __repr__(self):
+        return f'<ReturnRecord {self.return_receipt_number} - GH₵{self.total_refund_amount:.2f}>'
 

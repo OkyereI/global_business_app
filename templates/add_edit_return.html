@@ -1,0 +1,555 @@
+
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary {
+            background-color: #10B981;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #059669;
+        }
+        .btn-danger {
+            background-color: #EF4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+        .btn-secondary {
+            background-color: #6B7280;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4B5563;
+        }
+        .btn-warning {
+            background-color: #F59E0B;
+            color: white;
+        }
+        .btn-warning:hover {
+            background-color: #D97706;
+        }
+        .form-input {
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            width: 100%;
+            outline: none;
+            transition: all 0.2s ease-in-out;
+        }
+        .form-input:focus {
+            border-color: #10B981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            border: 1px solid transparent;
+        }
+        .flash-success {
+            background-color: #D1FAE5;
+            color: #065F46;
+            border-color: #34D399;
+        }
+        .flash-danger {
+            background-color: #FEE2E2;
+            color: #991B1B;
+            border-color: #F87171;
+        }
+        .flash-warning {
+            background-color: #FFFBEB;
+            color: #92400E;
+            border-color: #FCD34D;
+        }
+        .flash-info {
+            background-color: #DBEAFE;
+            color: #1E40AF;
+            border-color: #60A5FA;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .quantity-input {
+            width: 80px;
+            text-align: center;
+        }
+        .return-item-row {
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            background-color: #f9fafb;
+        }
+        .return-item-row.selected {
+            border-color: #10B981;
+            background-color: #ecfdf5;
+        }
+        .receipt-number {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+            background-color: #f9fafb;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+        }
+        .step-container {
+            border-left: 4px solid #e5e7eb;
+            padding-left: 1rem;
+            margin-bottom: 2rem;
+        }
+        .step-container.active {
+            border-left-color: #10B981;
+        }
+        .step-number {
+            background-color: #6b7280;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+        .step-number.active {
+            background-color: #10B981;
+        }
+        .step-number.completed {
+            background-color: #059669;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="main-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} mr-3"></i>
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Process Customer Return</h1>
+            <a href="{{ url_for('sales') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left mr-2"></i> Back to Sales
+            </a>
+        </div>
+
+        <!-- Step 1: Search for Original Sale -->
+        <div class="card step-container {% if not sale_record %}active{% endif %}" id="step1">
+            <div class="flex items-center mb-4">
+                <span class="step-number {% if not sale_record %}active{% else %}completed{% endif %}">1</span>
+                <h2 class="text-xl font-semibold text-gray-800">Find Original Sale</h2>
+            </div>
+            
+            <form action="{{ url_for('add_return') }}" method="GET" class="flex gap-4 items-end">
+                <div class="flex-2">
+                    <label for="receipt_search" class="block text-sm font-medium text-gray-700 mb-2">
+                        Receipt Number
+                    </label>
+                    <input 
+                        type="text" 
+                        id="receipt_search" 
+                        name="receipt_number" 
+                        class="form-input" 
+                        placeholder="Enter receipt number (e.g., RCPT-20250918161756-B17628)"
+                        value="{{ request.args.get('receipt_number', '') }}"
+                        required
+                    >
+                </div>
+                <br>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search mr-"></i> Search
+                </button>
+            </form>
+
+            {% if request.args.get('receipt_number') and not sale_record %}
+                <div class="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                    <div class="flex">
+                        <i class="fas fa-exclamation-circle text-red-400 mt-0.5 mr-3"></i>
+                        <div>
+                            <h3 class="text-sm font-medium text-red-800">Sale Record Not Found</h3>
+                            <p class="text-sm text-red-700 mt-1">
+                                No sale record found with receipt number "{{ request.args.get('receipt_number') }}". 
+                                Please check the receipt number and try again.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Step 2: Select Items to Return -->
+        {% if sale_record %}
+        <div class="card step-container active" id="step2">
+            <div class="flex items-center mb-4">
+                <span class="step-number active">2</span>
+                <h2 class="text-xl font-semibold text-gray-800">Select Items to Return</h2>
+            </div>
+
+            <div class="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
+                <h3 class="font-semibold text-blue-800 mb-2">Original Sale Details</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="font-medium text-gray-600">Receipt:</span>
+                        <div class="receipt-number mt-1">{{ sale_record.receipt_number }}</div>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-600">Date:</span>
+                        <div class="mt-1">{{ sale_record.transaction_date.strftime('%Y-%m-%d %H:%M') }}</div>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-600">Customer:</span>
+                        <div class="mt-1">{{ sale_record.customer_phone or 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <span class="font-medium text-gray-600">Total:</span>
+                        <div class="mt-1 font-semibold">GH₵{{ "%.2f"|format(sale_record.grand_total_amount) }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <form action="{{ url_for('add_return') }}" method="POST" id="returnForm">
+                <input type="hidden" name="original_receipt_number" value="{{ sale_record.receipt_number }}">
+                <input type="hidden" name="original_sale_id" value="{{ sale_record.id }}">
+                
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Items Available for Return</h3>
+                    
+                    {% set items_sold = sale_record.get_items_sold() %}
+                    {% if items_sold %}
+                        <div id="returnItemsList">
+                            {% for item in items_sold %}
+                            <div class="return-item-row" data-item-id="{{ loop.index0 }}">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-4 flex-1">
+                                        <label class="flex items-center">
+                                            <input 
+                                                type="checkbox" 
+                                                name="return_items" 
+                                                value="{{ loop.index0 }}"
+                                                class="return-checkbox mr-3"
+                                                onchange="toggleReturnItem(this, {{ loop.index0 }})"
+                                            >
+                                            <div>
+                                                <div class="font-semibold text-gray-800">{{ item.product_name }}</div>
+                                                <div class="text-sm text-gray-600">
+                                                    Originally sold: {{ "%.2f"|format(item.quantity_sold) }} {{ item.sale_unit_type }} 
+                                                    @ GH₵{{ "%.2f"|format(item.price_at_time_per_unit_sold) }} each
+                                                </div>
+                                                <div class="text-sm font-medium text-gray-700">
+                                                    Total: GH₵{{ "%.2f"|format(item.item_total_amount) }}
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                    
+                                    <div class="quantity-controls hidden" id="quantity-controls-{{ loop.index0 }}">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Return Quantity</label>
+                                        <div class="flex items-center space-x-2">
+                                            <button 
+                                                type="button" 
+                                                class="btn btn-secondary px-2 py-1"
+                                                onclick="adjustQuantity({{ loop.index0 }}, -1)"
+                                            >-</button>
+                                            <input 
+                                                type="number" 
+                                                name="return_quantities" 
+                                                id="quantity-{{ loop.index0 }}"
+                                                class="quantity-input form-input"
+                                                min="0.01" 
+                                                max="{{ item.quantity_sold }}" 
+                                                step="0.01"
+                                                value="0"
+                                                onchange="updateReturnAmount({{ loop.index0 }})"
+                                            >
+                                            <button 
+                                                type="button" 
+                                                class="btn btn-secondary px-2 py-1"
+                                                onclick="adjustQuantity({{ loop.index0 }}, 1)"
+                                            >+</button>
+                                            <span class="text-sm text-gray-600">{{ item.sale_unit_type }}</span>
+                                        </div>
+                                        <div class="text-sm text-gray-500 mt-1">
+                                            Max: {{ "%.2f"|format(item.quantity_sold) }} {{ item.sale_unit_type }}
+                                        </div>
+                                        <div class="text-sm font-medium text-green-600 mt-2" id="refund-amount-{{ loop.index0 }}">
+                                            Refund: GH₵0.00
+                                        </div>
+                                        
+                                        <!-- Hidden inputs for item details -->
+                                        <input type="hidden" name="item_names" value="{{ item.product_name }}">
+                                        <input type="hidden" name="original_quantities" value="{{ item.quantity_sold }}">
+                                        <input type="hidden" name="unit_prices" value="{{ item.price_at_time_per_unit_sold }}">
+                                        <input type="hidden" name="sale_unit_types" value="{{ item.sale_unit_type }}">
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-gray-500 text-center py-4">
+                            No items found in this sale record.
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Return Details -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label for="customer_name" class="block text-sm font-medium text-gray-700 mb-2">
+                            Customer Name (Optional)
+                        </label>
+                        <input 
+                            type="text" 
+                            id="customer_name" 
+                            name="customer_name" 
+                            class="form-input"
+                            placeholder="Enter customer name"
+                        >
+                    </div>
+                    <div>
+                        <label for="customer_phone" class="block text-sm font-medium text-gray-700 mb-2">
+                            Customer Phone
+                        </label>
+                        <input 
+                            type="text" 
+                            id="customer_phone" 
+                            name="customer_phone" 
+                            class="form-input"
+                            value="{{ sale_record.customer_phone or '' }}"
+                            placeholder="Enter customer phone"
+                        >
+                    </div>
+                    <div>
+                        <label for="return_reason" class="block text-sm font-medium text-gray-700 mb-2">
+                            Reason for Return
+                        </label>
+                        <select id="return_reason" name="return_reason" class="form-input" required>
+                            <option value="">Select reason</option>
+                            <option value="Defective">Defective/Damaged</option>
+                            <option value="Wrong Item">Wrong Item</option>
+                            <option value="Customer Changed Mind">Customer Changed Mind</option>
+                            <option value="Expired">Expired Product</option>
+                            <option value="Doctor's Orders">Doctor's Orders</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="payment_method" class="block text-sm font-medium text-gray-700 mb-2">
+                            Refund Method
+                        </label>
+                        <select id="payment_method" name="payment_method" class="form-input" required>
+                            <option value="">Select refund method</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Mobile Money">Mobile Money</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="Store Credit">Store Credit</option>
+                            <option value="Exchange">Exchange for Other Items</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label for="notes" class="block text-sm font-medium text-gray-700 mb-2">
+                        Additional Notes (Optional)
+                    </label>
+                    <textarea 
+                        id="notes" 
+                        name="notes" 
+                        rows="3" 
+                        class="form-input"
+                        placeholder="Any additional notes about this return..."
+                    ></textarea>
+                </div>
+
+                <!-- Summary -->
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-4 mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-2">Return Summary</h3>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-600">Total Refund Amount:</span>
+                        <span class="text-2xl font-bold text-green-600" id="totalRefundAmount">GH₵0.00</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-2" id="returnSummaryText">
+                        No items selected for return
+                    </div>
+                </div>
+
+                <div class="flex justify-between">
+                    <a href="{{ url_for('add_return') }}" class="btn btn-secondary">
+                        <i class="fas fa-search mr-2"></i> Search Different Receipt
+                    </a>
+                    <button type="submit" class="btn btn-danger" id="processReturnBtn" disabled>
+                        <i class="fas fa-undo mr-2"></i> Process Return
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        let totalRefund = 0;
+        let selectedItemsCount = 0;
+        
+        function toggleReturnItem(checkbox, itemId) {
+            const controls = document.getElementById(`quantity-controls-${itemId}`);
+            const row = checkbox.closest('.return-item-row');
+            const quantityInput = document.getElementById(`quantity-${itemId}`);
+            
+            if (checkbox.checked) {
+                controls.classList.remove('hidden');
+                row.classList.add('selected');
+                // Set default quantity to maximum available
+                const maxQuantity = parseFloat(quantityInput.getAttribute('max'));
+                quantityInput.value = maxQuantity;
+                updateReturnAmount(itemId);
+                selectedItemsCount++;
+            } else {
+                controls.classList.add('hidden');
+                row.classList.remove('selected');
+                quantityInput.value = 0;
+                updateReturnAmount(itemId);
+                selectedItemsCount--;
+            }
+            
+            updateSummary();
+        }
+        
+        function adjustQuantity(itemId, change) {
+            const quantityInput = document.getElementById(`quantity-${itemId}`);
+            const currentValue = parseFloat(quantityInput.value) || 0;
+            const minValue = parseFloat(quantityInput.getAttribute('min'));
+            const maxValue = parseFloat(quantityInput.getAttribute('max'));
+            
+            let newValue = currentValue + change;
+            newValue = Math.max(minValue, Math.min(maxValue, newValue));
+            
+            quantityInput.value = newValue.toFixed(2);
+            updateReturnAmount(itemId);
+            updateSummary();
+        }
+        
+        function updateReturnAmount(itemId) {
+            const quantityInput = document.getElementById(`quantity-${itemId}`);
+            const refundAmountSpan = document.getElementById(`refund-amount-${itemId}`);
+            
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const unitPrice = parseFloat(quantityInput.closest('.return-item-row').querySelector('input[name="unit_prices"]').value);
+            
+            const refundAmount = quantity * unitPrice;
+            refundAmountSpan.textContent = `Refund: GH₵${refundAmount.toFixed(2)}`;
+            
+            updateSummary();
+        }
+        
+        function updateSummary() {
+            totalRefund = 0;
+            let itemCount = 0;
+            let summaryText = [];
+            
+            document.querySelectorAll('.return-checkbox:checked').forEach((checkbox, index) => {
+                const itemId = checkbox.value;
+                const quantityInput = document.getElementById(`quantity-${itemId}`);
+                const quantity = parseFloat(quantityInput.value) || 0;
+                
+                if (quantity > 0) {
+                    const unitPrice = parseFloat(quantityInput.closest('.return-item-row').querySelector('input[name="unit_prices"]').value);
+                    const itemName = quantityInput.closest('.return-item-row').querySelector('input[name="item_names"]').value;
+                    const unitType = quantityInput.closest('.return-item-row').querySelector('input[name="sale_unit_types"]').value;
+                    
+                    const itemRefund = quantity * unitPrice;
+                    totalRefund += itemRefund;
+                    itemCount++;
+                    
+                    summaryText.push(`${itemName}: ${quantity} ${unitType}`);
+                }
+            });
+            
+            document.getElementById('totalRefundAmount').textContent = `GH₵${totalRefund.toFixed(2)}`;
+            
+            const summaryTextElement = document.getElementById('returnSummaryText');
+            const processBtn = document.getElementById('processReturnBtn');
+            
+            if (itemCount > 0) {
+                summaryTextElement.textContent = `${itemCount} item(s) selected: ${summaryText.join(', ')}`;
+                processBtn.disabled = false;
+                processBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                summaryTextElement.textContent = 'No items selected for return';
+                processBtn.disabled = true;
+                processBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+        
+        // Form validation before submission
+        document.getElementById('returnForm')?.addEventListener('submit', function(e) {
+            if (totalRefund <= 0) {
+                e.preventDefault();
+                alert('Please select at least one item to return with a quantity greater than 0.');
+                return false;
+            }
+            
+            const returnReason = document.getElementById('return_reason').value;
+            const paymentMethod = document.getElementById('payment_method').value;
+            
+            if (!returnReason || !paymentMethod) {
+                e.preventDefault();
+                alert('Please fill in the return reason and refund method.');
+                return false;
+            }
+            
+            return confirm(`Are you sure you want to process this return for GH₵${totalRefund.toFixed(2)}? This action cannot be undone and will update inventory levels.`);
+        });
+    </script>
+{% endblock %}
