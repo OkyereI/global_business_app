@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .status-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .backup-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .backup-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .alert {
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+        }
+        .alert i {
+            margin-right: 0.5rem;
+        }
+        .alert-success { background-color: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .alert-danger { background-color: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .alert-warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
+        .alert-info { background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto p-6">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">
+                <i class="fas fa-shield-alt mr-3 text-blue-600"></i>
+                Database Backup System
+            </h1>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Back to Dashboard
+            </a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
+                            {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                            {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                            {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                            {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                            {% endif %}
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Status Overview -->
+        <div class="status-card rounded-lg p-6 mb-8 shadow-lg">
+            <h2 class="text-2xl font-bold mb-4">
+                <i class="fas fa-info-circle mr-2"></i>
+                Backup System Status
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white/20 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm opacity-80">Total Backups</p>
+                            <p class="text-2xl font-bold">{{ status.total_backups }}</p>
+                        </div>
+                        <i class="fas fa-database text-2xl opacity-60"></i>
+                    </div>
+                </div>
+                <div class="bg-white/20 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm opacity-80">Auto Backup</p>
+                            <p class="text-lg font-bold">
+                                {% if status.scheduler_running %}
+                                    <span class="text-green-300">✓ Active</span>
+                                {% else %}
+                                    <span class="text-red-300">✗ Inactive</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <i class="fas fa-clock text-2xl opacity-60"></i>
+                    </div>
+                </div>
+                <div class="bg-white/20 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm opacity-80">Database Status</p>
+                            <p class="text-lg font-bold">
+                                {% if status.database_exists %}
+                                    <span class="text-green-300">✓ Healthy</span>
+                                {% else %}
+                                    <span class="text-red-300">✗ Missing</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <i class="fas fa-heartbeat text-2xl opacity-60"></i>
+                    </div>
+                </div>
+                <div class="bg-white/20 rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm opacity-80">Latest Backup</p>
+                            <p class="text-sm font-bold">
+                                {% if status.latest_backup %}
+                                    {{ status.latest_backup.created }}
+                                {% else %}
+                                    No backups
+                                {% endif %}
+                            </p>
+                        </div>
+                        <i class="fas fa-history text-2xl opacity-60"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Backup Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-plus-circle mr-2 text-green-600"></i>
+                Create Manual Backup
+            </h2>
+            <form method="POST" action="{{ url_for('create_manual_backup') }}" class="flex gap-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="description" placeholder="Backup description (optional)" 
+                       class="flex-1 rounded-md border-gray-300 shadow-sm p-3">
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-md shadow-md">
+                    <i class="fas fa-shield-alt mr-2"></i> Create Backup
+                </button>
+            </form>
+            <p class="text-sm text-gray-600 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                Manual backups are created immediately and stored alongside automatic backups.
+            </p>
+        </div>
+
+        <!-- Backup List -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-archive mr-2 text-blue-600"></i>
+                Available Backups
+            </h2>
+            
+            {% if backups %}
+                <div class="grid gap-4">
+                    {% for backup in backups %}
+                        <div class="backup-card border border-gray-200 rounded-lg p-4 bg-gray-50">
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-gray-800">
+                                        <i class="fas fa-file-archive mr-2 text-blue-500"></i>
+                                        {{ backup.filename }}
+                                    </h3>
+                                    <div class="flex flex-wrap gap-4 mt-2 text-sm text-gray-600">
+                                        <span>
+                                            <i class="fas fa-calendar mr-1"></i>
+                                            {{ backup.created }}
+                                        </span>
+                                        <span>
+                                            <i class="fas fa-weight mr-1"></i>
+                                            {{ "%.2f"|format(backup.size / 1024 / 1024) }} MB
+                                        </span>
+                                        <span>
+                                            <i class="fas fa-tag mr-1"></i>
+                                            {% if 'manual' in backup.filename %}
+                                                <span class="text-green-600">Manual</span>
+                                            {% elif 'startup' in backup.filename %}
+                                                <span class="text-blue-600">Startup</span>
+                                            {% else %}
+                                                <span class="text-purple-600">Automatic</span>
+                                            {% endif %}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="confirmRestore('{{ backup.filename }}')" 
+                                            class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-md shadow-md">
+                                        <i class="fas fa-undo mr-1"></i> Restore
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-inbox text-4xl mb-4"></i>
+                    <p class="text-lg">No backups available</p>
+                    <p class="text-sm">Create your first backup using the form above</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- System Information -->
+        <div class="bg-white rounded-lg shadow-md p-6 mt-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-cogs mr-2 text-gray-600"></i>
+                System Information
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                    <p class="font-semibold text-gray-700">Database Location:</p>
+                    <p class="text-gray-600 break-all">{{ status.database_path }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-700">Backup Directory:</p>
+                    <p class="text-gray-600 break-all">{{ status.backup_directory }}</p>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-700">Max Backups Retained:</p>
+                    <p class="text-gray-600">{{ status.max_backups }} files</p>
+                </div>
+                <div>
+                    <p class="font-semibold text-gray-700">Backup Frequency:</p>
+                    <p class="text-gray-600">Every 6 hours (automatic)</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Confirmation Modal -->
+    <div id="restore-modal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">
+                <i class="fas fa-exclamation-triangle mr-2 text-yellow-500"></i>
+                Confirm Database Restore
+            </h3>
+            <p class="text-gray-600 mb-6">
+                Are you sure you want to restore the database from this backup? 
+                This action will replace your current database and cannot be undone.
+                A backup of the current database will be created automatically.
+            </p>
+            <div class="flex justify-end space-x-4">
+                <button onclick="closeRestoreModal()" 
+                        class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md">
+                    Cancel
+                </button>
+                <a id="restore-link" href="#" 
+                   class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md">
+                    <i class="fas fa-undo mr-1"></i> Restore
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function confirmRestore(filename) {
+            document.getElementById('restore-link').href = "{{ url_for('restore_backup', backup_filename='') }}" + filename;
+            document.getElementById('restore-modal').classList.remove('hidden');
+        }
+
+        function closeRestoreModal() {
+            document.getElementById('restore-modal').classList.add('hidden');
+        }
+
+        // Auto-refresh status every 30 seconds
+        setInterval(function() {
+            location.reload();
+        }, 30000);
+    </script>
+{% endblock %}

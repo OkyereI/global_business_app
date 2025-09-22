@@ -26,6 +26,7 @@ import time
 import threading
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+from backup_manager import DatabaseBackupManager, initialize_backup_system, add_backup_routes
 # Load environment variables
 load_dotenv()
 
@@ -8900,6 +8901,72 @@ def create_app():
             return jsonify({'error': 'An internal error occurred.'}), 500
 
     
+    # === DATABASE BACKUP ROUTES ===
+    
+    @app.route('/backup/create', methods=['POST'])
+    @login_required
+    def create_manual_backup():
+        """Create a manual backup"""
+        description = request.form.get('description', '')
+        success = app.backup_manager.create_manual_backup(description)
+        
+        if success:
+            flash('Manual backup created successfully!', 'success')
+        else:
+            flash('Failed to create backup. Check logs for details.', 'danger')
+        
+        return redirect(url_for('backup_status'))
+    
+    @app.route('/backup/status')
+    @login_required
+    def backup_status():
+        """Show backup status page"""
+        status = app.backup_manager.get_backup_status()
+        backups = app.backup_manager.list_backups()
+        
+        return render_template('backup_status.html', 
+                             status=status, 
+                             backups=backups,
+                             title="Database Backup System")
+    
+    @app.route('/backup/restore/<backup_filename>')
+    @login_required
+    def restore_backup(backup_filename):
+        """Restore from a specific backup"""
+        # Only allow super admin to restore
+        if get_user_role() != 'super_admin':
+            flash('Only super administrators can restore database backups.', 'danger')
+            return redirect(url_for('backup_status'))
+        
+        success = app.backup_manager.restore_backup(backup_filename)
+        
+        if success:
+            flash(f'Database restored from backup: {backup_filename}', 'success')
+            flash('Please restart the application for changes to take effect.', 'warning')
+        else:
+            flash('Failed to restore backup. Check logs for details.', 'danger')
+        
+        return redirect(url_for('backup_status'))
+    
+    @app.route('/backup/emergency_restore', methods=['POST'])
+    @login_required
+    def emergency_restore():
+        """Emergency restore from latest backup"""
+        # Only allow super admin to restore
+        if get_user_role() != 'super_admin':
+            flash('Only super administrators can perform emergency restore.', 'danger')
+            return redirect(url_for('backup_status'))
+        
+        success = app.backup_manager.emergency_restore()
+        
+        if success:
+            flash('Emergency restore completed successfully!', 'success')
+            flash('Please restart the application for changes to take effect.', 'warning')
+        else:
+            flash('Emergency restore failed. Check logs for details.', 'danger')
+        
+        return redirect(url_for('backup_status'))
+    
     return app
 
     # The final Flask app instance is created here
@@ -8920,6 +8987,19 @@ if __name__ == '__main__':
         print("Creating database tables if they don't exist...")
         db.create_all()
         print("Database tables are up to date.")
+        
+        # Initialize backup system
+        print("Initializing database backup system...")
+        try:
+            app.backup_manager = initialize_backup_system(app, db_path)
+            print("Database backup system initialized successfully!")
+            print(f"Backup directory: {app.backup_manager.backup_dir}")
+            print("Automatic backups will run every 6 hours.")
+        except Exception as e:
+            print(f"Warning: Failed to initialize backup system: {e}")
+            # Create a basic backup manager for manual operations
+            app.backup_manager = DatabaseBackupManager(db_path)
+        
         from models import User
         # Check for and create the superadmin user
         super_admin_username = os.getenv('SUPER_ADMIN_USERNAME') or 'superadmin'

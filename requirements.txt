@@ -10,3 +10,4 @@ python-dotenv==1.0.0
 PyInstaller==6.16.0
 SQLAlchemy==2.0.23
 WTForms==3.1.0
+schedule==1.2.0
