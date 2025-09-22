@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt for {{ company.name }} - Transaction {{ transaction.id }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+        .receipt-container {
+            width: 100%;
+            max-width: 600px;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            padding: 30px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px dashed #cbd5e1;
+            padding-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: #1a202c;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 0.9rem;
+            color: #4a5568;
+            margin: 0;
+        }
+        .receipt-details, .company-details {
+            margin-bottom: 25px;
+        }
+        .receipt-details h2, .company-details h2, .transaction-summary h2, .balance-summary h2 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #edf2f7;
+            padding-bottom: 5px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 1rem;
+        }
+        .detail-label {
+            font-weight: 500;
+            color: #4a5568;
+        }
+        .detail-value {
+            color: #2d3748;
+            text-align: right;
+        }
+        .transaction-summary {
+            margin-bottom: 25px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 15px;
+            background-color: #f7fafc;
+        }
+        .transaction-summary .detail-row {
+            margin-bottom: 12px;
+        }
+        .transaction-summary .detail-row.total {
+            font-size: 1.125rem;
+            font-weight: 700;
+            color: #1a202c;
+            border-top: 1px solid #cbd5e1;
+            padding-top: 10px;
+            margin-top: 15px;
+        }
+        .balance-summary {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px dashed #cbd5e1;
+        }
+        .balance-summary .balance-amount {
+            font-size: 2rem;
+            font-weight: 800;
+            margin-top: 10px;
+        }
+        .balance-summary .balance-amount.positive {
+            color: #22c55e; /* Green */
+        }
+        .balance-summary .balance-amount.negative {
+            color: #ef4444; /* Red */
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px dashed #cbd5e1;
+            font-size: 0.85rem;
+            color: #718096;
+        }
+        .footer a {
+            color: #4299e1;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        @media print {
+            body {
+                background-color: #ffffff;
+                padding: 0;
+                margin: 0;
+            }
+            .receipt-container {
+                box-shadow: none;
+                border: none;
+                width: 100%;
+                max-width: none;
+                border-radius: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <div class="header">
+            <h1>{{ business_info.name }}</h1>
+            <p>{{ business_info.address }}, {{ business_info.location }}</p>
+            <p>Phone: {{ business_info.phone }} | Email: {{ business_info.email }}</p>
+        </div>
+
+        <div class="receipt-details">
+            <h2>Transaction Receipt</h2>
+            <div class="detail-row">
+                <span class="detail-label">Receipt Date:</span>
+                <span class="detail-value text-gray-900">{{ current_date }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Transaction ID:</span>
+                <span class="detail-value text-gray-900 font-medium">{{ transaction.id }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Recorded By:</span>
+                <span class="detail-value text-gray-900">{{ transaction.recorded_by }}</span>
+            </div>
+        </div>
+
+        <div class="company-details">
+            <h2>Company Details</h2>
+            <div class="detail-row">
+                <span class="detail-label">Company Name:</span>
+                <span class="detail-value text-gray-900">{{ company.name }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Contact Person:</span>
+                <span class="detail-value text-gray-900">{{ company.contact_person | default('N/A') }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Phone Number:</span>
+                <span class="detail-value text-gray-900">{{ company.phone_number | default('N/A') }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Email:</span>
+                <span class="detail-value text-gray-900">{{ company.email | default('N/A') }}</span>
+            </div>
+        </div>
+
+        <div class="transaction-summary">
+            <h2>Transaction Summary</h2>
+            <div class="detail-row">
+                <span class="detail-label">Transaction Type:</span>
+                <span class="detail-value text-gray-900 font-semibold">{{ transaction.transaction_type }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Transaction Amount:</span>
+                <span class="detail-value text-gray-900 font-bold text-lg">GH₵ {{ "%.2f"|format(transaction.amount) }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Date of Transaction:</span>
+                <span class="detail-value text-gray-900">{{ transaction.transaction_date.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Description:</span>
+                <span class="detail-value text-gray-900">{{ transaction.description | default('N/A') }}</span>
+            </div>
+            <div class="detail-row total">
+                <span class="detail-label">Company's Balance After Transaction:</span>
+                <span class="text-gray-900 font-bold">GH₵ {{ "%.2f"|format(company.calculate_current_balance()) }}</span> {# CORRECTED #}
+            </div>
+        </div>
+
+        <div class="balance-summary">
+            <h2>Company's Financial Standing</h2>
+            <div class="detail-row">
+                <span class="detail-label">Total Amount Company Owes Us (Debtor):</span>
+                <span class="text-gray-900">GH₵ {{ "%.2f"|format(company.total_debtors_amount) }}</span> {# CORRECTED #}
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Total Amount We Owe Company (Creditor):</span>
+                <span class="text-gray-900">GH₵ {{ "%.2f"|format(company.total_creditors_amount) }}</span> {# CORRECTED #}
+            </div>
+            <p class="balance-amount {% if company.calculate_current_balance() >= 0 %}positive{% else %}negative{% endif %}">
+                Current Net Balance: GH₵ {{ "%.2f"|format(company.calculate_current_balance()) }} {# CORRECTED #}
+            </p>
+        </div>
+
+        <div class="footer">
+            <p>Thank you for your business!</p>
+            <p>&copy; {{ current_year }} {{ business_info.name }}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - {{ session.get('business_name', 'Business Dashboard') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #10B981; /* Emerald 500 */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #059669; /* Emerald 600 */
+        }
+        .btn-secondary {
+            background-color: #6B7280; /* Gray 500 */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4B5563; /* Gray 600 */
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+        .flash-success {
+            background-color: #D1FAE5; /* Green 100 */
+            color: #065F46; /* Green 800 */
+            border: 1px solid #34D399; /* Green 400 */
+        }
+        .flash-danger {
+            background-color: #FEE2E2; /* Red 100 */
+            color: #991B1B; /* Red 800 */
+            border: 1px solid #F87171; /* Red 400 */
+        }
+        .flash-warning {
+            background-color: #FFFBEB; /* Yellow 100 */
+            color: #92400E; /* Yellow 800 */
+            border: 1px solid #FCD34D; /* Yellow 400 */
+        }
+        .flash-info {
+            background-color: #DBEAFE; /* Blue 100 */
+            color: #1E40AF; /* Blue 800 */
+            border: 1px solid #60A5FA; /* Blue 400 */
+        }
+        .flash-message i {
+            margin-right: 0.75rem;
+        }
+        /* Custom styles for cart table */
+        #cartTable tbody tr:nth-child(odd) {
+            background-color: #f9f9f9;
+        }
+        #cartTable tbody tr:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container py-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">{{ title }}</h1>
+            <a href="{{ url_for('future_orders') }}" class="btn btn-secondary flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to Future Orders
+            </a>
+        </div>
+
+        <div class="card">
+            <form id="futureOrderForm" action="" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label for="customer_name" class="block text-gray-700 text-sm font-semibold mb-2">Customer Name:</label>
+                        <input type="text" id="customer_name" name="customer_name" value="{{ order.customer_name if order else '' }}" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                    </div>
+                    <div>
+                        <label for="customer_phone" class="block text-gray-700 text-sm font-semibold mb-2">Customer Phone (Optional):</label>
+                        <input type="tel" id="customer_phone" name="customer_phone" value="{{ order.customer_phone if order else '' }}" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label for="expected_collection_date" class="block text-gray-700 text-sm font-semibold mb-2">Expected Collection Date (Optional):</label>
+                        <input type="date" id="expected_collection_date" name="expected_collection_date" value="{{ order.expected_collection_date if order else '' }}" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    {% if order.id %} {# Only show status for existing orders #}
+                    <div>
+                        <label for="status" class="block text-gray-700 text-sm font-semibold mb-2">Status:</label>
+                        <select id="status" name="status" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                            <option value="Pending" {% if order.status == 'Pending' %}selected{% endif %}>Pending</option>
+                            <option value="Collected" {% if order.status == 'Collected' %}selected{% endif %}>Collected</option>
+                            <option value="Cancelled" {% if order.status == 'Cancelled' %}selected{% endif %}>Cancelled</option>
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Add Items to Order</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div>
+                        <label for="product_select" class="block text-gray-700 text-sm font-semibold mb-2">Select Product:</label>
+                        <select id="product_select" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <option value="">-- Select Product --</option>
+                            {% for item in inventory_items %}
+                            <option value="{{ item.id }}" 
+                                data-product-name="{{ item.product_name }}"
+                                data-sale-price="{{ item.sale_price }}"
+                                data-unit-price-per-tab="{{ item.unit_price_per_tab }}"
+                                data-number-of-tabs="{{ item.number_of_tabs }}"
+                                data-current-stock="{{ item.current_stock }}"
+                                data-is-fixed-price="{{ 'true' if item.is_fixed_price else 'false' }}"
+                                data-fixed-sale-price="{{ item.fixed_sale_price }}">
+                                {{ item.product_name }} (Stock: {{ item.current_stock }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="quantity" class="block text-gray-700 text-sm font-semibold mb-2">Quantity:</label>
+                        <input type="number" id="quantity" min="1" value="1" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div>
+                        <label for="unit_type" class="block text-gray-700 text-sm font-semibold mb-2">Unit Type:</label>
+                        <select id="unit_type" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <option value="pack">Pack</option>
+                            <option value="tab">Piece/Unit</option>
+                        </select>
+                    </div>
+                    <div class="col-span-1 md:col-span-2">
+                        <label for="price_input" class="block text-gray-700 text-sm font-semibold mb-2">Price per Unit/Pack:</label>
+                        <input type="number" step="0.01" id="price_input" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" readonly>
+                    </div>
+                    <div>
+                        <button type="button" id="addItemToCart" class="btn btn-primary w-full flex items-center justify-center mt-7">
+                            <i class="fas fa-cart-plus mr-2"></i> Add to Order
+                        </button>
+                    </div>
+                </div>
+
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Order Items</h2>
+                <div class="overflow-x-auto rounded-lg shadow-md mb-6">
+                    <table id="cartTable" class="min-w-full bg-white">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 rounded-tl-lg">Product Name</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700">Quantity</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700">Unit Type</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700">Price/Unit</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700">Total</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-700 rounded-tr-lg">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if order and order['items'] %} {# Corrected access here #}
+                                {% for item in order['items'] %} {# Corrected access here #}
+                                <tr data-product-id="{{ item.product_id }}">
+                                    <td class="py-3 px-4 text-sm text-gray-800">{{ item.product_name }}</td>
+                                    <td class="py-3 px-4 text-sm text-gray-800">
+                                        <input type="number" value="{{ '%.2f'|format(item.quantity) }}" min="0.01" step="0.01"
+                                               class="quantity-input w-24 border rounded px-2 py-1"
+                                               data-unit-price="{{ item.unit_price }}">
+                                    </td>
+                                    <td class="py-3 px-4 text-sm text-gray-800">
+                                        <select class="unit-type-select border rounded px-2 py-1"
+                                                data-sale-price="{{ item.unit_price * item.quantity }}" {# This is not correct, should be original pack price #}
+                                                data-unit-price="{{ item.unit_price }}"
+                                                data-number-of-tabs="{{ item.number_of_tabs if item.number_of_tabs else 1 }}">
+                                            <option value="pack" {% if item.unit_type == 'pack' %}selected{% endif %}>Pack</option>
+                                            <option value="tab" {% if item.unit_type == 'tab' %}selected{% endif %}>Piece/Unit</option>
+                                        </select>
+                                    </td>
+                                    <td class="py-3 px-4 text-sm text-gray-800 item-price">{{ "%.2f"|format(item.unit_price) }}</td>
+                                    <td class="py-3 px-4 text-sm text-gray-800 item-total">{{ "%.2f"|format(item.quantity * item.unit_price) }}</td>
+                                    <td class="py-3 px-4 text-sm text-gray-800">
+                                        <button type="button" class="remove-item text-red-600 hover:text-red-800" data-product-id="{{ item.product_id }}">
+                                            <i class="fas fa-trash-alt"></i> Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="6" class="py-3 px-4 text-center text-gray-500">No items added to the order yet.</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="bg-gray-200">
+                                <td colspan="4" class="py-3 px-4 text-right text-sm font-semibold text-gray-700 rounded-bl-lg">Grand Total:</td>
+                                <td id="grandTotal" class="py-3 px-4 text-left text-sm font-bold text-gray-800 rounded-br-lg">GH₵{{ "%.2f"|format(order.total_amount) if order else "0.00" }}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <input type="hidden" name="cart_items_json" id="cart_items_json">
+
+                <div class="flex items-center justify-end">
+                    <button type="submit" class="btn btn-primary flex items-center">
+                        <i class="fas fa-save mr-2"></i> Save Order
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const productSelect = document.getElementById('product_select');
+            const quantityInput = document.getElementById('quantity');
+            const unitTypeSelect = document.getElementById('unit_type');
+            const priceInput = document.getElementById('price_input');
+            const addItemToCartBtn = document.getElementById('addItemToCart');
+            const cartTableBody = document.querySelector('#cartTable tbody');
+            const grandTotalDisplay = document.getElementById('grandTotal');
+            const cartItemsJsonInput = document.getElementById('cart_items_json');
+            const futureOrderForm = document.getElementById('futureOrderForm');
+
+            let cart = [];
+
+            // Initialize cart with existing items if editing an order
+            {% if order and order['items'] %}
+                cart = {{ order['items'] | tojson }};
+                // Ensure correct properties are set for existing items for JS logic
+                cart.forEach(item => {
+                    const selectedOption = productSelect.querySelector(`option[value="${item.product_id}"]`);
+                    if (selectedOption) {
+                        item.number_of_tabs = parseFloat(selectedOption.dataset.numberOfTabs || 1);
+                        item.sale_price_pack = parseFloat(selectedOption.dataset.salePrice);
+                        item.unit_price_per_tab = parseFloat(selectedOption.dataset.unitPricePerTab);
+                        // Recalculate price_at_time_per_unit_sold based on stored unit_type
+                        if (item.sale_unit_type === 'pack') {
+                            item.price_at_time_per_unit_sold = item.sale_price_pack;
+                        } else {
+                            item.price_at_time_per_unit_sold = item.unit_price_per_tab;
+                        }
+                        item.item_total_amount = item.quantity * item.price_at_time_per_unit_sold;
+                    } else {
+                        // Fallback if product not found (e.g., deleted from inventory)
+                        item.number_of_tabs = item.number_of_tabs || 1; // Ensure it has a value
+                        item.sale_price_pack = item.unit_price * item.quantity; // Estimate if not available
+                        item.unit_price_per_tab = item.unit_price; // Assuming unit_price from backend is per tab/piece
+                        // Adjust item.quantity to match quantity_sold for consistency with backend
+                        item.quantity_sold = item.quantity;
+                    }
+                });
+                updateCartDisplay();
+            {% endif %}
+
+            function updatePriceInput() {
+                const selectedOption = productSelect.options[productSelect.selectedIndex];
+                if (selectedOption.value) {
+                    const isFixedPrice = selectedOption.dataset.isFixedPrice === 'true';
+                    const fixedSalePrice = parseFloat(selectedOption.dataset.fixedSalePrice);
+                    const salePrice = parseFloat(selectedOption.dataset.salePrice);
+                    const unitPricePerTab = parseFloat(selectedOption.dataset.unitPricePerTab);
+                    const numberOfTabs = parseInt(selectedOption.dataset.numberOfTabs);
+                    const unitType = unitTypeSelect.value;
+
+                    let price = 0;
+                    if (isFixedPrice) {
+                        price = (unitType === 'tab') ? (fixedSalePrice / numberOfTabs) : fixedSalePrice;
+                    } else {
+                        price = (unitType === 'tab') ? unitPricePerTab : salePrice;
+                    }
+                    priceInput.value = price.toFixed(2);
+                } else {
+                    priceInput.value = '';
+                }
+            }
+
+            productSelect.addEventListener('change', updatePriceInput);
+            unitTypeSelect.addEventListener('change', updatePriceInput);
+
+            addItemToCartBtn.addEventListener('click', function() {
+                const selectedOption = productSelect.options[productSelect.selectedIndex];
+                if (!selectedOption.value) {
+                    alert('Please select a product.');
+                    return;
+                }
+
+                const productId = selectedOption.value;
+                const productName = selectedOption.dataset.productName;
+                const quantity = parseFloat(quantityInput.value);
+                const unitType = unitTypeSelect.value;
+                const pricePerUnit = parseFloat(priceInput.value);
+                const currentStock = parseFloat(selectedOption.dataset.currentStock);
+                const numberOfTabs = parseInt(selectedOption.dataset.numberOfTabs);
+
+                if (isNaN(quantity) || quantity <= 0) {
+                    alert('Please enter a valid quantity.');
+                    return;
+                }
+
+                let effectiveQuantityInBaseUnits = quantity; // For packs, quantity is 1 pack
+                if (unitType === 'pack') {
+                    effectiveQuantityInBaseUnits = quantity * numberOfTabs; // 1 pack = X tabs/pieces
+                }
+                
+                // Check stock based on the smallest unit (tabs/pieces)
+                if (effectiveQuantityInBaseUnits > currentStock) {
+                    alert(`Insufficient stock for ${productName}. Available: ${currentStock} units. You tried to add ${effectiveQuantityInBaseUnits} units.`);
+                    return;
+                }
+
+                const itemTotalAmount = quantity * pricePerUnit;
+
+                // Check if item already exists in cart, based on product_id and unit_type
+                const existingItemIndex = cart.findIndex(item => item.product_id === productId && item.sale_unit_type === unitType);
+
+                if (existingItemIndex > -1) {
+                    // Update existing item
+                    cart[existingItemIndex].quantity_sold += quantity;
+                    cart[existingItemIndex].item_total_amount += itemTotalAmount;
+                } else {
+                    // Add new item
+                    cart.push({
+                        product_id: productId,
+                        product_name: productName,
+                        quantity_sold: quantity, // Use quantity_sold for consistency with backend SaleRecord
+                        sale_unit_type: unitType,
+                        price_at_time_per_unit_sold: pricePerUnit,
+                        item_total_amount: itemTotalAmount,
+                        number_of_tabs: numberOfTabs, // Store for future calculations if needed
+                        sale_price_pack: parseFloat(selectedOption.dataset.salePrice), // Store original pack price
+                        unit_price_per_tab: parseFloat(selectedOption.dataset.unitPricePerTab) // Store original unit price
+                    });
+                }
+
+                // Update stock in the select option (client-side only)
+                selectedOption.dataset.currentStock = currentStock - effectiveQuantityInBaseUnits;
+                selectedOption.textContent = `${productName} (Stock: ${selectedOption.dataset.currentStock})`;
+
+                updateCartDisplay();
+            });
+
+            cartTableBody.addEventListener('change', function(event) {
+                const target = event.target;
+                if (target.classList.contains('quantity-input') || target.classList.contains('unit-type-select')) {
+                    const row = target.closest('tr');
+                    const productId = row.dataset.productId;
+                    const itemInCart = cart.find(item => item.product_id === productId);
+
+                    if (itemInCart) {
+                        if (target.classList.contains('quantity-input')) {
+                            const newQuantity = parseFloat(target.value);
+                            if (isNaN(newQuantity) || newQuantity <= 0) {
+                                alert('Quantity must be a positive number.');
+                                target.value = itemInCart.quantity_sold; // Revert to old value
+                                return;
+                            }
+                            itemInCart.quantity_sold = newQuantity;
+                        } else if (target.classList.contains('unit-type-select')) {
+                            itemInCart.sale_unit_type = target.value;
+                        }
+                        updateItemInCart(row, itemInCart);
+                        updateGrandTotal();
+                    }
+                }
+            });
+
+            cartTableBody.addEventListener('click', function(event) {
+                if (event.target.classList.contains('remove-item') || event.target.closest('.remove-item')) {
+                    const button = event.target.closest('.remove-item');
+                    const productIdToRemove = button.dataset.productId;
+                    
+                    const itemIndex = cart.findIndex(item => item.product_id === productIdToRemove);
+
+                    if (itemIndex > -1) {
+                        const removedItem = cart[itemIndex];
+                        cart.splice(itemIndex, 1); // Remove item from cart array
+
+                        // Return stock to inventory (client-side only)
+                        const productOption = productSelect.querySelector(`option[value="${removedItem.product_id}"]`);
+                        if (productOption) {
+                            const numberOfTabs = removedItem.number_of_tabs || 1;
+                            let quantityToReturn = removedItem.quantity_sold;
+                            if (removedItem.sale_unit_type === 'pack') {
+                                quantityToReturn = removedToReturn * numberOfTabs;
+                            }
+                            productOption.dataset.currentStock = parseFloat(productOption.dataset.currentStock) + quantityToReturn;
+                            productOption.textContent = `${productOption.dataset.productName} (Stock: ${productOption.dataset.currentStock})`;
+                        }
+                    }
+                    updateCartDisplay();
+                }
+            });
+
+            function updateItemInCart(row, item) {
+                let pricePerUnit;
+                if (item.sale_unit_type === 'pack') {
+                    pricePerUnit = item.sale_price_pack;
+                } else {
+                    pricePerUnit = item.unit_price_per_tab;
+                }
+                item.price_at_time_per_unit_sold = pricePerUnit;
+                item.item_total_amount = item.quantity_sold * pricePerUnit;
+
+                row.querySelector('.item-price').textContent = pricePerUnit.toFixed(2);
+                row.querySelector('.item-total').textContent = item.item_total_amount.toFixed(2);
+            }
+
+            function updateCartDisplay() {
+                cartTableBody.innerHTML = '';
+                let grandTotal = 0;
+
+                if (cart.length === 0) {
+                    cartTableBody.innerHTML = '<tr><td colspan="6" class="py-3 px-4 text-center text-gray-500">No items added to the order yet.</td></tr>';
+                } else {
+                    cart.forEach(item => {
+                        const row = document.createElement('tr');
+                        row.dataset.productId = item.product_id;
+                        row.innerHTML = `
+                            <td class="py-3 px-4 text-sm text-gray-800">${item.product_name}</td>
+                            <td class="py-3 px-4 text-sm text-gray-800">
+                                <input type="number" value="${item.quantity_sold}" min="0.01" step="0.01"
+                                    class="quantity-input w-24 border rounded px-2 py-1">
+                            </td>
+                            <td class="py-3 px-4 text-sm text-gray-800">
+                                <select class="unit-type-select border rounded px-2 py-1">
+                                    <option value="pack" ${item.sale_unit_type === 'pack' ? 'selected' : ''}>Pack</option>
+                                    <option value="tab" ${item.sale_unit_type === 'tab' ? 'selected' : ''}>Piece/Unit</option>
+                                </select>
+                            </td>
+                            <td class="py-3 px-4 text-sm text-gray-800 item-price">GH₵${item.price_at_time_per_unit_sold.toFixed(2)}</td>
+                            <td class="py-3 px-4 text-sm text-gray-800 item-total">GH₵${item.item_total_amount.toFixed(2)}</td>
+                            <td class="py-3 px-4 text-sm text-gray-800">
+                                <button type="button" class="remove-item text-red-600 hover:text-red-800" data-product-id="${item.product_id}">
+                                    <i class="fas fa-trash-alt"></i> Remove
+                                </button>
+                            </td>
+                        `;
+                        cartTableBody.appendChild(row);
+                        grandTotal += item.item_total_amount;
+                    });
+                }
+                grandTotalDisplay.textContent = `GH₵${grandTotal.toFixed(2)}`;
+                cartItemsJsonInput.value = JSON.stringify(cart);
+            }
+
+            function updateGrandTotal() {
+                let grandTotal = 0;
+                cart.forEach(item => {
+                    grandTotal += item.item_total_amount;
+                });
+                grandTotalDisplay.textContent = `GH₵${grandTotal.toFixed(2)}`;
+                cartItemsJsonInput.value = JSON.stringify(cart);
+            }
+
+            // Initial call to set price input based on default selection
+            updatePriceInput();
+        });
+    </script>
+</body>
+</html>

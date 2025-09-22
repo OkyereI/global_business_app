@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for eye icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        /* Custom styles for disabled/readonly fields */
+        .input-readonly {
+            background-color: #e2e8f0; /* bg-gray-200 */
+            cursor: not-allowed;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #6b7280; /* text-gray-500 */
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 bg-gray-100">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="p-3 mb-2 rounded-md
+                            {% if category == 'success' %} bg-green-100 text-green-700
+                            {% elif category == 'danger' %} bg-red-100 text-red-700
+                            {% elif category == 'warning' %} bg-yellow-100 text-yellow-700
+                            {% else %} bg-blue-100 text-blue-700 {% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form action="" method="POST" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            {# Business Fields #}
+            <div>
+                <label for="business_name" class="block text-sm font-medium text-gray-700">Business Name</label>
+                <input
+                    type="text"
+                    id="business_name"
+                    name="business_name"
+                    value="{{ business.name if business else '' }}"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+            </div>
+            <div>
+                <label for="business_address" class="block text-sm font-medium text-gray-700">Address</label>
+                <input
+                    type="text"
+                    id="business_address"
+                    name="business_address"
+                    value="{{ business.address if business else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+            </div>
+            <div>
+                <label for="business_location" class="block text-sm font-medium text-gray-700">Location</label>
+                <input
+                    type="text"
+                    id="business_location"
+                    name="business_location"
+                    value="{{ business.location if business else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+            </div>
+            <div>
+                <label for="business_contact" class="block text-sm font-medium text-gray-700">Contact</label>
+                <input
+                    type="text"
+                    id="business_contact"
+                    name="business_contact"
+                    value="{{ business.contact if business else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+            </div>
+            <div>
+                <label for="business_type" class="block text-sm font-medium text-gray-700">Business Type</label>
+                <select
+                    id="business_type"
+                    name="business_type"
+                    required
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                    {% for type_option in business_types %}
+                        <option value="{{ type_option }}" {% if business and business.type == type_option %}selected{% endif %}>{{ type_option }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {# Admin User Credentials - Conditional based on Add/Edit mode #}
+            <h3 class="text-xl font-semibold mt-6 mb-4 text-gray-800">Admin User Credentials</h3>
+            <div>
+                <label for="admin_username" class="block text-sm font-medium text-gray-700">Admin Username</label>
+                <input
+                    type="text"
+                    id="admin_username"
+                    name="admin_username"
+                    value="{{ business.initial_admin_username if business and business.initial_admin_username else '' }}"
+                    class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm
+                           {% if business %} input-readonly {% endif %}" {# Add custom class for styling #}
+                    {% if business %}readonly{% else %}required{% endif %} {# Readonly if editing, required if adding #}
+                >
+                {% if business %}
+                    <p class="mt-1 text-sm text-gray-500">Username cannot be changed here. Use user management for edits.</p>
+                {% endif %}
+            </div>
+            <div>
+                <label for="admin_password" class="block text-sm font-medium text-gray-700">
+                    {% if business %}Admin Password (Leave blank to keep current){% else %}Admin Password{% endif %}
+                </label>
+                <div class="relative"> {# Wrapper for password input and toggle button #}
+                    <input
+                        type="password"
+                        id="admin_password"
+                        name="admin_password"
+                        class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm pr-10" {# Add right padding for the icon #}
+                        placeholder="{% if business %}**********{% else %}Enter password for new admin{% endif %}"
+                        {% if not business %}required{% endif %} {# Only required when adding a new business #}
+                    >
+                    <span class="password-toggle" onclick="togglePasswordVisibility('admin_password', this)">
+                        <i class="fas fa-eye"></i>
+                    </span>
+                </div>
+            </div>
+
+            <button
+                type="submit"
+                class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-lg font-semibold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+            >
+                Save Business
+            </button>
+        </form>
+        <div class="mt-6 text-center">
+            <a href="{{ url_for('super_admin_dashboard') }}"
+               class="inline-block bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-md shadow-md transition duration-150 ease-in-out"
+            >
+                Cancel
+            </a>
+        </div>
+    </div>
+
+    <script>
+        function togglePasswordVisibility(fieldId, toggleElement) {
+            const passwordField = document.getElementById(fieldId);
+            const icon = toggleElement.querySelector('i');
+
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                passwordField.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+    </script>
+</body>
+</html>

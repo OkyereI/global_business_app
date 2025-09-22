@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #edf2f7;
+            padding-bottom: 0.5rem;
+        }
+        .form-group label {
+            font-weight: 500;
+            color: #555;
+        }
+        .form-control {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            transition: all 0.2s ease-in-out;
+        }
+        .form-control:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+            outline: none;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+        }
+        .btn-primary:hover {
+            background-color: #4f46e5;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: #4a5568;
+            border: 1px solid #cbd5e0;
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e0;
+            box-shadow: 0 4px 10px rgba(226, 232, 240, 0.3);
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
+        .flash-success {
+            background-color: #d1fae5;
+            color: #065f46;
+            border: 1px solid #34d399;
+        }
+        .flash-danger {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+        .flash-warning {
+            background-color: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fbbf24;
+        }
+        .flash-info {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            border: 1px solid #38bdf8;
+        }
+        .item-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr 1fr 0.5fr; /* Product, Qty, Unit Price, Unit Type, Total, Remove */
+            gap: 1rem;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px dashed #e2e8f0;
+        }
+        .item-row:last-child {
+            border-bottom: none;
+        }
+        .remove-item-btn {
+            background-color: #ef4444;
+            color: white;
+            padding: 0.4rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            line-height: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-6">
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">{{ title }}</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('add_future_order') }}" class="space-y-6">
+            {{ csrf_token() }}
+
+            <h2 class="section-title">Customer Details</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="form-group">
+                    <label for="customer_name" class="block text-sm">Customer Name</label>
+                    <input type="text" id="customer_name" name="customer_name" class="form-control mt-1" value="{{ order.customer_name if order else '' }}" required>
+                </div>
+                <div class="form-group">
+                    <label for="customer_phone" class="block text-sm">Customer Phone</label>
+                    <input type="text" id="customer_phone" name="customer_phone" class="form-control mt-1" value="{{ order.customer_phone if order else '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="expected_collection_date" class="block text-sm">Expected Collection Date</label>
+                    <input type="date" id="expected_collection_date" name="expected_collection_date" class="form-control mt-1" value="{{ order.expected_collection_date.strftime('%Y-%m-%d') if order.expected_collection_date else '' }}">
+                    <p class="text-xs text-gray-500 mt-1">Leave empty if unknown.</p>
+                </div>
+            </div>
+
+            <h2 class="section-title">Order Items</h2>
+            <div id="order-items-container" class="space-y-4 bg-gray-50 p-4 rounded-lg">
+                {# Item rows will be added here by JavaScript #}
+                {% if order.items_json %}
+                    {% for item_data in order.get_items() %}
+                        <div class="item-row">
+                            <div class="form-group">
+                                <label class="block text-xs text-gray-500">Product</label>
+                                <select name="product_id[]" class="form-control" required onchange="updateItemDetails(this)">
+                                    <option value="">Select Product</option>
+                                    {% for item in inventory_items %}
+                                        <option value="{{ item.id }}" data-pack-price="{{ '%.2f' % item.sale_price }}" data-unit-price="{{ '%.2f' % item.unit_price_per_tab }}" data-units-per-pack="{{ item.number_of_tabs }}" {% if item_data.product_id == item.id %}selected{% endif %}>
+                                            {{ item.product_name }} (Stock: {{ "%.2f" % item.current_stock }} packs)
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="block text-xs text-gray-500">Qty</label>
+                                <input type="number" name="quantity[]" class="form-control" step="0.01" min="0.01" value="{{ '%.2f' % item_data.quantity }}" required oninput="calculateItemTotal(this)">
+                            </div>
+                            <div class="form-group">
+                                <label class="block text-xs text-gray-500">Unit Price</label>
+                                <input type="number" name="unit_price[]" class="form-control" step="0.01" min="0" value="{{ '%.2f' % item_data.unit_price }}" required oninput="calculateItemTotal(this)">
+                            </div>
+                            <div class="form-group">
+                                <label class="block text-xs text-gray-500">Unit Type</label>
+                                <select name="unit_type[]" class="form-control" onchange="calculateItemTotal(this)">
+                                    <option value="pack" {% if item_data.unit_type == 'pack' %}selected{% endif %}>Pack</option>
+                                    <option value="piece" {% if item_data.unit_type == 'piece' %}selected{% endif %}>Piece</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="block text-xs text-gray-500">Total</label>
+                                <input type="text" name="item_total[]" class="form-control" value="{{ '%.2f' % item_data.item_total }}" readonly>
+                            </div>
+                            <div>
+                                <button type="button" class="remove-item-btn" onclick="removeItem(this)">Remove</button>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <button type="button" id="add-item-btn" class="btn btn-secondary mt-4">Add Item</button>
+
+            <div class="text-right text-xl font-bold text-gray-800 mt-6">
+                Total Order Amount: GH₵<span id="total-order-amount">{{ "%.2f" % order.total_amount if order else '0.00' }}</span>
+                <input type="hidden" name="total_amount" id="hidden-total-order-amount" value="{{ order.total_amount if order else '0.00' }}">
+            </div>
+
+            <div class="flex justify-end space-x-4 mt-6">
+                <a href="{{ url_for('future_orders') }}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Create Future Order</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const orderItemsContainer = document.getElementById('order-items-container');
+            const addItemBtn = document.getElementById('add-item-btn');
+            const totalOrderAmountSpan = document.getElementById('total-order-amount');
+            const hiddenTotalOrderAmountInput = document.getElementById('hidden-total-order-amount');
+
+            let itemCounter = 0; // To ensure unique IDs if needed for more complex JS, though not strictly necessary for this setup
+
+            // Function to add a new item row
+            function addItemRow() {
+                const newItemRow = document.createElement('div');
+                newItemRow.classList.add('item-row');
+                newItemRow.innerHTML = `
+                    <div class="form-group">
+                        <label class="block text-xs text-gray-500">Product</label>
+                        <select name="product_id[]" class="form-control" required onchange="updateItemDetails(this)">
+                            <option value="">Select Product</option>
+                            {% for item in inventory_items %}
+                                <option value="{{ item.id }}" data-pack-price="{{ '%.2f' % item.sale_price }}" data-unit-price="{{ '%.2f' % item.unit_price_per_tab }}" data-units-per-pack="{{ item.number_of_tabs }}">
+                                    {{ item.product_name }} (Stock: {{ "%.2f" % item.current_stock }} packs)
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="block text-xs text-gray-500">Qty</label>
+                        <input type="number" name="quantity[]" class="form-control" step="0.01" min="0.01" value="1.00" required oninput="calculateItemTotal(this)">
+                    </div>
+                    <div class="form-group">
+                        <label class="block text-xs text-gray-500">Unit Price</label>
+                        <input type="number" name="unit_price[]" class="form-control" step="0.01" min="0" value="0.00" required oninput="calculateItemTotal(this)">
+                    </div>
+                    <div class="form-group">
+                        <label class="block text-xs text-gray-500">Unit Type</label>
+                        <select name="unit_type[]" class="form-control" onchange="calculateItemTotal(this)">
+                            <option value="pack">Pack</option>
+                            <option value="piece">Piece</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="block text-xs text-gray-500">Total</label>
+                        <input type="text" name="item_total[]" class="form-control" value="0.00" readonly>
+                    </div>
+                    <div>
+                        <button type="button" class="remove-item-btn" onclick="removeItem(this)">Remove</button>
+                    </div>
+                `;
+                orderItemsContainer.appendChild(newItemRow);
+                itemCounter++;
+                calculateGrandTotal(); // Recalculate total after adding item
+            }
+
+            // Function to remove an item row
+            window.removeItem = function(button) {
+                button.closest('.item-row').remove();
+                calculateGrandTotal(); // Recalculate total after removing item
+            };
+
+            // Function to update unit price when product is selected
+            window.updateItemDetails = function(selectElement) {
+                const selectedOption = selectElement.options[selectElement.selectedIndex];
+                const itemRow = selectElement.closest('.item-row');
+                const unitPriceInput = itemRow.querySelector('input[name="unit_price[]"]');
+                const unitTypeSelect = itemRow.querySelector('select[name="unit_type[]"]');
+
+                if (selectedOption.value) {
+                    // Default to pack price and type
+                    unitPriceInput.value = parseFloat(selectedOption.dataset.packPrice).toFixed(2);
+                    unitTypeSelect.value = 'pack';
+                } else {
+                    unitPriceInput.value = '0.00';
+                    unitTypeSelect.value = 'pack'; // Reset to default
+                }
+                calculateItemTotal(unitPriceInput); // Recalculate total for this row
+            };
+
+            // Function to calculate total for a single item row
+            window.calculateItemTotal = function(inputElement) {
+                const itemRow = inputElement.closest('.item-row');
+                const quantity = parseFloat(itemRow.querySelector('input[name="quantity[]"]').value);
+                const unitPrice = parseFloat(itemRow.querySelector('input[name="unit_price[]"]').value);
+                const itemTotalInput = itemRow.querySelector('input[name="item_total[]"]');
+
+                if (!isNaN(quantity) && !isNaN(unitPrice)) {
+                    itemTotalInput.value = (quantity * unitPrice).toFixed(2);
+                } else {
+                    itemTotalInput.value = '0.00';
+                }
+                calculateGrandTotal(); // Recalculate grand total
+            };
+
+            // Function to calculate the grand total of all items
+            function calculateGrandTotal() {
+                let grandTotal = 0;
+                orderItemsContainer.querySelectorAll('input[name="item_total[]"]').forEach(input => {
+                    const itemTotal = parseFloat(input.value);
+                    if (!isNaN(itemTotal)) {
+                        grandTotal += itemTotal;
+                    }
+                });
+                totalOrderAmountSpan.textContent = grandTotal.toFixed(2);
+                hiddenTotalOrderAmountInput.value = grandTotal.toFixed(2); // Update hidden input for form submission
+            }
+
+            // Add event listener for "Add Item" button
+            addItemBtn.addEventListener('click', addItemRow);
+
+            // Initial calculation if there are pre-filled items (e.g., on edit, though this page is for add)
+            calculateGrandTotal();
+        });
+    </script>
+</body>
+</html>

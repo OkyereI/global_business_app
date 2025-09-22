@@ -1,0 +1,16 @@
+feat: Merge improved templates with existing ones
+
+- Updated 4 existing templates with enhanced versions:
+  * add_edit_sale.html: Added searchable dropdown functionality
+  * add_edit_inventory.html: Updated with improvements
+  * sales.html: Enhanced user interface
+  * return_item.html: Updated version
+
+- Added 3 new templates for returns management:
+  * add_edit_return.html
+  * print_return_receipt.html
+  * returns_history.html
+
+- Preserved all existing templates from remote repository
+- Enhanced user experience with modern UI components
+- Improved functionality and accessibility

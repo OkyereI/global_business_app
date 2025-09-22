@@ -1,0 +1,527 @@
+
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary {
+            background-color: #10B981;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #059669;
+        }
+        .btn-secondary {
+            background-color: #6B7280;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4B5563;
+        }
+        .btn-danger {
+            background-color: #EF4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+        .btn-success {
+            background-color: #059669;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #047857;
+        }
+        .btn-warning {
+            background-color: #D97706;
+            color: white;
+        }
+        .btn-warning:hover {
+            background-color: #B45309;
+        }
+        .form-input {
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            outline: none;
+            transition: all 0.2s ease-in-out;
+        }
+        .form-input:focus {
+            border-color: #10B981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+        .receipt-number {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            color: #374151;
+            background-color: #f9fafb;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+            display: inline-block;
+        }
+        .return-receipt {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            color: #b91c1c;
+            background-color: #fef2f2;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid #fecaca;
+            display: inline-block;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        }
+        thead {
+            background-color: #e2e8f0;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            font-weight: 600;
+            color: #4a5568;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+        tbody tr:hover {
+            background-color: #f0f4f7;
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            border: 1px solid transparent;
+        }
+        .flash-success {
+            background-color: #D1FAE5;
+            color: #065F46;
+            border-color: #34D399;
+        }
+        .flash-danger {
+            background-color: #FEE2E2;
+            color: #991B1B;
+            border-color: #F87171;
+        }
+        .flash-warning {
+            background-color: #FFFBEB;
+            color: #92400E;
+            border-color: #FCD34D;
+        }
+        .flash-info {
+            background-color: #DBEAFE;
+            color: #1E40AF;
+            border-color: #60A5FA;
+        }
+        .items-list {
+            max-width: 300px;
+            overflow-x: auto;
+        }
+        .hidden {
+            display: none !important;
+        }
+        /* SMS Loading Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.show {
+            display: flex;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+        .spinner {
+            border: 4px solid #f3f4f6;
+            border-top: 4px solid #10B981;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Alert Styles */
+        .alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .alert-success {
+            background-color: #D1FAE5;
+            color: #065F46;
+            border: 1px solid #34D399;
+        }
+        .alert-error {
+            background-color: #FEE2E2;
+            color: #991B1B;
+            border: 1px solid #F87171;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="main-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} mr-3"></i>
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Returns History</h1>
+            <div class="flex space-x-3">
+                <a href="{{ url_for('add_return') }}" class="btn btn-danger">
+                    <i class="fas fa-undo mr-2"></i> Process New Return
+                </a>
+                <a href="{{ url_for('sales') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left mr-2"></i> Back to Sales
+                </a>
+            </div>
+        </div>
+
+        <!-- Search and Summary -->
+        <div class="card mb-6">
+            <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 mb-4">
+                <form action="{{ url_for('returns_history') }}" method="GET" class="flex w-full md:w-auto">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input 
+                        type="text" 
+                        name="search" 
+                        placeholder="Search returns (receipt, customer, staff)"
+                        class="flex-grow form-input"
+                        value="{{ search_query }}"
+                    >
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200 btn ml-2">
+                        <i class="fas fa-search mr-2"></i> Search
+                    </button>
+                    {% if search_query %}
+                    <a href="{{ url_for('returns_history') }}" class="btn btn-secondary ml-2">
+                        <i class="fas fa-times-circle mr-2"></i> Clear
+                    </a>
+                    {% endif %}
+                </form>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-red-800">Total Returns</h3>
+                    <p class="text-2xl font-bold text-red-600">{{ returns|length }}</p>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-yellow-800">Total Refunds</h3>
+                    <p class="text-2xl font-bold text-yellow-600">GH₵{{ "%.2f"|format(total_refunds) }}</p>
+                </div>
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-blue-800">Search Results</h3>
+                    <p class="text-2xl font-bold text-blue-600">{{ returns|length }} record(s)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Returns Table -->
+        <div class="card">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Return Records</h2>
+            {% if returns %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-md">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="rounded-tl-lg">Return Receipt</th>
+                                <th>Original Receipt</th>
+                                <th>Date & Time</th>
+                                <th>Customer</th>
+                                <th>Processed By</th>
+                                <th>Reason</th>
+                                <th>Refund Amount</th>
+                                <th>Refund Method</th>
+                                <th class="rounded-tr-lg">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for return_record in returns %}
+                                <tr class="border-b border-gray-200 hover:bg-gray-100">
+                                    <td class="py-3 px-4">
+                                        <div class="return-receipt" title="{{ return_record.return_receipt_number }}">
+                                            {{ return_record.return_receipt_number }}
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="receipt-number" title="{{ return_record.original_receipt_number }}">
+                                            {{ return_record.original_receipt_number }}
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="text-sm">
+                                            <div class="font-medium">{{ return_record.return_date.strftime('%Y-%m-%d') }}</div>
+                                            <div class="text-gray-500">{{ return_record.return_date.strftime('%H:%M:%S') }}</div>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="text-sm">
+                                            {% if return_record.customer_name %}
+                                                <div class="font-medium">{{ return_record.customer_name }}</div>
+                                            {% endif %}
+                                            <div class="text-gray-600">{{ return_record.customer_phone or 'N/A' }}</div>
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="text-sm font-medium">{{ return_record.processed_by }}</div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                              {% if return_record.return_reason == 'Defective' %}bg-red-100 text-red-800
+                                              {% elif return_record.return_reason == 'Wrong Item' %}bg-yellow-100 text-yellow-800
+                                              {% elif return_record.return_reason == 'Customer Changed Mind' %}bg-blue-100 text-blue-800
+                                              {% elif return_record.return_reason == 'Expired' %}bg-red-100 text-red-800
+                                              {% elif return_record.return_reason == 'Doctor\'s Orders' %}bg-green-100 text-green-800
+                                              {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                            {{ return_record.return_reason }}
+                                        </span>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="text-lg font-semibold text-red-600">
+                                            GH₵{{ "%.2f"|format(return_record.total_refund_amount) }}
+                                        </div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="text-sm">{{ return_record.payment_method }}</div>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <div class="flex items-center space-x-2">
+                                            <button onclick="toggleReturnDetails('{{ return_record.id }}')" 
+                                                    class="text-blue-600 hover:text-blue-800 transition-colors"
+                                                    title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <a href="{{ url_for('print_return_receipt', return_id=return_record.id) }}" 
+                                               target="_blank"
+                                               class="text-green-600 hover:text-green-800 transition-colors"
+                                               title="Print Receipt">
+                                                <i class="fas fa-print"></i>
+                                            </a>
+                                            {% if return_record.customer_phone %}
+                                            <button onclick="sendReturnSMS('{{ return_record.id }}', '{{ return_record.customer_phone }}', '{{ return_record.return_receipt_number }}')" 
+                                                    class="text-orange-600 hover:text-orange-800 transition-colors"
+                                                    title="Send SMS Receipt">
+                                                <i class="fas fa-sms"></i>
+                                            </button>
+                                            {% else %}
+                                            <button disabled 
+                                                    class="text-gray-400 cursor-not-allowed"
+                                                    title="No phone number available">
+                                                <i class="fas fa-sms"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Return Details Row (Hidden by default) -->
+                                <tr id="details-{{ return_record.id }}" class="hidden bg-gray-50">
+                                    <td colspan="9" class="p-4">
+                                        <div class="bg-gray-100 p-4 rounded-lg shadow-inner">
+                                            <h4 class="font-semibold mb-3 text-gray-700">Returned Items:</h4>
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <ul class="space-y-2">
+                                                        {% set returned_items = return_record.get_returned_items() %}
+                                                        {% for item in returned_items %}
+                                                            <li class="text-sm">
+                                                                <div class="flex justify-between items-start">
+                                                                    <div>
+                                                                        <strong>{{ item.product_name }}</strong><br>
+                                                                        <span class="text-gray-600">
+                                                                            Returned: {{ "%.2f"|format(item.return_quantity) }} {{ item.sale_unit_type }} 
+                                                                            @ GH₵{{ "%.2f"|format(item.unit_price) }} each
+                                                                        </span>
+                                                                    </div>
+                                                                    <div class="text-right">
+                                                                        <div class="font-medium text-red-600">
+                                                                            GH₵{{ "%.2f"|format(item.refund_amount) }}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                                <div>
+                                                    {% if return_record.notes %}
+                                                    <div class="mb-3">
+                                                        <h5 class="font-medium text-gray-700 mb-1">Notes:</h5>
+                                                        <p class="text-sm text-gray-600 bg-white p-2 rounded border">{{ return_record.notes }}</p>
+                                                    </div>
+                                                    {% endif %}
+                                                    <div class="text-sm text-gray-600">
+                                                        <p><strong>Return ID:</strong> {{ return_record.id }}</p>
+                                                        <p><strong>Processed:</strong> {{ return_record.return_date.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-undo text-4xl mb-4"></i>
+                    <p class="text-lg">No return records found.</p>
+                    {% if search_query %}
+                        <p class="text-sm mt-2">Try adjusting your search criteria.</p>
+                    {% else %}
+                        <p class="text-sm mt-2">Returns will appear here once customers return items.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="flex justify-center mt-8">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- SMS Loading Modal -->
+    <div id="smsLoadingModal" class="modal">
+        <div class="modal-content">
+            <div class="spinner"></div>
+            <p class="text-lg font-medium">Sending SMS...</p>
+        </div>
+    </div>
+
+    <script>
+        function toggleReturnDetails(returnId) {
+            const detailsRow = document.getElementById('details-' + returnId);
+            if (detailsRow) {
+                detailsRow.classList.toggle('hidden');
+            }
+        }
+        
+        function sendReturnSMS(returnId, phoneNumber, receiptNumber) {
+            // Show loading modal
+            const loadingModal = document.getElementById('smsLoadingModal');
+            loadingModal.classList.add('show');
+            
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('csrf_token', '{{ csrf_token() }}');
+            formData.append('return_id', returnId);
+            formData.append('phone_number', phoneNumber);
+            
+            // Send SMS request
+            fetch(`/sales/return/sms/${returnId}`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingModal.classList.remove('show');
+                
+                if (data.success) {
+                    showAlert('success', `✅ SMS sent successfully to ${phoneNumber}`);
+                } else {
+                    showAlert('error', `❌ Failed to send SMS: ${data.message || 'Unknown error'}`);
+                }
+            })
+            .catch(error => {
+                loadingModal.classList.remove('show');
+                console.error('SMS Error:', error);
+                showAlert('error', '❌ Network error while sending SMS');
+            });
+        }
+
+        function showAlert(type, message) {
+            // Create alert element
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.innerHTML = message;
+            
+            // Add to body
+            document.body.appendChild(alertDiv);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+    </script>
+{% endblock %}
