@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Receipt - {{ business_info.name or 'Business Name' }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Minimal styles to ensure content is visible for print */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            background-color: #fff; /* Ensure white background for print */
+        }
+        .receipt-container {
+            max-width: 500px;
+            margin: 0 auto; /* Center for print */
+            padding: 20px;
+            border: 1px solid #e0e0e0; /* Light border for visual separation */
+            box-shadow: none; /* No shadow for print */
+            border-radius: 0; /* No rounded corners for print */
+        }
+        .header {
+            text-align: center;
+            border-bottom: 1px dashed #ccc;
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+        .details-section {
+            margin-bottom: 15px;
+        }
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px dotted #eee;
+        }
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+        .receipt-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .receipt-table th, .receipt-table td {
+            border: 1px solid #eee;
+            padding: 8px;
+            text-align: left;
+        }
+        .receipt-table th {
+            background-color: #f9f9f9;
+            font-weight: bold;
+        }
+        .receipt-table tfoot td {
+            font-weight: bold;
+            border-top: 2px solid #ccc;
+        }
+        .footer {
+            text-align: center;
+            border-top: 1px dashed #ccc;
+            padding-top: 15px;
+            margin-top: 15px;
+            font-size: 0.8em;
+            color: #555;
+        }
+        /* Hide print button on the print page itself */
+        .no-print {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-container">
+        <div class="header">
+            <h1 class="text-xl font-bold text-gray-900 mb-1">{{ business_info.name or 'Business Name' }}</h1>
+            <p class="text-xs text-gray-600">{{ business_info.address or 'N/A' }}{% if business_info.location %}, {{ business_info.location }}{% endif %}</p>
+            <p class="text-xs text-gray-600">Tel: {{ business_info.phone or 'N/A' }} | Email: {{ business_info.email or 'N/A' }}</p>
+            <h2 class="text-lg font-semibold text-gray-800 mt-3">Company Transaction Receipt</h2>
+        </div>
+
+        <div class="details-section">
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Transaction ID:</span>
+                <span class="text-gray-900">{{ transaction_details.id }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Company Name:</span>
+                <span class="text-gray-900">{{ company.name }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Transaction Type:</span>
+                <span class="text-gray-900">{{ transaction_details.transaction_type }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Amount:</span>
+                <span class="text-gray-900">GH₵ {{ "%.2f"|format(transaction_details.amount) }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Description:</span>
+                <span class="text-gray-900">{{ transaction_details.description or 'N/A' }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Date:</span>
+                <span class="text-gray-900">{{ transaction_details.date }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Recorded By:</span>
+                <span class="text-gray-900">{{ transaction_details.recorded_by }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Company New Balance:</span>
+                <span class="text-gray-900 font-bold">GH₵ {{ "%.2f"|format(transaction_details.new_balance) }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Total Creditors:</span>
+                <span class="text-gray-900">GH₵ {{ "%.2f"|format(company.total_creditors_amount) }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="font-medium text-gray-700">Total Debtors:</span>
+                <span class="text-gray-900">GH₵ {{ "%.2f"|format(company.total_debtors_amount) }}</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Thank you for your business!</p>
+            <p>Generated on: {{ current_date }}</p>
+            <p class="no-print">Powered by Your Business Management System</p>
+        </div>
+    </div>
+    <script>
+        // Automatically trigger print when the page loads
+        window.onload = function() {
+            setTimeout(() => {
+                window.print();
+                // Optionally, close the window after printing if opened in a new tab/window
+                // window.onafterprint = function() { window.close(); };
+            }, 100); // Small delay to ensure rendering
+        };
+    </script>
+</body>
+</html>

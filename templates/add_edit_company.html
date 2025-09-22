@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            padding: 24px; /* p-6 */
+        }
+        .container {
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+        .form-group label {
+            font-weight: 500;
+            color: #555;
+            display: block; /* block text-sm */
+        }
+        .form-control {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            transition: all 0.2s ease-in-out;
+            margin-top: 0.25rem; /* mt-1 */
+        }
+        .form-control:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+            outline: none;
+        }
+        .form-control[readonly] {
+            background-color: #f0f4f8;
+            border-color: #d1d9e0;
+            color: #667085;
+            cursor: not-allowed;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #6366f1;
+            color: white;
+            border: none;
+        }
+        .btn-primary:hover {
+            background-color: #4f46e5;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: #4a5568;
+            border: 1px solid #cbd5e0;
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e0;
+            box-shadow: 0 4px 10px rgba(226, 232, 240, 0.3);
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem; /* mb-4 */
+            font-weight: 500;
+        }
+        .flash-success {
+            background-color: #d1fae5;
+            color: #065f46;
+            border: 1px solid #34d399;
+        }
+        .flash-danger {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+        .flash-warning {
+            background-color: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fbbf24;
+        }
+        .flash-info {
+            background-color: #e0f2fe;
+            color: #0369a1;
+            border: 1px solid #38bdf8;
+        }
+        .form-actions {
+            display: flex; /* flex */
+            justify-content: flex-end; /* justify-end */
+            gap: 16px; /* space-x-4 */
+            margin-top: 1.5rem; /* mt-6 */
+        }
+        .heading {
+            font-size: 1.875rem; /* text-3xl */
+            font-weight: 700; /* font-bold */
+            text-align: center; /* text-center */
+            color: #1f2937; /* text-gray-800 */
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+        .form-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem; /* space-y-6 */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="heading">{{ title }}</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-container">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="" class="form-layout">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="name">Company Name</label>
+                <input type="text" id="name" name="name" class="form-control" value="{{ company.name if company else '' }}" required>
+            </div>
+            <div class="form-group">
+                <label for="contact_person">Contact Person</label>
+                <input type="text" id="contact_person" name="contact_person" class="form-control" value="{{ company.contact_person if company else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="phone">Phone</label>
+                <input type="text" id="phone" name="phone" class="form-control" value="{{ company.phone if company else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" class="form-control" value="{{ company.email if company else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="address">Address</label>
+                <textarea id="address" name="address" rows="3" class="form-control">{{ company.address if company else '' }}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="total_creditors_amount">Total Creditors (GH₵)</label>
+                <input type="text" id="total_creditors_amount" name="total_creditors_amount"
+                       class="form-control"
+                       value="{{ '%.2f'|format(company.total_creditors_amount) if company.total_creditors_amount is not none else '0.00' }}"
+                       readonly>
+            </div>
+
+            <div class="form-group">
+                <label for="total_debtors_amount">Total Debtors (GH₵)</label>
+                <input type="text" id="total_debtors_amount" name="total_debtors_amount"
+                       class="form-control"
+                       value="{{ '%.2f'|format(company.total_debtors_amount) if company.total_debtors_amount is not none else '0.00' }}"
+                       readonly>
+            </div>
+
+            <div class="form-actions">
+                <a href="{{ url_for('companies') }}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    {{ 'Add Company' if title == 'Add New Company' else 'Update Company' }}
+                </button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default('Business Management App') }}</title>
+    {# Removed Tailwind CSS CDN and standalone scripts as per previous discussion #}
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Add barcode scanner library -->
+    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+
+    <!-- CSRF Token Meta Tag for JavaScript access -->
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    {% block head %} {# This is the main head block for child templates to extend #}
+        {# No super() here, as this is the base template #}
+    {% endblock %}
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+        .sidebar {
+            min-width: 250px;
+            max-width: 250px;
+            background: #2c3e50;
+            color: #fff;
+            transition: all 0.3s;
+            padding: 20px;
+        }
+        .sidebar.active {
+            margin-left: -250px;
+        }
+        .sidebar .sidebar-header {
+            padding-bottom: 20px;
+            border-bottom: 1px solid #47748b;
+            text-align: center;
+        }
+        .sidebar ul.components {
+            padding: 20px 0;
+            border-bottom: 1px solid #47748b;
+        }
+        .sidebar ul li a {
+            padding: 10px;
+            font-size: 1.1em;
+            display: block;
+            color: #fff;
+            text-decoration: none;
+        }
+        .sidebar ul li a:hover {
+            color: #2c3e50;
+            background: #fff;
+            border-radius: 5px;
+        }
+        .sidebar ul li.active > a, .sidebar ul li a[aria-expanded="true"] {
+            color: #fff;
+            background: #3f546a; /* Adjusted for a slightly lighter active state */
+            border-radius: 5px;
+        }
+        .navbar {
+            padding: 15px 10px;
+            background: #fff;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .content {
+            width: 100%;
+            padding: 20px;
+            min-height: 100vh;
+            transition: all 0.3s;
+        }
+        #sidebarCollapse {
+            background: #34495e;
+            border-color: #34495e;
+            color: #fff;
+        }
+        #sidebarCollapse:hover {
+            background: #2c3e50;
+            border-color: #2c3e50;
+        }
+        
+        /* Updated .card styles */
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            background-color: #34495e;
+            color: #fff;
+            border-radius: 8px 8px 0 0;
+            padding: 15px;
+            font-size: 1.2em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .form-group label {
+            font-weight: 500;
+            color: #555;
+        }
+        .form-control {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            width: 100%;
+            transition: all 0.2s ease-in-out;
+        }
+        .form-control:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+            outline: none;
+        }
+        
+        /* Updated .btn styles */
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+        }
+        .btn-primary {
+            background-color: #10B981; /* Emerald 500 */
+            color: white;
+            border-color: #10B981;
+        }
+        .btn-primary:hover {
+            background-color: #059669; /* Emerald 600 */
+            border-color: #059669;
+        }
+        .btn-secondary {
+            background-color: #6B7280; /* Gray 500 */
+            color: white;
+            border-color: #6B7280;
+        }
+        .btn-secondary:hover {
+            background-color: #4B5563; /* Gray 600 */
+            border-color: #4B5563;
+        }
+        
+        /* Flash message styles */
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            border: 1px solid transparent;
+        }
+        .flash-success {
+            background-color: #D1FAE5; /* Green 100 */
+            color: #065F46; /* Green 800 */
+            border-color: #34D399; /* Green 400 */
+        }
+        .flash-danger {
+            background-color: #FEE2E2; /* Red 100 */
+            color: #991B1B; /* Red 800 */
+            border-color: #F87171; /* Red 400 */
+        }
+        .flash-warning {
+            background-color: #FFFBEB; /* Yellow 100 */
+            color: #92400E; /* Yellow 800 */
+            border-color: #FCD34D; /* Yellow 400 */
+        }
+        .flash-info {
+            background-color: #DBEAFE; /* Blue 100 */
+            color: #1E40AF; /* Blue 800 */
+            border-color: #60A5FA; /* Blue 400 */
+        }
+        .flash-message i {
+            margin-right: 0.75rem;
+        }
+
+        /* Styles moved from add_edit_sale.html that are common */
+        .print-receipt-hidden {
+            display: none;
+        }
+        /* Barcode scanner styles */
+        #barcode-scanner-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        #barcode-scanner {
+            width: 80%;
+            max-width: 600px;
+            height: 300px;
+            background: black;
+            border: 2px solid white;
+            margin-bottom: 20px;
+        }
+        .scanner-controls {
+            display: flex;
+            gap: 15px;
+        }
+        .scanner-btn {
+            padding: 10px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .scanner-btn:hover {
+            background: #2563eb;
+        }
+        .scanner-btn.danger {
+            background: #ef4444;
+        }
+        .scanner-btn.danger:hover {
+            background: #dc2626;
+        }
+        /* Print-specific styles */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #print-container, #print-container * {
+                visibility: visible;
+            }
+            #print-container {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+        /* Styles from business_selection.html to mimic Tailwind */
+        .container {
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 2rem;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            margin-top: 2.5rem;
+        }
+
+        h1 {
+            font-size: 1.875rem;
+            line-height: 2.25rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+        h2 {
+            font-size: 1.875rem;
+            line-height: 2.25rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .space-y-4 > *:not(:first-child) {
+            margin-top: 1rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select {
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            border: 1px solid #d1d5db;
+            border-radius: 0.25rem;
+            width: 100%;
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+            color: #374151;
+            line-height: 1.25;
+            transition: all 0.2s ease-in-out;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        select:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5);
+            border-color: #6366f1;
+        }
+
+        button[type="submit"] {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+            font-weight: 500;
+            color: #ffffff;
+            background-color: #2563eb;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+        button[type="submit"]:hover {
+            background-color: #1d4ed8;
+        }
+        button[type="submit"]:focus {
+            outline: 2px solid transparent;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.5);
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        p.text-gray-600, a.text-gray-600 {
+            color: #4b5563;
+        }
+
+        .mt-6 {
+            margin-top: 1.5rem;
+        }
+
+        a.text-gray-600:hover {
+            color: #111827;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <nav id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                {# Display Business Name and Type if available, otherwise 'BizApp' #}
+                <h3>
+                    {% if session.get('business_name') %}
+                        {{ session.get('business_name') }}
+                        {% if session.get('business_type') %}
+                            ({{ session.get('business_type') }})
+                        {% endif %}
+                    {% else %}
+                        BizApp
+                    {% endif %}
+                </h3>
+                {# Display user's role #}
+                <p>({{ session.get('role', 'Guest').replace('_', ' ').title() }})</p>
+            </div>
+            <ul class="list-unstyled components">
+                <li><a href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> Dashboard</a></li>
+                {% if session.get('role') in ['admin', 'viewer_admin'] %}
+                <li><a href="{{ url_for('inventory') }}"><i class="fas fa-boxes"></i> Inventory</a></li>
+                {% endif %}
+                {% if session.get('role') in ['admin', 'sales', 'viewer_admin'] %}
+                <li><a href="{{ url_for('sales') }}"><i class="fas fa-chart-line"></i> Sales</a></li>
+                {% endif %}
+                {% if session.get('role') in ['admin', 'viewer_admin'] %}
+                <li><a href="{{ url_for('reports') }}"><i class="fas fa-file-alt"></i> Reports</a></li>
+                {% endif %}
+                {% if session.get('business_type') == 'Hardware' and session.get('role') in ['admin', 'sales', 'viewer_admin'] %}
+                <li><a href="{{ url_for('companies') }}"><i class="fas fa-building"></i> Companies</a></li>
+                <li><a href="{{ url_for('future_orders') }}"><i class="fas fa-calendar-alt"></i> Future Orders</a></li>
+                {% endif %}
+                {% if session.get('role') in ['admin', 'viewer_admin'] %}
+                <li><a href="{{ url_for('manage_business_users') }}"><i class="fas fa-users-cog"></i> Manage Users</a></li>
+                {% endif %}
+                <li><a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+            </ul>
+        </nav>
+
+        <!-- Page Content -->
+        <div id="content" class="content">
+            <nav class="navbar navbar-expand-lg navbar-light bg-light">
+                <button type="button" id="sidebarCollapse" class="btn btn-info">
+                    <i class="fas fa-align-left"></i>
+                    <span>Toggle Sidebar</span>
+                </button>
+                <div class="ml-auto">
+                    <span class="navbar-text">
+                        Logged in as: <strong>{{ session.get('username') }}</strong>
+                    </span>
+                </div>
+            </nav>
+
+            {# This is where specific page content will be inserted by child templates #}
+            {% block content %}{% endblock %} 
+        </div>
+    </div>
+
+    {# GLOBAL JAVASCRIPT: Only scripts that are needed on ALL pages should be here #}
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            $('#sidebarCollapse').on('click', function () {
+                $('#sidebar').toggleClass('active');
+            });
+        });
+    </script>
+    {# Any page-specific JavaScript will go in a block in child templates, e.g., {% block scripts %}{% endblock %} #}
+
+</body>
+</html>

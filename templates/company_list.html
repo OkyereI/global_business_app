@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title if title else 'Companies List' }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .table-header th {
+            background-color: #e2e8f0; /* Tailwind gray-200 */
+            color: #2d3748; /* Tailwind gray-800 */
+            padding: 0.75rem 1.5rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.875rem; /* Tailwind text-sm */
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .table-row td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e2e8f0; /* Tailwind gray-200 */
+            font-size: 0.875rem;
+            color: #4a5568; /* Tailwind gray-700 */
+        }
+        .table-row:last-child td {
+            border-bottom: none;
+        }
+        .action-button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+            font-weight: 500;
+            transition: background-color 0.2s;
+            display: inline-flex; /* Use flex to align icon and text */
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem; /* Space between icon and text */
+        }
+        .edit-button {
+            background-color: #4299e1; /* Tailwind blue-500 */
+            color: white;
+        }
+        .edit-button:hover {
+            background-color: #3182ce; /* Tailwind blue-600 */
+        }
+        .add-button {
+            background-color: #38a169; /* Tailwind green-600 */
+            color: white;
+        }
+        .add-button:hover {
+            background-color: #2f855a; /* Tailwind green-700 */
+        }
+        .transactions-button {
+            background-color: #667eea; /* Tailwind indigo-500 */
+            color: white;
+        }
+        .transactions-button:hover {
+            background-color: #5a67d8; /* Tailwind indigo-600 */
+        }
+        .flash-message {
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+        .flash-success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        .flash-danger {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .flash-warning {
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+            color: #856404;
+        }
+        .import-form-container {
+            display: none;
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            margin-bottom: 1.5rem;
+        }
+        .import-form-container.active {
+            display: block;
+        }
+        .import-form-container label, .import-form-container button {
+            display: block;
+            margin-top: 1rem;
+        }
+        .import-form-container input[type="file"] {
+            border: 1px solid #d1d5db;
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center py-8 px-4">
+    <div class="container bg-white shadow-lg rounded-lg p-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">{{ title if title else 'Companies List' }}</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+            <form action="{{ url_for('companies') }}" method="GET" class="w-full sm:w-1/2">
+                <div class="relative">
+                    <input type="text" name="search" placeholder="Search companies..."
+                           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           value="{{ search_query if search_query }}">
+                    <button type="submit" class="absolute right-0 top-0 mt-2 mr-3 text-gray-500 hover:text-gray-700">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+            <div class="flex gap-4">
+                {% if user_role in ['admin', 'sales'] %}
+                    <button id="import-btn" class="transactions-button action-button w-full sm:w-auto text-center">
+                        <i class="fas fa-file-upload"></i> Import Transactions
+                    </button>
+                {% endif %}
+                {% if user_role == 'admin' %}
+                    <a href="{{ url_for('add_company') }}" class="add-button action-button w-full sm:w-auto text-center">
+                        Add New Company
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div id="import-form" class="import-form-container">
+            <p><strong>CSV Format:</strong> Ensure your CSV file has the following columns: <code>company_id</code>, <code>transaction_type</code> (e.g., 'Payment', 'Credit'), <code>amount</code>, <code>description</code>, <code>transaction_date</code> (YYYY-MM-DD).</p>
+            <form action="{{ url_for('import_company_transactions') }}" method="post" enctype="multipart/form-data">
+                {{ csrf_token() }}
+                <label for="csv_file" class="block text-sm font-medium text-gray-700">Choose a CSV file:</label>
+                <input type="file" name="file" id="csv_file" accept=".csv" required>
+                <button type="submit" class="transactions-button action-button mt-4">Upload and Import</button>
+            </form>
+        </div>
+
+        {% if companies %}
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100">
+                        <tr class="table-header">
+                            <th>Name</th>
+                            <th>Contact Person</th>
+                            <th>Phone</th>
+                            <th>Email</th>
+                            <th>Address</th>
+                            <th>Balance</th>
+                            <th>Creditors</th>
+                            <th>Debtors</th>
+                            <th>Actions</th> {# This column is now always present for transactions #}
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for company in companies %}
+                            <tr class="table-row">
+                                <td class="whitespace-nowrap">{{ company.name }}</td>
+                                <td class="whitespace-nowrap">{{ company.contact_person }}</td>
+                                <td class="whitespace-nowrap">{{ company.phone }}</td>
+                                <td class="whitespace-nowrap">{{ company.email }}</td>
+                                <td class="whitespace-nowrap">{{ company.address }}</td>
+                                <td class="whitespace-nowrap">GH₵ {{ "%.2f"|format(company.balance) }}</td>
+                                <td class="whitespace-nowrap">GH₵ {{ "%.2f"|format(company.display_creditors) }}</td>
+                                <td class="whitespace-nowrap">GH₵ {{ "%.2f"|format(company.display_debtors) }}</td>
+                                <td class="whitespace-nowrap flex flex-col sm:flex-row gap-2">
+                                    <a href="{{ url_for('company_transaction', company_id=company.id) }}" class="transactions-button action-button">
+                                        Transactions
+                                    </a>
+                                    {% if user_role == 'admin' %}
+                                        <a href="{{ url_for('edit_company', company_id=company.id) }}" class="edit-button action-button">
+                                            Edit
+                                        </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        <tr class="table-row font-bold bg-gray-50">
+                            <td colspan="6" class="text-right">Total Sums:</td>
+                            <td class="whitespace-nowrap">GH₵ {{ "%.2f"|format(total_creditors_sum) }}</td>
+                            <td class="whitespace-nowrap">GH₵ {{ "%.2f"|format(total_debtors_sum) }}</td>
+                            <td></td> {# Empty cell for actions column #}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-center text-gray-600 text-lg mt-8">No companies found for this business.
+                {% if user_role == 'admin' %}
+                    Click "Add New Company" to get started!
+                {% endif %}
+            </p>
+        {% endif %}
+
+        <footer class="mt-8 text-center text-gray-500 text-sm">
+            &copy; {{ current_year }} Your Business Name. All rights reserved.
+        </footer>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const importBtn = document.getElementById('import-btn');
+            const importForm = document.getElementById('import-form');
+
+            if (importBtn) {
+                importBtn.addEventListener('click', function() {
+                    importForm.classList.toggle('active');
+                });
+            }
+        });
+    </script>
+</body>
+</html>

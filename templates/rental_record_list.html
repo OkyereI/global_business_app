@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rental Records - {{ session.get('business_name', 'Business') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f3f4f6; /* Equivalent to bg-gray-100 */
+        }
+        .sidebar {
+            width: 250px; /* Equivalent to w-64 */
+            background-color: #1a202c; /* Equivalent to bg-gray-900 */
+            color: #ffffff; /* Equivalent to text-white */
+            padding: 1.5rem; /* Equivalent to p-6 */
+            height: 100vh; /* Equivalent to h-screen */
+            position: fixed; /* Equivalent to fixed */
+            top: 0; /* Equivalent to top-0 */
+            left: 0; /* Equivalent to left-0 */
+            overflow-y: auto; /* Equivalent to overflow-y-auto */
+        }
+        .main-content {
+            margin-left: 250px; /* Equivalent to ml-64 */
+            padding: 1.5rem; /* Equivalent to p-6 */
+        }
+        .sidebar a {
+            display: flex; /* Equivalent to flex */
+            align-items: center; /* Equivalent to items-center */
+            padding: 0.75rem 1rem; /* Equivalent to p-3 with slightly more horizontal padding */
+            border-radius: 0.5rem; /* Equivalent to rounded-lg */
+            margin-bottom: 0.75rem; /* Equivalent to mb-3 */
+            color: #ffffff; /* Equivalent to text-white */
+            text-decoration: none;
+            transition: background-color 0.2s; /* Equivalent to transition duration-200 */
+        }
+        .sidebar a i {
+            margin-right: 0.75rem; /* Equivalent to mr-3 */
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar a:hover {
+            background-color: #2d3748; /* Equivalent to hover:bg-gray-700 */
+        }
+        .sidebar a.active {
+            background-color: #4a5568; /* Equivalent to active:bg-gray-600 */
+            font-weight: bold;
+        }
+        .flash-message {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            border: 1px solid transparent; /* default border */
+        }
+        .flash-success {
+            background-color: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+        .flash-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-color: #f5c6cb;
+        }
+        .flash-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border-color: #ffeeba;
+        }
+        .flash-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border-color: #bee5eb;
+        }
+        .flash-message i {
+            margin-right: 0.75rem;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                padding-bottom: 0;
+            }
+            .main-content {
+                margin-left: 0;
+                padding-top: 1rem;
+            }
+            .sidebar-title {
+                text-align: center;
+                margin-bottom: 1rem;
+            }
+            .sidebar-nav {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 0.5rem;
+            }
+            .sidebar a {
+                flex-grow: 1;
+                text-align: center;
+                justify-content: center;
+                margin-bottom: 0.5rem;
+                padding: 0.5rem;
+            }
+            .sidebar a i {
+                margin-right: 0;
+                margin-bottom: 0.25rem;
+            }
+        }
+
+        /* Page specific styles */
+        .page-heading {
+            font-size: 1.875rem; /* text-3xl */
+            font-weight: 700; /* font-bold */
+            margin-bottom: 1.5rem; /* mb-6 */
+            color: #1f2937; /* text-gray-800 */
+        }
+        .add-rental-button-container {
+            margin-bottom: 1.5rem; /* mb-6 */
+            text-align: right; /* text-right */
+        }
+        .add-rental-button {
+            background-color: #2563eb; /* bg-blue-600 */
+            color: white; /* text-white */
+            font-weight: 700; /* font-bold */
+            padding: 0.5rem 1rem; /* py-2 px-4 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+            transition: all 0.2s ease; /* transition duration-200 */
+            text-decoration: none; /* remove underline */
+            display: inline-flex;
+            align-items: center;
+        }
+        .add-rental-button:hover {
+            background-color: #1d4ed8; /* hover:bg-blue-700 */
+        }
+        .add-rental-button i {
+            margin-right: 0.5rem; /* mr-2 */
+        }
+        .card {
+            background-color: #ffffff; /* bg-white */
+            padding: 1.5rem; /* p-6 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05); /* shadow-md */
+        }
+        .table-overflow-auto {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #ffffff;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+        thead tr {
+            background-color: #f3f4f6; /* bg-gray-100 */
+            border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
+        }
+        th, td {
+            padding: 0.75rem 1rem; /* py-3 px-4 */
+            text-align: left;
+            font-size: 0.875rem; /* text-sm */
+            color: #4b5563; /* text-gray-600 */
+            font-weight: 600; /* font-semibold */
+            border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
+        }
+        tbody tr {
+            border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
+        }
+        tbody tr:hover {
+            background-color: #f9fafb; /* hover:bg-gray-50 */
+        }
+        td {
+            color: #374151; /* text-gray-700 */
+            font-weight: 400; /* Reset font-weight for td */
+            white-space: nowrap; /* whitespace-nowrap for action buttons cell */
+        }
+        p.text-gray-600 {
+            color: #4b5563;
+        }
+
+        /* Rental status badges */
+        .status-badge {
+            padding: 0.25rem 0.5rem; /* px-2 py-1 */
+            display: inline-flex; /* inline-flex */
+            font-size: 0.75rem; /* text-xs */
+            line-height: 1.25rem; /* leading-5 */
+            font-weight: 600; /* font-semibold */
+            border-radius: 9999px; /* rounded-full */
+        }
+        .status-badge.rented {
+            background-color: #dbeafe; /* bg-blue-100 */
+            color: #1e40af; /* text-blue-800 */
+        }
+        .status-badge.returned {
+            background-color: #d1fae5; /* bg-green-100 */
+            color: #065f46; /* text-green-800 */
+        }
+        .status-badge.overdue {
+            background-color: #fee2e2; /* bg-red-100 */
+            color: #991b1b; /* text-red-800 */
+        }
+        .status-badge.cancelled {
+            background-color: #f3f4f6; /* bg-gray-100 */
+            color: #4b5563; /* text-gray-800 */
+        }
+
+        /* Action icons */
+        .action-link {
+            display: inline-block; /* ensures proper spacing and clickable area */
+            margin-right: 0.75rem; /* mr-3 */
+            transition: transform 0.15s ease-in-out; /* hover:scale-110 (custom transition) */
+            text-decoration: none; /* remove underline */
+        }
+        .action-link:hover {
+            transform: scale(1.1);
+        }
+        .action-link.green-icon {
+            color: #16a34a; /* text-green-600 */
+        }
+        .action-link.green-icon:hover {
+            color: #14532d; /* hover:text-green-900 */
+        }
+        .action-link.red-icon {
+            color: #dc2626; /* text-red-600 */
+        }
+        .action-link.red-icon:hover {
+            color: #991b1b; /* hover:text-red-900 */
+        }
+        .action-link.purple-icon {
+            color: #8b5cf6; /* text-purple-600 */
+        }
+        .action-link.purple-icon:hover {
+            color: #6d28d9; /* hover:text-purple-900 */
+        }
+        .feature-not-available-card {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            color: #374151; /* text-gray-700 */
+        }
+        .feature-not-available-card .text-lg {
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 600; /* font-semibold */
+        }
+        .feature-not-available-card .text-sm {
+            font-size: 0.875rem; /* text-sm */
+        }
+        .feature-not-available-card .mt-2 {
+            margin-top: 0.5rem; /* mt-2 */
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2 class="text-2xl font-bold mb-6 text-center sidebar-title">{{ session.get('business_name', 'Business') }}</h2>
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
+            </a>
+            {% if session.get('role') in ['admin', 'sales', 'viewer'] %}
+            <a href="{{ url_for('inventory') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-boxes mr-3"></i> Inventory
+            </a>
+            <a href="{{ url_for('sales') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-chart-line mr-3"></i> Sales
+            </a>
+            {% endif %}
+            {% if session.get('business_type') == 'Hardware' %}
+            <a href="{{ url_for('hirable_items') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tools mr-3"></i> Hirable Items
+            </a>
+            <a href="{{ url_for('rental_records') }}" class="active flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-calendar-alt mr-3"></i> Rental Records
+            </a>
+            <a href="{{ url_for('companies') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-building mr-3"></i> Companies
+            </a>
+            <a href="{{ url_for('future_orders') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-clock mr-3"></i> Future Orders
+            </a>
+            {% endif %}
+            {% if session.get('role') == 'admin' %}
+            <a href="{{ url_for('manage_business_users') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-users mr-3"></i> Manage Users
+            </a>
+            {% endif %}
+            {% if session.get('role') in ['super_admin', 'admin'] %}
+            <a href="{{ url_for('super_admin_dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-user-shield mr-3"></i> Admin Panel
+            </a>
+            {% endif %}
+            <a href="{{ url_for('reports') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-file-alt mr-3"></i> Reports
+            </a>
+            <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-sign-out-alt mr-3"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <h1 class="text-3xl font-bold mb-6 text-gray-800 page-heading">Rental Records</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }} mb-4">
+                        <i class="fas {% if category == 'success' %}fa-check-circle{% elif category == 'danger' %}fa-times-circle{% elif category == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %}"></i>
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if session.get('business_type') == 'Hardware' %}
+            {% if user_role in ['admin', 'sales'] %}
+            <div class="mb-6 text-right add-rental-button-container">
+                <a href="{{ url_for('add_rental_record') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200 add-rental-button">
+                    <i class="fas fa-plus-circle mr-2"></i> Add New Rental
+                </a>
+            </div>
+            {% endif %}
+
+            <div class="bg-white p-6 rounded-lg shadow-md card">
+                {% if rental_records %}
+                <div class="overflow-x-auto table-overflow-auto">
+                    <table class="min-w-full bg-white rounded-lg shadow-sm">
+                        <thead>
+                            <tr class="bg-gray-100 border-b border-gray-200">
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Item</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Customer</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Phone</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Start Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">End Date</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Days</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Daily Price (GH₵)</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Total (GH₵)</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Status</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Recorded By</th>
+                                <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in rental_records %}
+                            <tr class="border-b border-gray-200 hover:bg-gray-50">
+                                <td class="py-3 px-4 text-gray-700">{{ record.item_name_at_rent }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.customer_name }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.customer_phone if record.customer_phone else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.start_date.strftime('%Y-%m-%d') }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.end_date.strftime('%Y-%m-%d') if record.end_date else 'N/A' }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.number_of_days }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.daily_hire_price_at_rent) }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.total_hire_amount) }}</td>
+                                <td class="py-3 px-4 text-gray-700">
+                                    {% if record.status == 'Rented' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 status-badge rented">Rented</span>
+                                    {% elif record.status == 'Returned' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 status-badge returned">Returned</span>
+                                    {% elif record.status == 'Overdue' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 status-badge overdue">Overdue</span>
+                                    {% elif record.status == 'Cancelled' %}
+                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 status-badge cancelled">Cancelled</span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.sales_person_name }}</td>
+                                <td class="py-3 px-4 text-gray-700 whitespace-nowrap">
+                                    {% if user_role in ['admin', 'sales'] %}
+                                        {% if record.status == 'Rented' %}
+                                        <a href="{{ url_for('mark_rental_returned', record_id=record.id) }}" class="text-green-600 hover:text-green-900 mr-3 action-link green-icon" title="Mark as Returned">
+                                            <i class="fas fa-check-circle"></i>
+                                        </a>
+                                        <a href="{{ url_for('cancel_rental_record', record_id=record.id) }}" class="text-red-600 hover:text-red-900 mr-3 action-link red-icon" title="Cancel Rental">
+                                            <i class="fas fa-times-circle"></i>
+                                        </a>
+                                        {% endif %}
+                                        <a href="{{ url_for('print_rental_receipt', record_id=record.id) }}" class="text-purple-600 hover:text-purple-900 action-link purple-icon" title="Print Receipt">
+                                            <i class="fas fa-print"></i>
+                                        </a>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-gray-600">No rental records found for this business.</p>
+                {% endif %}
+            </div>
+        {% else %}
+            <div class="bg-white p-6 rounded-lg shadow-md text-center text-gray-700 feature-not-available-card">
+                <p class="text-lg font-semibold">Feature Not Available</p>
+                <p class="text-sm mt-2">Rental records management is only available for Hardware businesses.</p>
+                <p class="text-sm mt-2">Please ensure you have a Hardware business selected.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
