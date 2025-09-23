@@ -289,6 +289,8 @@ def create_app():
             'get_users_for_sync',
             'get_inventory_for_sync',
             'api_upsert_inventory',
+            'upsert_business_inventory',  # ADD THIS LINE
+            'push_sales_record',          # ADD THIS LINE TOO
             'api_record_sales',
             'enhanced_sync_dashboard',
             'api_enhanced_sync_status',
