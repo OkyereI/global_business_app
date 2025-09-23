@@ -1942,6 +1942,7 @@ def create_app():
             abort(500)
     
     @app.route('/api/v1/sales/push', methods=['POST'])
+    @csrf.exempt
     @api_key_required
     def push_sales_record():
         """Receives and saves a sales record from an offline app."""
@@ -3956,6 +3957,7 @@ def create_app():
             }), 500
 
     @app.route('/api/v1/inventory/upsert', methods=['POST'])
+    @csrf.exempt
     @api_key_required
     def upsert_business_inventory():
         """Create or update inventory items from offline app"""
