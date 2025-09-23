@@ -289,6 +289,8 @@ def create_app():
             'get_users_for_sync',
             'get_inventory_for_sync',
             'api_upsert_inventory',
+            'upsert_business_inventory',  # ADD THIS LINE
+            'push_sales_record',          # ADD THIS LINE TOO
             'api_record_sales',
             'enhanced_sync_dashboard',
             'api_enhanced_sync_status',
@@ -1957,30 +1959,93 @@ def create_app():
                 logging.warning(f"Sale {sale_id} already exists. Conflict.")
                 return jsonify({"message": "Sale already exists"}), 409
 
+            # Create the sales record with offline data structure
             sale_record = SalesRecord(
                 id=sale_id,
                 business_id=data['business_id'],
-                sales_person_id=data['sales_person_id'],
-                customer_id=data.get('customer_id'),
+                transaction_date=datetime.fromisoformat(data['transaction_date']),
+                customer_phone=data.get('customer_phone'),
+                sales_person_name=data.get('sales_person_name'),
                 grand_total_amount=data['grand_total_amount'],
                 payment_method=data['payment_method'],
-                transaction_date=datetime.fromisoformat(data['transaction_date']),
+                receipt_number=data.get('receipt_number'),
+                reference_number=data.get('reference_number'),
                 synced_to_remote=True
             )
+            
+            # Process items and update inventory
+            items_sold = data.get('items', [])
+            inventory_updates = []
+            
+            logging.info(f"[SALES SYNC] Processing {len(items_sold)} items for sale {sale_id}, business_id: {data['business_id']}")
+            
+            for item_data in items_sold:
+                inventory_item_id = item_data.get('inventory_item_id')
+                quantity_sold = float(item_data.get('quantity_sold', 0))
+                sale_unit_type = item_data.get('sale_unit_type', 'pack')
+                product_name = item_data.get('product_name', 'Unknown')
+                
+                logging.info(f"[SALES SYNC] Processing item: {product_name}, inventory_item_id: {inventory_item_id}, quantity: {quantity_sold}, unit_type: {sale_unit_type}")
+                
+                if not inventory_item_id:
+                    logging.warning(f"[SALES SYNC] Skipping item with no inventory_item_id in sale {sale_id}")
+                    continue
+                
+                # Find the inventory item
+                inventory_item = InventoryItem.query.filter_by(
+                    id=inventory_item_id, 
+                    business_id=data['business_id']
+                ).first()
+                
+                if not inventory_item:
+                    logging.error(f"[SALES SYNC] Inventory item {inventory_item_id} not found for sale {sale_id} in business {data['business_id']}")
+                    # Let's also check if the item exists with any business_id
+                    any_business_item = InventoryItem.query.filter_by(id=inventory_item_id).first()
+                    if any_business_item:
+                        logging.error(f"[SALES SYNC] Item {inventory_item_id} exists but with different business_id: {any_business_item.business_id}")
+                    else:
+                        logging.error(f"[SALES SYNC] Item {inventory_item_id} does not exist in any business")
+                    continue
+                
+                # Calculate quantity to deduct based on sale unit type
+                quantity_to_deduct = quantity_sold
+                if sale_unit_type == 'pack':
+                    quantity_to_deduct = quantity_sold * (inventory_item.number_of_tabs or 1)
+                
+                logging.info(f"[SALES SYNC] Found inventory item: {inventory_item.product_name}, current_stock: {inventory_item.current_stock}, quantity_to_deduct: {quantity_to_deduct}")
+                
+                # Check if we have enough stock
+                if inventory_item.current_stock < quantity_to_deduct:
+                    logging.error(f"[SALES SYNC] Insufficient stock for {inventory_item.product_name}. Available: {inventory_item.current_stock}, Required: {quantity_to_deduct}")
+                    db.session.rollback()
+                    return jsonify({"message": f"Insufficient stock for {inventory_item.product_name}"}), 400
+                
+                # Update inventory
+                old_stock = inventory_item.current_stock
+                inventory_item.current_stock -= quantity_to_deduct
+                inventory_item.last_updated = datetime.now()
+                inventory_item.synced_to_remote = False  # Mark for re-sync
+                
+                logging.info(f"[SALES SYNC] Updated {inventory_item.product_name}: {old_stock} -> {inventory_item.current_stock} (deducted {quantity_to_deduct})")
+                
+                inventory_updates.append({
+                    'product_name': inventory_item.product_name,
+                    'quantity_deducted': quantity_to_deduct,
+                    'old_stock': old_stock,
+                    'new_stock': inventory_item.current_stock
+                })
+            
+            # Set the items_sold JSON data (using offline format)
+            sale_record.set_items_sold(items_sold)
             db.session.add(sale_record)
-
-            for item_data in data.get('items', []):
-                sale_item = SalesItem(
-                    id=item_data['id'],
-                    sales_record_id=sale_record.id,
-                    inventory_item_id=item_data['inventory_item_id'],
-                    quantity_sold=item_data['quantity_sold'],
-                    unit_price_at_sale=item_data['unit_price_at_sale']
-                )
-                db.session.add(sale_item)
-
+            
             db.session.commit()
-            return jsonify({"message": "Sales record pushed successfully"}), 201
+            
+            logging.info(f"Sale {sale_id} recorded successfully with {len(inventory_updates)} inventory updates")
+            return jsonify({
+                "message": "Sales record pushed successfully",
+                "inventory_updates": inventory_updates
+            }), 201
 
         except Exception as e:
             db.session.rollback()
