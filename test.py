@@ -332,6 +332,23 @@ def create_app():
     #         return redirect(url_for('login'))
     def get_current_business_id():
         return session.get('business_id')
+    def get_current_business():
+        """Retrieves the current Business object or a default dictionary based on the session business ID."""
+        business_id = get_current_business_id()
+        if business_id and business_id != 'super_admin_business':
+            try:
+                # Assuming Business model is accessible
+                # You must ensure 'Business' is imported from your models file.
+                business = Business.query.filter_by(id=business_id).first()
+                if business:
+                    # Return essential details as a dictionary
+                    return {'name': business.name, 'address': business.address or 'N/A', 'contact': business.contact or 'N/A'} 
+            except Exception:
+                # Return default dictionary on DB error
+                pass
+        # Default fallback dictionary, often used for super_admin or if no business is selected
+        return {'name': session.get('business_name', 'Business'), 'address': 'N/A', 'contact': 'N/A'}
+
 
     def get_current_business_type():
         business_id = session.get('business_id')
@@ -545,6 +562,32 @@ def create_app():
             'transaction_id': sale.transaction_id
         }
 
+    def serialize_rental_record(record):
+        """Serializes a RentalRecord object into a dictionary for template rendering."""
+        if not record:
+            return {}
+        
+        # Use .strftime('%Y-%m-%d') for dates to handle potential None values
+        rent_date = record.rent_date.strftime('%Y-%m-%d') if record.rent_date else None
+        due_date = record.due_date.strftime('%Y-%m-%d') if record.due_date else None
+        # Assuming 'return_date' is the attribute for the date, or use 'actual_return_date' if the model defines it
+        return_date = getattr(record, 'return_date', None) or getattr(record, 'actual_return_date', None)
+        return_date_str = return_date.strftime('%Y-%m-%d') if return_date else None
+
+        # Include all necessary fields that your mark_rental_returned.html template uses with .get()
+        return {
+            'id': record.id,
+            'item_name_at_rent': record.item_name_at_rent,
+            'customer_name': record.customer_name,
+            'customer_phone': record.customer_phone,
+            'rent_date': rent_date,
+            'due_date': due_date,
+            'return_date': return_date_str,
+            'status': record.status,
+            'total_rental_amount': record.total_rental_amount,
+            'hirable_item_id': record.hirable_item_id,
+            # Add other attributes your template accesses
+        }
 
     # --- NEW: API Serialization Helpers ---
     def serialize_business(business):
@@ -8153,7 +8196,7 @@ def create_app():
                                 current_year=datetime.now().year
                                 )
     
-
+    
     @app.route('/rental_records/mark_returned/<record_id>', methods=['GET', 'POST'])
     def mark_rental_returned(record_id):
         # ACCESS CONTROL: Allows admin and sales roles
@@ -8176,10 +8219,10 @@ def create_app():
             record.actual_return_date = datetime.now()
             record.status = 'Returned'
 
-            # Return stock to hirable item (implicitly assumes quantity of 1)
             hirable_item = HirableItem.query.filter_by(id=record.hirable_item_id, business_id=business_id).first()
             if hirable_item:
                 hirable_item.current_stock += 1
+                hirable_item.synced_to_remote = False
                 hirable_item.last_updated = datetime.now()
                 db.session.add(hirable_item)
 
@@ -8187,7 +8230,30 @@ def create_app():
             flash(f'Rental record for "{record.item_name_at_rent}" marked as returned successfully!', 'success')
             return redirect(url_for('rental_records'))
         
-        return render_template('mark_rental_returned.html', record=record, user_role=session.get('role'), current_year=datetime.now().year)
+        # Convert the SQLAlchemy object into a dictionary for the template 
+        serialized_record = serialize_rental_record(record)
+        
+        # Ensure 'current_business' is defined
+        current_business = get_current_business() 
+        transaction_data = {
+            'last_transaction_id': '',
+            'last_transaction_date': '',
+            'last_transaction_sales_person': '',
+            'last_transaction_customer_phone': '',
+            'last_transaction_grand_total': '',
+            'last_transaction_details': []
+        }
+        
+        return render_template('mark_rental_returned.html', 
+                            record=serialized_record,  # ← Changed this line
+                            user_role=session.get('role'), 
+                            current_year=datetime.now().year,
+                            pharmacy_info=current_business,
+                            print_ready=False,
+                            auto_print=False,
+                            **transaction_data)
+
+
     # app.py - New route for importing inventory from another business
 
     @app.route('/inventory/import_from_business', methods=['GET', 'POST'])

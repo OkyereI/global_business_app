@@ -362,6 +362,51 @@ def create_app():
 
         # Then replace the problematic line with:
         print(safe_currency_print(total_displayed_sales, "DEBUG: Total displayed sales"))
+
+    def get_current_business():
+        """Retrieves the current Business object or a default dictionary based on the session business ID."""
+        business_id = get_current_business_id()
+        if business_id and business_id != 'super_admin_business':
+            try:
+                # Assuming Business model is accessible
+                # You must ensure 'Business' is imported from your models file.
+                business = Business.query.filter_by(id=business_id).first()
+                if business:
+                    # Return essential details as a dictionary
+                    return {'name': business.name, 'address': business.address or 'N/A', 'contact': business.contact or 'N/A'} 
+            except Exception:
+                # Return default dictionary on DB error
+                pass
+        # Default fallback dictionary, often used for super_admin or if no business is selected
+        return {'name': session.get('business_name', 'Business'), 'address': 'N/A', 'contact': 'N/A'}
+    def serialize_rental_record(record):
+        """Serializes a RentalRecord object into a dictionary for template rendering."""
+        if not record:
+            return {}
+        
+        # Use .strftime('%Y-%m-%d') for dates to handle potential None values
+        rent_date = record.rent_date.strftime('%Y-%m-%d') if record.rent_date else None
+        due_date = record.due_date.strftime('%Y-%m-%d') if record.due_date else None
+        # Assuming 'return_date' is the attribute for the date, or use 'actual_return_date' if the model defines it
+        return_date = getattr(record, 'return_date', None) or getattr(record, 'actual_return_date', None)
+        return_date_str = return_date.strftime('%Y-%m-%d') if return_date else None
+
+        # Include all necessary fields that your mark_rental_returned.html template uses with .get()
+        return {
+            'id': record.id,
+            'item_name_at_rent': record.item_name_at_rent,
+            'customer_name': record.customer_name,
+            'customer_phone': record.customer_phone,
+            'rent_date': rent_date,
+            'due_date': due_date,
+            'return_date': return_date_str,
+            'status': record.status,
+            'total_rental_amount': record.total_rental_amount,
+            'hirable_item_id': record.hirable_item_id,
+            # Add other attributes your template accesses
+        }
+
+
     def serialize_inventory_item(item):
         """
         Serializes an InventoryItem object to a dictionary for JSON conversion.
