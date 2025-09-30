@@ -9429,6 +9429,68 @@ def create_app():
     These endpoints need to be added to your REMOTE/ONLINE Flask app (the one hosted on Render)
     to handle the incoming sync requests from local clients.
     """
+    @app.route('/api/inventory-items', methods=['GET'])
+    @login_required
+    def get_inventory_items():
+        """
+        API endpoint for inventory items with search functionality.
+        Used by the invoice creation page dropdown.
+        """
+        try:
+            business_id = get_current_business_id()
+            if not business_id:
+                return jsonify({'success': False, 'message': 'Business context not found.'}), 400
+
+            # Get search query parameter
+            query = request.args.get('q', '').strip()
+
+            # Start with base query
+            items_query = InventoryItem.query.filter_by(business_id=business_id, is_active=True)
+
+            # Apply search filter if query provided
+            if query:
+                search_term = f"%{query}%"
+                items_query = items_query.filter(or_(
+                    InventoryItem.product_name.ilike(search_term),
+                    InventoryItem.category.ilike(search_term),
+                    InventoryItem.batch_number.ilike(search_term),
+                    InventoryItem.barcode.ilike(search_term)
+                ))
+
+            # Execute query
+            items = items_query.all()
+
+            # Serialize items
+            serialized_items = []
+            for item in items:
+                serialized_items.append({
+                    'id': str(item.id),
+                    'product_name': item.product_name or '',
+                    'category': item.category or '',
+                    'current_stock': float(item.current_stock or 0.0),
+                    'sale_price': float(item.sale_price or 0.0),
+                    'unit_price_per_tab': float(item.unit_price_per_tab or 0.0),
+                    'number_of_tabs': float(item.number_of_tabs or 1.0),
+                    'is_fixed_price': item.is_fixed_price,
+                    'fixed_sale_price': float(item.fixed_sale_price or 0.0),
+                    'barcode': item.barcode or '',
+                    'batch_number': item.batch_number or '',
+                    'item_type': item.item_type or '',
+                    'purchase_price': float(item.purchase_price or 0.0),
+                    'markup_percentage_pharmacy': float(item.markup_percentage_pharmacy or 0.0),
+                    'expiry_date': item.expiry_date.strftime('%Y-%m-%d') if item.expiry_date else None,
+                })
+
+            return jsonify({
+                'success': True, 
+                'items': serialized_items, 
+                'has_more': False,
+                'total_count': len(serialized_items)
+            })
+
+        except Exception as e:
+            app.logger.error(f"Error in get_inventory_items: {str(e)}")
+            return jsonify({'success': False, 'message': 'Server error occurred'}), 500
 
     # ===============================
     # COMPANY SYNC API ENDPOINTS (Server-side)
