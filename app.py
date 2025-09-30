@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from flask import current_app
 from extensions import db, migrate # ADD THIS LINE AND REMOVE OLD DB/MIGRATE DEFINITIONS
 import io
+from sqlalchemy.orm import joinedload
 import logging
 from sync_api import sync_api
 from dataclasses import dataclass, asdict
@@ -170,7 +171,7 @@ def create_app():
     login_manager.login_message_category = 'info'
     
     # Import models after the extensions have been initialized
-    from models import User, Business, SalesRecord, InventoryItem, HirableItem, RentalRecord, Creditor, Debtor, CompanyTransaction, FutureOrder, Company, Customer, ReturnRecord
+    from models import User, Business, SalesRecord, InventoryItem, HirableItem, RentalRecord, Creditor, Debtor, CompanyTransaction, FutureOrder, Company, Customer, ReturnRecord,Invoice, InvoicePayment
     @login_manager.user_loader
     def load_user(user_id):
         # This function is called after tables are created, so it will work.
@@ -331,6 +332,23 @@ def create_app():
     #         return redirect(url_for('login'))
     def get_current_business_id():
         return session.get('business_id')
+    def get_current_business():
+        """Retrieves the current Business object or a default dictionary based on the session business ID."""
+        business_id = get_current_business_id()
+        if business_id and business_id != 'super_admin_business':
+            try:
+                # Assuming Business model is accessible
+                # You must ensure 'Business' is imported from your models file.
+                business = Business.query.filter_by(id=business_id).first()
+                if business:
+                    # Return essential details as a dictionary
+                    return {'name': business.name, 'address': business.address or 'N/A', 'contact': business.contact or 'N/A'} 
+            except Exception:
+                # Return default dictionary on DB error
+                pass
+        # Default fallback dictionary, often used for super_admin or if no business is selected
+        return {'name': session.get('business_name', 'Business'), 'address': 'N/A', 'contact': 'N/A'}
+
 
     def get_current_business_type():
         business_id = session.get('business_id')
@@ -362,51 +380,6 @@ def create_app():
 
         # Then replace the problematic line with:
         print(safe_currency_print(total_displayed_sales, "DEBUG: Total displayed sales"))
-
-    def get_current_business():
-        """Retrieves the current Business object or a default dictionary based on the session business ID."""
-        business_id = get_current_business_id()
-        if business_id and business_id != 'super_admin_business':
-            try:
-                # Assuming Business model is accessible
-                # You must ensure 'Business' is imported from your models file.
-                business = Business.query.filter_by(id=business_id).first()
-                if business:
-                    # Return essential details as a dictionary
-                    return {'name': business.name, 'address': business.address or 'N/A', 'contact': business.contact or 'N/A'} 
-            except Exception:
-                # Return default dictionary on DB error
-                pass
-        # Default fallback dictionary, often used for super_admin or if no business is selected
-        return {'name': session.get('business_name', 'Business'), 'address': 'N/A', 'contact': 'N/A'}
-    def serialize_rental_record(record):
-        """Serializes a RentalRecord object into a dictionary for template rendering."""
-        if not record:
-            return {}
-        
-        # Use .strftime('%Y-%m-%d') for dates to handle potential None values
-        rent_date = record.rent_date.strftime('%Y-%m-%d') if record.rent_date else None
-        due_date = record.due_date.strftime('%Y-%m-%d') if record.due_date else None
-        # Assuming 'return_date' is the attribute for the date, or use 'actual_return_date' if the model defines it
-        return_date = getattr(record, 'return_date', None) or getattr(record, 'actual_return_date', None)
-        return_date_str = return_date.strftime('%Y-%m-%d') if return_date else None
-
-        # Include all necessary fields that your mark_rental_returned.html template uses with .get()
-        return {
-            'id': record.id,
-            'item_name_at_rent': record.item_name_at_rent,
-            'customer_name': record.customer_name,
-            'customer_phone': record.customer_phone,
-            'rent_date': rent_date,
-            'due_date': due_date,
-            'return_date': return_date_str,
-            'status': record.status,
-            'total_rental_amount': record.total_rental_amount,
-            'hirable_item_id': record.hirable_item_id,
-            # Add other attributes your template accesses
-        }
-
-
     def serialize_inventory_item(item):
         """
         Serializes an InventoryItem object to a dictionary for JSON conversion.
@@ -538,6 +511,11 @@ def create_app():
                 "is_active": False
             }
 
+# ADD THIS FUNCTION TO YOUR test.py FILE
+# Place it near the serialize_inventory_item function (around line 250-300)
+# 
+# The function should be placed INSIDE the create_app() function,
+# right after the serialize_inventory_item function definition.
 
     def calculate_company_balance_details(company_id):
         """
@@ -584,6 +562,32 @@ def create_app():
             'transaction_id': sale.transaction_id
         }
 
+    def serialize_rental_record(record):
+        """Serializes a RentalRecord object into a dictionary for template rendering."""
+        if not record:
+            return {}
+        
+        # Use .strftime('%Y-%m-%d') for dates to handle potential None values
+        rent_date = record.rent_date.strftime('%Y-%m-%d') if record.rent_date else None
+        due_date = record.due_date.strftime('%Y-%m-%d') if record.due_date else None
+        # Assuming 'return_date' is the attribute for the date, or use 'actual_return_date' if the model defines it
+        return_date = getattr(record, 'return_date', None) or getattr(record, 'actual_return_date', None)
+        return_date_str = return_date.strftime('%Y-%m-%d') if return_date else None
+
+        # Include all necessary fields that your mark_rental_returned.html template uses with .get()
+        return {
+            'id': record.id,
+            'item_name_at_rent': record.item_name_at_rent,
+            'customer_name': record.customer_name,
+            'customer_phone': record.customer_phone,
+            'rent_date': rent_date,
+            'due_date': due_date,
+            'return_date': return_date_str,
+            'status': record.status,
+            'total_rental_amount': record.total_rental_amount,
+            'hirable_item_id': record.hirable_item_id,
+            # Add other attributes your template accesses
+        }
 
     # --- NEW: API Serialization Helpers ---
     def serialize_business(business):
@@ -7943,6 +7947,8 @@ def create_app():
         return render_template('rental_record_list.html', rental_records=records, user_role=session.get('role'), current_year=datetime.now().year)
 
     @app.route('/rental_records/add', methods=['GET', 'POST'])
+    @csrf.exempt
+
     def add_rental_record():
         # ACCESS CONTROL: Allows admin and sales roles
         if 'username' not in session or session.get('role') not in ['admin', 'sales'] or not get_current_business_id():
@@ -8109,7 +8115,6 @@ def create_app():
                             last_rental_details=last_rental_details,
                             current_year=datetime.now().year)
 
-
     @app.route('/rental_records/print/<record_id>')
     # @login_required
     def print_rental_receipt(record_id):
@@ -8120,44 +8125,78 @@ def create_app():
         business_id = get_current_business_id()
         record_to_print = RentalRecord.query.filter_by(id=record_id, business_id=business_id).first_or_404()
 
-        business_info = session.get('business_info', {
-            "name": ENTERPRISE_NAME,
-            "location": PHARMACY_LOCATION,
-            "address": PHARMACY_ADDRESS,
-            "contact": PHARMACY_CONTACT
-        })
+        # Fetch the current business to get its details for the receipt header
+        business = Business.query.get(business_id)
+        if not business:
+            flash('Business information not found.', 'error')
+            return redirect(url_for('rental_records'))
+
+        # Use the retrieved business details
+        business_info = {
+            "name": business.name,
+            "location": business.location or 'N/A',
+            "address": business.address or 'N/A',
+            "contact": business.contact or 'N/A',
+        }
+        
+        # Calculate number of days if due_date and rent_date exist
+        calculated_number_of_days = 'N/A'
+        if record_to_print.rent_date and record_to_print.due_date:
+            # Calculate the difference in days, adding 1 to include the start date (inclusive range)
+            time_difference = record_to_print.due_date - record_to_print.rent_date
+            calculated_number_of_days = time_difference.days + 1
+        elif record_to_print.rent_date and record_to_print.return_date:
+            # If returned, use the actual return date for duration calculation
+            time_difference = record_to_print.return_date - record_to_print.rent_date
+            calculated_number_of_days = time_difference.days + 1
+            
 
         rental_details_for_receipt = {
             'id': record_to_print.id,
             'item_name': record_to_print.item_name_at_rent,
             'customer_name': record_to_print.customer_name,
-            'customer_phone': record_to_print.customer_phone,
-            'start_date': record_to_print.start_date.strftime('%Y-%m-%d'),
-            'end_date': record_to_print.end_date.strftime('%Y-%m-%d') if record_to_print.end_date else 'N/A',
-            'number_of_days': record_to_print.number_of_days,
-            'daily_hire_price': record_to_print.daily_hire_price_at_rent,
-            'total_hire_amount': record_to_print.total_hire_amount,
-            'sales_person': record_to_print.sales_person_name,
-            'date_recorded': record_to_print.date_recorded.strftime('%Y-%m-%d %H:%M:%S')
+            # FIX: Change 'customer_contact' to the likely correct model attribute 'customer_phone'
+            'customer_phone': record_to_print.customer_phone, 
+            # FIX: Correct attribute from 'start_date' to the model's 'rent_date'
+            'rent_date': record_to_print.rent_date.strftime('%Y-%m-%d'),
+            # Assuming 'due_date' is the intended name for the rental period's end date
+            'due_date': record_to_print.due_date.strftime('%Y-%m-%d') if record_to_print.due_date else 'N/A',
+            # FIX: Use the calculated value instead of a non-existent model attribute
+            'number_of_days': calculated_number_of_days, 
+            # FIX: Corrected attribute name using the model definition: rental_price_per_day_at_rent
+            'daily_hire_price': record_to_print.rental_price_per_day_at_rent, 
+            'total_hire_amount': record_to_print.total_rental_amount, 
+            # FIX: sales_person_name attribute does not exist. Replacing with 'N/A' to prevent crash 
+            # until the correct column name (likely sales_person or user_id) is identified from models.py.
+            'sales_person': 'N/A',
+            # FIX: Corrected attribute name from 'created_at' to 'date_recorded' based on the RentalRecord model
+            'date_recorded': record_to_print.date_recorded.strftime('%Y-%m-%d %H:%M:%S') 
         }
+        
+        # Add actual return date if available
+        if record_to_print.status == 'Returned' and record_to_print.return_date:
+            rental_details_for_receipt['actual_return_date'] = record_to_print.return_date.strftime('%Y-%m-%d')
+        else:
+            rental_details_for_receipt['actual_return_date'] = 'N/A'
+
 
         # Fetch available hirable items for the sidebar/form if needed, though not strictly for receipt
         available_hirable_items = HirableItem.query.filter_by(business_id=business_id, is_active=True).all()
         serialized_hirable_items = [serialize_hirable_item(item) for item in available_hirable_items]
 
 
-        return render_template('add_edit_rental_record.html',
-                            title='Rental Receipt',
-                            record=rental_details_for_receipt, # Pass the specific record for the receipt
-                            user_role=session.get('role'),
-                            hirable_items=serialized_hirable_items, # Pass for sidebar/form
-                            business_info=business_info,
-                            print_ready=True,
-                            last_rental_details=rental_details_for_receipt, # Use this for the receipt block
-                            current_year=datetime.now().year
-                            )
-
-
+        return render_template('add_edit_rental_record.html', # Assuming this is the correct template based on your input
+                                title='Rental Receipt',
+                                record=rental_details_for_receipt, # Pass the specific record for the receipt
+                                user_role=session.get('role'),
+                                hirable_items=serialized_hirable_items, # Pass for sidebar/form
+                                business_info=business_info,
+                                print_ready=True,
+                                last_rental_details=rental_details_for_receipt, # Use this for the receipt block
+                                current_year=datetime.now().year
+                                )
+    
+    
     @app.route('/rental_records/mark_returned/<record_id>', methods=['GET', 'POST'])
     def mark_rental_returned(record_id):
         # ACCESS CONTROL: Allows admin and sales roles
@@ -8180,10 +8219,10 @@ def create_app():
             record.actual_return_date = datetime.now()
             record.status = 'Returned'
 
-            # Return stock to hirable item (implicitly assumes quantity of 1)
             hirable_item = HirableItem.query.filter_by(id=record.hirable_item_id, business_id=business_id).first()
             if hirable_item:
                 hirable_item.current_stock += 1
+                hirable_item.synced_to_remote = False
                 hirable_item.last_updated = datetime.now()
                 db.session.add(hirable_item)
 
@@ -8191,7 +8230,30 @@ def create_app():
             flash(f'Rental record for "{record.item_name_at_rent}" marked as returned successfully!', 'success')
             return redirect(url_for('rental_records'))
         
-        return render_template('mark_rental_returned.html', record=record, user_role=session.get('role'), current_year=datetime.now().year)
+        # Convert the SQLAlchemy object into a dictionary for the template 
+        serialized_record = serialize_rental_record(record)
+        
+        # Ensure 'current_business' is defined
+        current_business = get_current_business() 
+        transaction_data = {
+            'last_transaction_id': '',
+            'last_transaction_date': '',
+            'last_transaction_sales_person': '',
+            'last_transaction_customer_phone': '',
+            'last_transaction_grand_total': '',
+            'last_transaction_details': []
+        }
+        
+        return render_template('mark_rental_returned.html', 
+                            record=serialized_record,  # ← Changed this line
+                            user_role=session.get('role'), 
+                            current_year=datetime.now().year,
+                            pharmacy_info=current_business,
+                            print_ready=False,
+                            auto_print=False,
+                            **transaction_data)
+
+
     # app.py - New route for importing inventory from another business
 
     @app.route('/inventory/import_from_business', methods=['GET', 'POST'])
@@ -8923,11 +8985,450 @@ def create_app():
             app.logger.error(f"Error fetching dashboard data: {e}")
             return jsonify({'error': 'An internal error occurred.'}), 500
 
+
+    @app.route('/invoices')
+    @login_required
+    def invoices():
+        """Display all invoices for the current business"""
+        business_id = get_current_business_id()
+        
+        # Get filter parameters
+        status_filter = request.args.get('status', 'all')
+        payment_filter = request.args.get('payment', 'all')
+        search_query = request.args.get('search', '')
+        
+        # Base query
+        query = Invoice.query.filter_by(business_id=business_id)
+        
+        # Apply filters
+        if status_filter != 'all':
+            query = query.filter(Invoice.status == status_filter)
+        
+        if payment_filter != 'all':
+            query = query.filter(Invoice.payment_status == payment_filter)
+        
+        if search_query:
+            query = query.filter(
+                or_(
+                    Invoice.invoice_number.ilike(f'%{search_query}%'),
+                    Invoice.customer_name.ilike(f'%{search_query}%'),
+                    Invoice.customer_phone.ilike(f'%{search_query}%')
+                )
+            )
+        
+        # Order by creation date (newest first)
+        invoices = query.order_by(Invoice.created_at.desc()).all()
+        
+        # Calculate summary statistics
+        total_invoices = len(invoices)
+        total_amount = sum(inv.total_amount for inv in invoices)
+        paid_amount = sum(inv.total_amount for inv in invoices if inv.payment_status == 'Paid')
+        pending_amount = total_amount - paid_amount
+        
+        summary = {
+            'total_invoices': total_invoices,
+            'total_amount': total_amount,
+            'paid_amount': paid_amount,
+            'pending_amount': pending_amount
+        }
+        
+        return render_template('invoices/list.html', 
+                            invoices=invoices, 
+                            summary=summary,
+                            status_filter=status_filter,
+                            payment_filter=payment_filter,
+                            search_query=search_query)
+
+    @app.route('/invoices/create', methods=['GET', 'POST'])
+    @csrf.exempt
+    @login_required
+    def create_invoice():
+        business_id = session.get('business_id')
+        if not business_id:
+            flash('Please select a business first.', 'warning')
+            return redirect(url_for('select_business'))
+        
+        business = Business.query.get(business_id)
+        if not business:
+            flash('Business not found.', 'error')
+            return redirect(url_for('dashboard'))
+
+        if request.method == 'POST':
+            try:
+                # DEBUG: Print form data
+                print("DEBUG: Form data received:")
+                for key, value in request.form.items():
+                    print(f"  {key}: {value}")
+                
+                # Extract form data
+                customer_name = request.form.get('customer_name', '').strip()
+                customer_phone = request.form.get('customer_phone', '').strip()
+                customer_email = request.form.get('customer_email', '').strip()
+                customer_address = request.form.get('customer_address', '').strip()
+                due_date_str = request.form.get('due_date', '').strip()
+                tax_rate = float(request.form.get('tax_rate', 0))
+                discount_rate = float(request.form.get('discount_rate', 0))
+                notes = request.form.get('notes', '').strip()
+                terms_and_conditions = request.form.get('terms_and_conditions', '').strip()
+                item_count = int(request.form.get('item_count', 0))
+
+                print(f"DEBUG: Processing {item_count} items for customer '{customer_name}'")
+
+                # Validation
+                if not customer_name:
+                    flash('Customer name is required.', 'error')
+                    return redirect(url_for('create_invoice'))
+                
+                if item_count == 0:
+                    flash('At least one item is required.', 'error')
+                    return redirect(url_for('create_invoice'))
+
+                # Parse due date
+                due_date = None
+                if due_date_str:
+                    try:
+                        due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        flash('Invalid due date format.', 'error')
+                        return redirect(url_for('create_invoice'))
+
+                # Generate invoice number
+                last_invoice = Invoice.query.filter_by(business_id=business_id).order_by(Invoice.created_at.desc()).first()
+                if last_invoice and last_invoice.invoice_number.startswith('INV-'):
+                    try:
+                        # Extract number from INV-YYYYMMDD-NNN format
+                        parts = last_invoice.invoice_number.split('-')
+                        if len(parts) >= 3:
+                            last_number = int(parts[2])
+                            invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{last_number + 1:03d}"
+                        else:
+                            invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-001"
+                    except ValueError:
+                        invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-001"
+                else:
+                    invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-001"
+
+                print(f"DEBUG: Generated invoice number: {invoice_number}")
+
+                # Process invoice items
+                invoice_items = []
+                for i in range(item_count):
+                    product = request.form.get(f'item_{i}_product', '').strip()
+                    description = request.form.get(f'item_{i}_description', '').strip()
+                    quantity = float(request.form.get(f'item_{i}_quantity', 0))
+                    unit_price = float(request.form.get(f'item_{i}_unit_price', 0))
+
+                    print(f"DEBUG: Item {i}: {product}, qty={quantity}, price={unit_price}")
+
+                    if product and quantity > 0:
+                        item_total = quantity * unit_price
+                        
+                        invoice_items.append({
+                            'product': product,
+                            'description': description,
+                            'quantity': quantity,
+                            'unit_price': unit_price,
+                            'total': item_total
+                        })
+
+                if not invoice_items:
+                    flash('No valid items found. Please ensure all items have a product name and quantity greater than 0.', 'error')
+                    return redirect(url_for('create_invoice'))
+
+                print(f"DEBUG: Processed {len(invoice_items)} valid items")
+
+                # Get current user ID from session - FIXED AUTHENTICATION
+                current_username = session.get('username')
+                if not current_username:
+                    flash('User session expired. Please log in again.', 'error')
+                    return redirect(url_for('login'))
+                
+                current_user_obj = User.query.filter_by(username=current_username).first()
+                if not current_user_obj:
+                    flash('User not found. Please log in again.', 'error')
+                    return redirect(url_for('login'))
+
+                print(f"DEBUG: Creating invoice for user: {current_user_obj.username} (ID: {current_user_obj.id})")
+
+                # Create invoice
+                invoice = Invoice(
+                    business_id=business_id,
+                    invoice_number=invoice_number,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    customer_email=customer_email,
+                    customer_address=customer_address,
+                    tax_rate=tax_rate,
+                    discount_rate=discount_rate,
+                    due_date=due_date,
+                    notes=notes,
+                    terms_and_conditions=terms_and_conditions,
+                    status='pending',
+                    created_by=current_user_obj.id  # FIXED: Use actual user ID from session
+                )
+
+                # Set items using the model's method
+                invoice.set_items(invoice_items)
+                
+                # Calculate totals using the model's method
+                invoice.calculate_totals()
+
+                print(f"DEBUG: Invoice total calculated: GHS{invoice.total_amount:.2f}")
+
+                # Save to database
+                db.session.add(invoice)
+                db.session.commit()
+
+                print(f"DEBUG: Invoice {invoice_number} saved successfully with ID: {invoice.id}")
+
+                flash(f'Invoice {invoice_number} created successfully! Total: GHS{invoice.total_amount:.2f}', 'success')
+                return redirect(url_for('view_invoice', invoice_id=invoice.id))
+
+            except Exception as e:
+                db.session.rollback()
+                print(f"ERROR: Failed to create invoice: {str(e)}")
+                print(f"ERROR: Exception type: {type(e).__name__}")
+                import traceback
+                traceback.print_exc()
+                flash(f'Error creating invoice: {str(e)}', 'error')
+                return redirect(url_for('create_invoice'))
+
+        # GET request - show the form
+        try:
+            # Get inventory items for the dropdown
+            inventory_items_raw = InventoryItem.query.filter_by(
+                business_id=business_id, 
+                is_active=True
+            ).all()
+            
+            print(f"DEBUG: Found {len(inventory_items_raw)} active inventory items")
+            
+            # Serialize inventory items for JSON
+            inventory_items = []
+            for item in inventory_items_raw:
+                try:
+                    inventory_items.append({
+                        'product_name': item.product_name,
+                        'sale_price': float(item.sale_price) if item.sale_price else 0,
+                        'category': item.category or '',
+                        'current_stock': item.current_stock if item.current_stock else 0
+                    })
+                except Exception as e:
+                    print(f"ERROR: Failed to serialize inventory item {item.product_name}: {e}")
+                    continue
+
+            return render_template('invoices/create.html', 
+                                business=business, 
+                                inventory_items=inventory_items)
+        
+        except Exception as e:
+            print(f"ERROR: Failed to load create invoice page: {str(e)}")
+            flash('Error loading invoice creation page.', 'error')
+            return redirect(url_for('dashboard'))
+        
+    # Updated view route to handle string IDs
+    @app.route('/invoices/<invoice_id>')
+    @login_required
+    def view_invoice(invoice_id):
+        business_id = session.get('business_id')
+        if not business_id:
+            return redirect(url_for('select_business'))
+        
+        invoice = Invoice.query.filter_by(id=invoice_id, business_id=business_id).first()
+        if not invoice:
+            flash('Invoice not found.', 'error')
+            return redirect(url_for('invoices'))
+        
+        business = Business.query.get(business_id)
+        
+        return render_template('invoices/view.html', invoice=invoice, business=business)
+    @app.route('/invoices/<invoice_id>/edit', methods=['GET', 'POST'])
+    @login_required
+    @permission_required(['admin', 'sales'])
+    def edit_invoice(invoice_id):
+        """Edit an existing invoice"""
+        business_id = get_current_business_id()
+        invoice = Invoice.query.filter_by(id=invoice_id, business_id=business_id).first_or_404()
+        
+        if invoice.status == 'Paid':
+            flash('Cannot edit a paid invoice.', 'danger')
+            return redirect(url_for('view_invoice', invoice_id=invoice_id))
+        
+        if request.method == 'POST':
+            try:
+                # Update invoice details (similar to create_invoice)
+                invoice.customer_name = request.form.get('customer_name')
+                invoice.customer_phone = request.form.get('customer_phone')
+                invoice.customer_email = request.form.get('customer_email')
+                invoice.customer_address = request.form.get('customer_address')
+                
+                due_date_str = request.form.get('due_date')
+                if due_date_str:
+                    invoice.due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+                
+                invoice.tax_rate = float(request.form.get('tax_rate', 0))
+                invoice.discount_rate = float(request.form.get('discount_rate', 0))
+                invoice.notes = request.form.get('notes')
+                invoice.terms_and_conditions = request.form.get('terms_and_conditions')
+                
+                # Update items (similar logic as create)
+                items = []
+                item_count = int(request.form.get('item_count', 0))
+                
+                for i in range(item_count):
+                    product_name = request.form.get(f'item_{i}_product')
+                    description = request.form.get(f'item_{i}_description')
+                    quantity = float(request.form.get(f'item_{i}_quantity', 0))
+                    unit_price = float(request.form.get(f'item_{i}_unit_price', 0))
+                    total = quantity * unit_price
+                    
+                    if product_name and quantity > 0:
+                        items.append({
+                            'product_name': product_name,
+                            'description': description,
+                            'quantity': quantity,
+                            'unit_price': unit_price,
+                            'total': total
+                        })
+                
+                invoice.set_items(items)
+                invoice.calculate_totals()
+                
+                db.session.commit()
+                flash('Invoice updated successfully!', 'success')
+                return redirect(url_for('view_invoice', invoice_id=invoice_id))
+                
+            except Exception as e:
+                db.session.rollback()
+                flash(f'Error updating invoice: {str(e)}', 'danger')
+        
+        # GET request - show edit form
+        inventory_items = InventoryItem.query.filter_by(
+            business_id=business_id, 
+            is_active=True
+        ).order_by(InventoryItem.product_name).all()
+        
+        return render_template('invoices/edit.html', invoice=invoice, inventory_items=inventory_items)
+
+    @app.route('/invoices/<invoice_id>/delete', methods=['POST'])
+    @login_required
+    @permission_required(['admin'])
+    def delete_invoice(invoice_id):
+        """Delete an invoice"""
+        business_id = get_current_business_id()
+        invoice = Invoice.query.filter_by(id=invoice_id, business_id=business_id).first_or_404()
+        
+        if invoice.payment_status == 'Paid':
+            flash('Cannot delete a paid invoice.', 'danger')
+            return redirect(url_for('view_invoice', invoice_id=invoice_id))
+        
+        try:
+            # Delete associated payments first
+            InvoicePayment.query.filter_by(invoice_id=invoice_id).delete()
+            
+            # Delete the invoice
+            db.session.delete(invoice)
+            db.session.commit()
+            
+            flash(f'Invoice {invoice.invoice_number} deleted successfully!', 'success')
+            return redirect(url_for('invoices'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error deleting invoice: {str(e)}', 'danger')
+            return redirect(url_for('view_invoice', invoice_id=invoice_id))
+
+    @app.route('/invoices/<invoice_id>/payment', methods=['POST'])
+    @login_required
+    @permission_required(['admin', 'sales'])
+    def record_payment(invoice_id):
+        """Record a payment for an invoice"""
+        business_id = get_current_business_id()
+        invoice = Invoice.query.filter_by(id=invoice_id, business_id=business_id).first_or_404()
+        
+        try:
+            amount_paid = float(request.form.get('amount_paid', 0))
+            payment_method = request.form.get('payment_method')
+            reference_number = request.form.get('reference_number')
+            notes = request.form.get('payment_notes')
+            
+            # Validate payment amount
+            total_paid = sum(payment.amount_paid for payment in invoice.payments)
+            remaining_amount = invoice.total_amount - total_paid
+            
+            if amount_paid <= 0:
+                flash('Payment amount must be greater than zero.', 'danger')
+                return redirect(url_for('view_invoice', invoice_id=invoice_id))
+            
+            if amount_paid > remaining_amount:
+                flash(f'Payment amount cannot exceed remaining balance of GH₵{remaining_amount:.2f}.', 'danger')
+                return redirect(url_for('view_invoice', invoice_id=invoice_id))
+            
+            # Create payment record
+            payment = InvoicePayment(
+                invoice_id=invoice_id,
+                amount_paid=amount_paid,
+                payment_method=payment_method,
+                reference_number=reference_number,
+                notes=notes,
+                recorded_by=session.get('user_id')
+            )
+            
+            db.session.add(payment)
+            
+            # Update invoice payment status
+            new_total_paid = total_paid + amount_paid
+            if new_total_paid >= invoice.total_amount:
+                invoice.payment_status = 'Paid'
+                invoice.status = 'Paid'
+            elif new_total_paid > 0:
+                invoice.payment_status = 'Partial'
+            
+            db.session.commit()
+            
+            flash(f'Payment of GH₵{amount_paid:.2f} recorded successfully!', 'success')
+            return redirect(url_for('view_invoice', invoice_id=invoice_id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error recording payment: {str(e)}', 'danger')
+            return redirect(url_for('view_invoice', invoice_id=invoice_id))
+
+    @app.route('/invoices/<invoice_id>/print')
+    @login_required
+    def print_invoice(invoice_id):
+        """Print-friendly view of an invoice.
+        
+        NOTE: If the invoice items are still not loading, ensure the 'Invoice' model 
+        (in models.py) correctly defines the relationship:
+        invoice_items = db.relationship('InvoiceItem', back_populates='invoice')
+        """
+        business_id = get_current_business_id()
+        
+        # Reverting to the simpler query using Flask-SQLAlchemy's built-in query
+        # which relies on standard session/lazy loading behavior to avoid the AttributeError.
+        invoice = Invoice.query.filter_by(
+            id=invoice_id,
+            business_id=business_id
+        ).first_or_404()
+        
+        # Accessing invoice.invoice_items here will trigger lazy loading, 
+        # but still requires the relationship to be defined in Invoice model.
+        if not hasattr(Invoice, 'invoice_items'):
+            print("ERROR: Invoice model is missing the 'invoice_items' relationship attribute.")
+            # If the attribute is missing, attempting to access it in the template will fail.
+            # Check your models.py file immediately.
+        
+        business = Business.query.get(business_id)
+        
+        return render_template('invoices/print.html', invoice=invoice, business=business)
+
+
+        """
+    Server-side API Endpoints for Additional Sync Functions
+    These endpoints need to be added to your REMOTE/ONLINE Flask app (the one hosted on Render)
+    to handle the incoming sync requests from local clients.
     """
-Server-side API Endpoints for Additional Sync Functions
-These endpoints need to be added to your REMOTE/ONLINE Flask app (the one hosted on Render)
-to handle the incoming sync requests from local clients.
-"""
 
     # ===============================
     # COMPANY SYNC API ENDPOINTS (Server-side)
