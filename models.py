@@ -193,6 +193,10 @@ class HirableItem(db.Model):
 
     # --- ADD THIS CRUCIAL RELATIONSHIP ---
     business = db.relationship('Business', back_populates='hirable_items')
+    @property
+    def daily_hire_price(self):
+        """Backward compatibility property for templates"""
+        return self.rental_price_per_day if hasattr(self, 'rental_price_per_day') else 0.0
 
     def __repr__(self):
         return f'<HirableItem {self.item_name} (Stock: {self.current_stock})>'
@@ -232,6 +236,7 @@ class RentalRecord(db.Model):
     total_rental_amount = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(50), default='Active', nullable=False)
     notes = db.Column(db.Text, nullable=True)
+    
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
     due_date = db.Column(db.Date, nullable=True)
 
@@ -392,4 +397,84 @@ class ReturnRecord(db.Model):
     
     def __repr__(self):
         return f'<ReturnRecord {self.return_receipt_number} - GH₵{self.total_refund_amount:.2f}>'
+
+    # Add this to your models.py file
+class Invoice(db.Model):
+    __tablename__ = 'invoices'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    business_id = db.Column(db.String(36), db.ForeignKey('businesses.id'), nullable=False)
+    invoice_number = db.Column(db.String(50), unique=True, nullable=False)
+    customer_name = db.Column(db.String(255), nullable=False)
+    customer_phone = db.Column(db.String(20), nullable=True)
+    customer_email = db.Column(db.String(120), nullable=True)
+    customer_address = db.Column(db.Text, nullable=True)
+    # Invoice details
+    invoice_date = db.Column(db.Date, default=date.today, nullable=False)
+    due_date = db.Column(db.Date, nullable=True)
+    subtotal = db.Column(db.Float, nullable=False, default=0.0)
+    tax_rate = db.Column(db.Float, nullable=False, default=0.0)  # Tax percentage
+    tax_amount = db.Column(db.Float, nullable=False, default=0.0)
+    discount_rate = db.Column(db.Float, nullable=False, default=0.0)  # Discount percentage
+    discount_amount = db.Column(db.Float, nullable=False, default=0.0)
+    total_amount = db.Column(db.Float, nullable=False, default=0.0)
+    # Status and tracking
+    status = db.Column(db.String(50), default='Draft', nullable=False)  # Draft, Sent, Paid, Overdue, Cancelled
+    payment_status = db.Column(db.String(50), default='Unpaid', nullable=False)  # Unpaid, Partial, Paid
+    payment_method = db.Column(db.String(50), nullable=True)
+    # Invoice items (JSON storage)
+    items_json = db.Column(db.Text, nullable=False, default='[]')
+    # Additional fields
+    notes = db.Column(db.Text, nullable=True)
+    terms_and_conditions = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Sync fields
+    synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
+    # Relationships
+    business = db.relationship('Business', backref='invoices', lazy=True)
+    creator = db.relationship('User', backref='created_invoices', lazy=True)
+    def set_items(self, items_list):
+        """Store invoice items as JSON"""
+        self.items_json = json.dumps(items_list)
+    def get_items(self):
+        """Retrieve invoice items from JSON"""
+        if self.items_json:
+            return json.loads(self.items_json)
+        return []
+    def calculate_totals(self):
+        """Calculate invoice totals based on items"""
+        items = self.get_items()
+        self.subtotal = sum(float(item.get('total', 0)) for item in items)
+        # Calculate discount
+        self.discount_amount = (self.subtotal * self.discount_rate) / 100
+        subtotal_after_discount = self.subtotal - self.discount_amount
+        # Calculate tax
+        self.tax_amount = (subtotal_after_discount * self.tax_rate) / 100
+        # Calculate total
+        self.total_amount = subtotal_after_discount + self.tax_amount
+        def generate_invoice_number(self):
+         """Generate a unique invoice number"""
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        return f"INV-{timestamp}-{str(uuid.uuid4())[:8].upper()}"
+    def __repr__(self):
+        return f'<Invoice {self.invoice_number} - {self.customer_name} - GH₵{self.total_amount:.2f}>'
+
+class InvoicePayment(db.Model):
+    __tablename__ = 'invoice_payments'
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    invoice_id = db.Column(db.String(36), db.ForeignKey('invoices.id'), nullable=False)
+    payment_date = db.Column(db.Date, default=date.today, nullable=False)
+    amount_paid = db.Column(db.Float, nullable=False)
+    payment_method = db.Column(db.String(50), nullable=False)
+    reference_number = db.Column(db.String(100), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    recorded_by = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    # Relationships
+    invoice = db.relationship('Invoice', backref='payments', lazy=True)
+    recorder = db.relationship('User', backref='recorded_payments', lazy=True)
+    def __repr__(self):
+        return f'<InvoicePayment {self.invoice_id} - GH₵{self.amount_paid:.2f}>'
 

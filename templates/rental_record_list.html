@@ -355,11 +355,10 @@
                                 <td class="py-3 px-4 text-gray-700">{{ record.item_name_at_rent }}</td>
                                 <td class="py-3 px-4 text-gray-700">{{ record.customer_name }}</td>
                                 <td class="py-3 px-4 text-gray-700">{{ record.customer_phone if record.customer_phone else 'N/A' }}</td>
-                                <td class="py-3 px-4 text-gray-700">{{ record.start_date.strftime('%Y-%m-%d') }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ record.rent_date.strftime('%Y-%m-%d') }}</td>
                                 <td class="py-3 px-4 text-gray-700">{{ record.end_date.strftime('%Y-%m-%d') if record.end_date else 'N/A' }}</td>
                                 <td class="py-3 px-4 text-gray-700">{{ record.number_of_days }}</td>
-                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.daily_hire_price_at_rent) }}</td>
-                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.total_hire_amount) }}</td>
+                                <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(record.total_rental_amount) }}</td>
                                 <td class="py-3 px-4 text-gray-700">
                                     {% if record.status == 'Rented' %}
                                         <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 status-badge rented">Rented</span>

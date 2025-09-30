@@ -1,0 +1,418 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <!-- Offline CSS - No external dependencies -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/offline-styles.css') }}">
+    <style>
+        /* Custom styles specific to invoice creation */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f6;
+        }
+        
+        .invoice-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .form-section {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .item-row {
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+        
+        .grand-total-section {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin: 1.5rem 0;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto p-6 no-print">
+        <!-- Header -->
+        <div class="invoice-header text-center">
+            <h1 class="text-3xl font-bold mb-2">Create Invoice</h1>
+            <p class="text-blue-100">Generate professional quotes and invoices for your customers</p>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
+                            {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                            {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                            {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                            {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                            {% endif %}
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Back Button -->
+        <div class="mb-4">
+            <a href="{{ url_for('invoices') }}" class="btn btn-secondary">
+                <span class="mr-2">←</span> Back to Invoices
+            </a>
+        </div>
+
+        <form id="invoiceForm" method="POST" action="{{ url_for('create_invoice') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <!-- Customer Information -->
+            <div class="form-section">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Customer Information</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-group">
+                        <label for="customer_name" class="block text-sm font-medium text-gray-700 mb-1">
+                            Customer Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="customer_name" name="customer_name" required
+                               class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                               placeholder="Enter customer name">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customer_phone" class="block text-sm font-medium text-gray-700 mb-1">
+                            Customer Phone
+                        </label>
+                        <input type="tel" id="customer_phone" name="customer_phone"
+                               class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                               placeholder="Enter customer phone">
+                    </div>
+                </div>
+                
+                <div class="form-group mt-4">
+                    <label for="customer_address" class="block text-sm font-medium text-gray-700 mb-1">
+                        Customer Address
+                    </label>
+                    <textarea id="customer_address" name="customer_address" rows="3"
+                              class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                              placeholder="Enter customer address"></textarea>
+                </div>
+            </div>
+
+            <!-- Invoice Details -->
+            <div class="form-section">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Invoice Details</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-group">
+                        <label for="valid_until" class="block text-sm font-medium text-gray-700 mb-1">
+                            Quote Valid Until
+                        </label>
+                        <input type="date" id="valid_until" name="valid_until"
+                               class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                               min="{{ today }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">
+                            Notes
+                        </label>
+                        <textarea id="notes" name="notes" rows="2"
+                                  class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                                  placeholder="Additional notes or terms"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Product Selection -->
+            <div class="form-section">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Add Products</h3>
+                
+                <div class="mb-4">
+                    <label for="product_search" class="block text-sm font-medium text-gray-700 mb-1">Search Products</label>
+                    <div class="flex">
+                        <input type="text" id="product_search" placeholder="Search by product name, category, or batch number"
+                               class="form-input flex-1 rounded-l-md border-gray-300 shadow-sm p-2">
+                        <button type="button" id="search_products_btn" class="btn btn-primary rounded-l-none">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoice Items -->
+            <div class="form-section">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Invoice Items</h3>
+                <div id="invoice-items-container">
+                    <!-- Items will be added here dynamically -->
+                </div>
+                
+                <button type="button" id="add-item-btn" class="btn btn-primary">
+                    <i class="fas fa-plus mr-2"></i> Add Item
+                </button>
+            </div>
+
+            <!-- Total -->
+            <div class="grand-total-section text-center">
+                <h3 class="text-2xl font-bold">Total Amount: GH₵<span id="grand-total">0.00</span></h3>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex justify-end space-x-4">
+                <a href="{{ url_for('invoices') }}" class="btn btn-secondary">
+                    Cancel
+                </a>
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-file-invoice mr-2"></i> Create Invoice
+                </button>
+            </div>
+
+            <input type="hidden" name="invoice_items_json" id="invoice-items-json">
+        </form>
+    </div>
+
+    <script>
+        let inventoryItems = {{ inventory_items | tojson | safe }};
+        const businessType = "{{ business_type }}";
+        const invoiceItemsContainer = document.getElementById('invoice-items-container');
+        const addItemBtn = document.getElementById('add-item-btn');
+        const grandTotalSpan = document.getElementById('grand-total');
+        const invoiceItemsJsonInput = document.getElementById('invoice-items-json');
+        const invoiceForm = document.getElementById('invoiceForm');
+        const productSearchInput = document.getElementById('product_search');
+        const searchProductsBtn = document.getElementById('search_products_btn');
+
+        let invoiceItems = [];
+        let itemCounter = 0;
+
+        // Flash message function
+        function flashMessage(message, category) {
+            const existingAlerts = document.querySelectorAll('.alert.dynamic-alert');
+            existingAlerts.forEach(alert => alert.remove());
+
+            const alertContainer = document.querySelector('form').previousElementSibling;
+            if (alertContainer && alertContainer.classList.contains('mb-4')) {
+                const alertDiv = document.createElement('div');
+                alertDiv.classList.add('alert', `alert-${category}`, 'rounded-lg', 'p-4', 'mb-3', 'shadow-md', 'dynamic-alert');
+                let iconHtml = '';
+                if (category === 'success') iconHtml = '<i class="fas fa-check-circle"></i>';
+                else if (category === 'danger') iconHtml = '<i class="fas fa-times-circle"></i>';
+                else if (category === 'warning') iconHtml = '<i class="fas fa-exclamation-triangle"></i>';
+                else if (category === 'info') iconHtml = '<i class="fas fa-info-circle"></i>';
+                alertDiv.innerHTML = `${iconHtml} ${message}`;
+                alertContainer.appendChild(alertDiv);
+                setTimeout(() => alertDiv.remove(), 5000);
+            }
+        }
+
+        // Create item row function
+        function createItemRow() {
+            itemCounter++;
+            const row = document.createElement('div');
+            row.className = 'item-row';
+            row.dataset.itemId = itemCounter;
+            
+            row.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="form-group">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                        <select class="product-select form-input w-full p-2 rounded-md border-gray-300">
+                            <option value="">Select a product</option>
+                            ${inventoryItems.map(item => 
+                                `<option value="${item.id}" 
+                                    data-price="${item.sale_price}" 
+                                    data-unit-price="${item.unit_price_per_tab || item.sale_price}"
+                                    data-name="${item.product_name}">
+                                    ${item.product_name} - GHS${parseFloat(item.sale_price || 0).toFixed(2)}
+                                </option>`
+                            ).join('')}
+                            <option value="custom">+ Custom Item</option>
+                        </select>
+                        <input type="text" class="custom-product-name form-input w-full p-2 rounded-md border-gray-300 mt-2 hidden" 
+                               placeholder="Enter custom product name">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Unit Price (GH₵)</label>
+                        <input type="number" step="0.01" min="0" class="unit-price form-input w-full p-2 rounded-md border-gray-300" value="0.00">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                        <input type="number" step="0.01" min="0.01" class="quantity form-input w-full p-2 rounded-md border-gray-300" value="1">
+                    </div>
+                    
+                    <div class="form-group flex items-end">
+                        <div class="flex-1">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Total (GH₵)</label>
+                            <input type="text" class="item-total form-input w-full p-2 rounded-md border-gray-300 bg-gray-100" 
+                                   value="0.00" readonly>
+                        </div>
+                        <button type="button" class="remove-item-btn ml-2 p-2 text-red-500 hover:text-red-700">
+                            <i class="fas fa-trash text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            const productSelect = row.querySelector('.product-select');
+            const customProductName = row.querySelector('.custom-product-name');
+            const unitPrice = row.querySelector('.unit-price');
+            const quantity = row.querySelector('.quantity');
+            const itemTotal = row.querySelector('.item-total');
+            const removeBtn = row.querySelector('.remove-item-btn');
+
+            // Product selection handler
+            productSelect.addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    customProductName.classList.remove('hidden');
+                    unitPrice.value = '0.00';
+                    unitPrice.readOnly = false;
+                } else if (this.value) {
+                    customProductName.classList.add('hidden');
+                    const option = this.selectedOptions[0];
+                    unitPrice.value = parseFloat(option.dataset.price || 0).toFixed(2);
+                    unitPrice.readOnly = false;
+                } else {
+                    customProductName.classList.add('hidden');
+                    unitPrice.value = '0.00';
+                    unitPrice.readOnly = false;
+                }
+                calculateItemTotal();
+            });
+
+            // Calculation handlers
+            unitPrice.addEventListener('input', calculateItemTotal);
+            quantity.addEventListener('input', calculateItemTotal);
+
+            // Remove button handler
+            removeBtn.addEventListener('click', function() {
+                row.remove();
+                updateGrandTotal();
+            });
+
+            function calculateItemTotal() {
+                const price = parseFloat(unitPrice.value) || 0;
+                const qty = parseFloat(quantity.value) || 0;
+                const total = price * qty;
+                itemTotal.value = total.toFixed(2);
+                updateGrandTotal();
+            }
+
+            return row;
+        }
+
+        // Update grand total
+        function updateGrandTotal() {
+            let total = 0;
+            invoiceItems = [];
+
+            const itemRows = invoiceItemsContainer.querySelectorAll('.item-row');
+            itemRows.forEach(row => {
+                const productSelect = row.querySelector('.product-select');
+                const customProductName = row.querySelector('.custom-product-name');
+                const unitPrice = row.querySelector('.unit-price');
+                const quantity = row.querySelector('.quantity');
+                const itemTotal = row.querySelector('.item-total');
+
+                const price = parseFloat(unitPrice.value) || 0;
+                const qty = parseFloat(quantity.value) || 0;
+                const itemTotalValue = parseFloat(itemTotal.value) || 0;
+
+                if (qty > 0 && price > 0) {
+                    total += itemTotalValue;
+                    
+                    let productName = '';
+                    if (productSelect.value === 'custom') {
+                        productName = customProductName.value.trim();
+                    } else if (productSelect.value) {
+                        productName = productSelect.selectedOptions[0].dataset.name;
+                    }
+
+                    if (productName) {
+                        invoiceItems.push({
+                            product_name: productName,
+                            unit_price: price,
+                            quantity: qty,
+                            item_total_amount: itemTotalValue
+                        });
+                    }
+                }
+            });
+
+            grandTotalSpan.textContent = total.toFixed(2);
+            invoiceItemsJsonInput.value = JSON.stringify(invoiceItems);
+        }
+
+        // Add item button
+        addItemBtn.addEventListener('click', function() {
+            const newRow = createItemRow();
+            invoiceItemsContainer.appendChild(newRow);
+            updateGrandTotal();
+        });
+
+        // Product search
+        searchProductsBtn.addEventListener('click', function() {
+            const searchQuery = productSearchInput.value.trim();
+            if (searchQuery) {
+                const currentUrl = new URL(window.location.href);
+                currentUrl.searchParams.set('search', searchQuery);
+                window.location.href = currentUrl.toString();
+            }
+        });
+
+        productSearchInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                searchProductsBtn.click();
+            }
+        });
+
+        // Form validation
+        invoiceForm.addEventListener('submit', function(event) {
+            const customerName = document.getElementById('customer_name').value.trim();
+            
+            if (!customerName) {
+                event.preventDefault();
+                flashMessage('Customer name is required.', 'danger');
+                return;
+            }
+            
+            if (invoiceItems.length === 0) {
+                event.preventDefault();
+                flashMessage('Please add at least one item to the invoice.', 'danger');
+                return;
+            }
+        });
+
+        // Initialize with one empty row
+        document.addEventListener('DOMContentLoaded', function() {
+            const initialRow = createItemRow();
+            invoiceItemsContainer.appendChild(initialRow);
+            
+            // Set default valid until date (30 days from today)
+            const today = new Date();
+            const defaultValidUntil = new Date(today.setDate(today.getDate() + 30));
+            const validUntilInput = document.getElementById('valid_until');
+            validUntilInput.value = defaultValidUntil.toISOString().split('T')[0];
+        });
+    </script>
+{% endblock %}

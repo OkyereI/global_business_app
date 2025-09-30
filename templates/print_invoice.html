@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print {{ invoice.invoice_number }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/offline-styles.css') }}">
+    <style>
+        /* Enhanced Print-optimized styles */
+        @media print {
+            body { 
+                margin: 0; 
+                padding: 0; 
+                background: white; 
+                color: #000 !important; /* Pure black for better print contrast */
+                font-weight: 500 !important; /* Slightly bolder base font */
+            }
+            .no-print { display: none !important; }
+            .page-break { page-break-after: always; }
+            
+            /* Force all text to be darker and bolder for print */
+            * {
+                color: #000 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            /* Make headers extra bold for print */
+            h1, h2, h3, h4, h5, h6 {
+                font-weight: 900 !important;
+                color: #000 !important;
+            }
+            
+            /* Bold all table content for print */
+            .items-table th,
+            .items-table td {
+                font-weight: 600 !important;
+                color: #000 !important;
+                border: 2px solid #000 !important;
+            }
+            
+            /* Ensure strong elements are extra bold */
+            strong, b, .font-bold {
+                font-weight: 900 !important;
+            }
+            
+            /* Make totals extra prominent */
+            .total-amount {
+                font-weight: 900 !important;
+                font-size: 1.8em !important;
+            }
+            
+            /* Darken borders for better print visibility */
+            .invoice-header {
+                border-bottom: 4px solid #000 !important;
+            }
+            
+            .customer-info {
+                border-left: 5px solid #000 !important;
+            }
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.5;
+            color: #000; /* Changed from #333 to pure black */
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            font-weight: 500; /* Added base font weight */
+        }
+        
+        .invoice-header {
+            border-bottom: 4px solid #2563eb; /* Made border thicker */
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .company-info h1 {
+            font-size: 2.5em;
+            color: #2563eb;
+            margin: 0 0 10px 0;
+            font-weight: 900; /* Extra bold */
+        }
+        
+        .invoice-title {
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px; /* Increased padding */
+            border-radius: 5px;
+            font-size: 1.6em; /* Slightly larger */
+            font-weight: 900; /* Extra bold */
+            text-align: center;
+            margin: 20px 0;
+            letter-spacing: 1px; /* Better spacing */
+        }
+        
+        .info-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin: 30px 0;
+        }
+        
+        .invoice-details {
+            text-align: right;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            font-weight: 600; /* Bolder text */
+        }
+        
+        .invoice-details h3 {
+            font-weight: 900; /* Extra bold headers */
+        }
+        
+        .customer-info {
+            padding: 20px;
+            background: #f1f5f9;
+            border-radius: 5px;
+            border-left: 5px solid #3b82f6; /* Thicker border */
+            font-weight: 600; /* Bolder text */
+        }
+        
+        .customer-info h3 {
+            font-weight: 900; /* Extra bold */
+        }
+        
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            font-weight: 600; /* Bolder table text */
+        }
+        
+        .items-table th {
+            background: #e5e7eb;
+            padding: 16px 12px; /* Increased padding */
+            text-align: left;
+            font-weight: 900; /* Extra bold headers */
+            border: 2px solid #000; /* Thicker, darker borders */
+            font-size: 1.05em; /* Slightly larger */
+        }
+        
+        .items-table td {
+            padding: 14px 12px; /* Increased padding */
+            border: 2px solid #000; /* Thicker, darker borders */
+            vertical-align: top;
+            font-weight: 600; /* Bolder content */
+        }
+        
+        .items-table tbody tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        
+        .total-row {
+            background: #dcfce7 !important;
+            border-top: 4px solid #16a34a !important; /* Thicker border */
+        }
+        
+        .total-row td {
+            font-weight: 900 !important; /* Extra bold total row */
+            font-size: 1.1em; /* Slightly larger */
+        }
+        
+        .total-amount {
+            font-size: 1.8em; /* Larger total amount */
+            font-weight: 900; /* Extra bold */
+            color: #15803d;
+        }
+        
+        .notes-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #fef3c7;
+            border-left: 5px solid #f59e0b; /* Thicker border */
+            border-radius: 5px;
+            font-weight: 600; /* Bolder notes */
+        }
+        
+        .notes-section h4 {
+            font-weight: 900; /* Extra bold notes header */
+        }
+        
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 3px solid #e5e7eb; /* Thicker border */
+            text-align: center;
+            color: #000; /* Changed from gray to black */
+            font-weight: 600; /* Bolder footer */
+        }
+        
+        .print-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px; /* Larger button */
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 900; /* Bold button text */
+            font-size: 1.1em;
+        }
+        
+        .print-button:hover {
+            background: #1d4ed8;
+        }
+        
+        /* Enhanced bold styling for all important text */
+        strong, b {
+            font-weight: 900;
+            color: #000;
+        }
+        
+        /* Ensure all labels are bold */
+        p strong {
+            font-weight: 900;
+        }
+        
+        @media print {
+            .print-button { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Print Button -->
+    <button class="print-button no-print" onclick="window.print()">
+        <i class="fas fa-print"></i> Print Invoice
+    </button>
+
+    <!-- Invoice Header -->
+    <header class="invoice-header">
+        <div class="info-section">
+            <div class="company-info">
+                <h1>{{ business.name }}</h1>
+                {% if business.address %}
+                    <p><strong>{{ business.address }}</strong></p>
+                {% endif %}
+                {% if business.location %}
+                    <p><strong>{{ business.location }}</strong></p>
+                {% endif %}
+                <div style="margin-top: 10px;">
+                    {% if business.contact %}
+                        <p><strong>Phone:</strong> <strong>{{ business.contact }}</strong></p>
+                    {% endif %}
+                    {% if business.email %}
+                        <p><strong>Email:</strong> <strong>{{ business.email }}</strong></p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="invoice-details">
+                <h3 style="margin-top: 0; color: #2563eb;">INVOICE DETAILS</h3>
+                <p><strong>Invoice #:</strong> <strong>{{ invoice.invoice_number }}</strong></p>
+                <p><strong>Date:</strong> <strong>{{ invoice.created_at.strftime('%B %d, %Y') }}</strong></p>
+                {% if invoice.valid_until %}
+                    <p><strong>Valid Until:</strong> <strong>{{ invoice.valid_until.strftime('%B %d, %Y') }}</strong></p>
+                {% endif %}
+                <p><strong>Issued By:</strong> <strong>{{ invoice.created_by }}</strong></p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Invoice Title -->
+    <div class="invoice-title">
+        INVOICE / QUOTATION
+    </div>
+
+    <!-- Customer Information -->
+    <div class="customer-info">
+        <h3 style="margin-top: 0; color: #1e40af;">BILL TO:</h3>
+        <p style="font-size: 1.3em; font-weight: 900; margin: 10px 0;">{{ invoice.customer_name }}</p>
+        {% if invoice.customer_phone %}
+            <p><strong>Phone:</strong> <strong>{{ invoice.customer_phone }}</strong></p>
+        {% endif %}
+        {% if invoice.customer_address %}
+            <p><strong>Address:</strong> <strong>{{ invoice.customer_address }}</strong></p>
+        {% endif %}
+    </div>
+
+    <!-- Items Table -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 50%;">Product Name</th>
+                <th style="width: 16.67%; text-align: center;">Unit Price</th>
+                <th style="width: 16.67%; text-align: center;">Quantity</th>
+                <th style="width: 16.67%; text-align: right;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in invoice_items %}
+                <tr>
+                    <td style="font-weight: 700;">{{ item.product_name }}</td>
+                    <td class="text-center"><strong>GH₵{{ "%.2f"|format(item.unit_price) }}</strong></td>
+                    <td class="text-center"><strong>{{ "%.2f"|format(item.quantity) if item.quantity != item.quantity|int else item.quantity|int }}</strong></td>
+                    <td class="text-right" style="font-weight: 700;"><strong>GH₵{{ "%.2f"|format(item.total_amount) }}</strong></td>
+                </tr>
+            {% endfor %}
+            
+            <!-- Total Row -->
+            <tr class="total-row">
+                <td colspan="3" style="font-weight: 900; font-size: 1.3em; text-align: right; padding-right: 20px;">
+                    GRAND TOTAL:
+                </td>
+                <td class="text-right total-amount">
+                    GH₵{{ "%.2f"|format(invoice.total_amount) }}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Notes Section -->
+    {% if invoice.notes %}
+        <div class="notes-section">
+            <h4 style="margin-top: 0; color: #92400e;">NOTES & TERMS:</h4>
+            <p style="font-weight: 600;">{{ invoice.notes }}</p>
+        </div>
+    {% endif %}
+
+    <!-- Validity Information -->
+    {% if invoice.valid_until %}
+        <div style="margin: 30px 0; padding: 15px; background: #fee2e2; border-left: 5px solid #ef4444; border-radius: 5px;">
+            <p style="color: #b91c1c; font-weight: 900; margin: 0; font-size: 1.1em;">
+                ⏰ This quote is valid until {{ invoice.valid_until.strftime('%B %d, %Y') }}
+            </p>
+        </div>
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="footer">
+        <p style="font-size: 1.2em; margin-bottom: 10px; font-weight: 900;">Thank you for your business!</p>
+        <p style="font-weight: 600;">This {{business_name}} generated invoice.</p>
+        <p style="margin-top: 20px; font-size: 1em; font-weight: 600;">
+            Generated on {{ invoice.created_at.strftime('%B %d, %Y at %I:%M %p') }}
+        </p>
+    </div>/
+
+    <script>
+        // Auto-print when page loads (optional)
+        window.addEventListener('load', function() {
+            // Uncomment the next line to auto-print
+            // window.print();
+        });
+        
+        // Handle print button click
+        function printInvoice() {
+            window.print();
+        }
+        
+        // Print with Ctrl+P
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+            }
+        });
+    </script>
+</body>
+</html>

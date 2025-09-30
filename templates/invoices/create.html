@@ -1,0 +1,1303 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <!-- Offline CSS - No external dependencies -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/offline-styles.css') }}">
+    
+    <style>
+        /* Custom styles specific to invoice creation */
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f6;
+        }
+        
+        .invoice-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .form-section {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .item-row {
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+        
+        .grand-total-section {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        /* Alert styles */
+        .alert {
+            padding: 0.75rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+        }
+        .alert i {
+            margin-right: 0.5rem;
+        }
+        .alert-success { background-color: #d4edda; border-color: #c3e6cb; color: #155724; }
+        .alert-danger { background-color: #f8d7da; border-color: #f5c6cb; color: #721c24; }
+        .alert-warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
+        .alert-info { background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; }
+        
+        .hidden {
+            display: none;
+        }
+
+        /* Searchable Dropdown Styles */
+        .searchable-dropdown {
+            position: relative;
+            width: 100%;
+        }
+        
+        .searchable-dropdown-input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background-color: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 2.5rem;
+        }
+        
+        .searchable-dropdown-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .searchable-dropdown-placeholder {
+            color: #9ca3af;
+            flex-grow: 1;
+        }
+        
+        .searchable-dropdown-arrow {
+            margin-left: 0.5rem;
+            transition: transform 0.2s;
+        }
+        
+        .searchable-dropdown-arrow.open {
+            transform: rotate(180deg);
+        }
+        
+        .searchable-dropdown-list {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .searchable-dropdown-list.open {
+            display: block;
+        }
+        
+        .searchable-dropdown-search {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-bottom: 1px solid #e5e7eb;
+            outline: none;
+            font-size: 0.875rem;
+        }
+        
+        .searchable-dropdown-option {
+            padding: 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+        }
+        
+        .searchable-dropdown-option:hover,
+        .searchable-dropdown-option.highlighted {
+            background-color: #f3f4f6;
+        }
+        
+        .searchable-dropdown-option.selected {
+            background-color: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .searchable-dropdown-option:last-child {
+            border-bottom: none;
+        }
+        
+        .no-results {
+            padding: 0.75rem;
+            text-align: center;
+            color: #6b7280;
+            font-style: italic;
+        }
+
+        /* Input field styling */
+        input[type="number"], input[type="text"], input[type="tel"], input[type="date"], select, textarea {
+            font-size: 0.875rem;
+        }
+
+        /* Button styling */
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background-color: #3b82f6;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        
+        .btn-success {
+            background-color: #10b981;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #059669;
+        }
+
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+
+        .btn-warning {
+            background-color: #f59e0b;
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background-color: #d97706;
+        }
+
+        .btn-info {
+            background-color: #3b82f6;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background-color: #2563eb;
+        }
+
+        /* Form styling */
+        .form-input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            background-color: white;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .form-input:read-only {
+            background-color: #f9fafb;
+            cursor: not-allowed;
+        }
+
+        /* Grid system */
+        .grid {
+            display: grid;
+        }
+
+        .grid-cols-1 {
+            grid-template-columns: repeat(1, minmax(0, 1fr));
+        }
+
+        .grid-cols-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .grid-cols-4 {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .grid-cols-5 {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+
+        .gap-4 {
+            gap: 1rem;
+        }
+
+        .gap-6 {
+            gap: 1.5rem;
+        }
+
+        /* Responsive design */
+        @media (min-width: 768px) {
+            .md\:grid-cols-2 {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            
+            .md\:grid-cols-4 {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+            
+            .md\:grid-cols-5 {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+            }
+        }
+
+        /* Utility classes */
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-red-500 {
+            color: #ef4444;
+        }
+
+        .text-gray-600 {
+            color: #4b5563;
+        }
+
+        .text-gray-700 {
+            color: #374151;
+        }
+
+        .text-gray-800 {
+            color: #1f2937;
+        }
+
+        .font-medium {
+            font-weight: 500;
+        }
+
+        .font-semibold {
+            font-weight: 600;
+        }
+
+        .font-bold {
+            font-weight: 700;
+        }
+
+        .mb-1 {
+            margin-bottom: 0.25rem;
+        }
+
+        .mb-2 {
+            margin-bottom: 0.5rem;
+        }
+
+        .mb-3 {
+            margin-bottom: 0.75rem;
+        }
+
+        .mb-4 {
+            margin-bottom: 1rem;
+        }
+
+        .mb-6 {
+            margin-bottom: 1.5rem;
+        }
+
+        .mt-2 {
+            margin-top: 0.5rem;
+        }
+
+        .mt-4 {
+            margin-top: 1rem;
+        }
+
+        .mt-6 {
+            margin-top: 1.5rem;
+        }
+
+        .mr-2 {
+            margin-right: 0.5rem;
+        }
+
+        .ml-2 {
+            margin-left: 0.5rem;
+        }
+
+        .p-2 {
+            padding: 0.5rem;
+        }
+
+        .p-3 {
+            padding: 0.75rem;
+        }
+
+        .p-4 {
+            padding: 1rem;
+        }
+
+        .p-6 {
+            padding: 1.5rem;
+        }
+
+        .space-x-4 > * + * {
+            margin-left: 1rem;
+        }
+
+        .space-y-4 > * + * {
+            margin-top: 1rem;
+        }
+
+        .flex {
+            display: flex;
+        }
+
+        .items-center {
+            align-items: center;
+        }
+
+        .items-end {
+            align-items: flex-end;
+        }
+
+        .justify-between {
+            justify-content: space-between;
+        }
+
+        .justify-end {
+            justify-content: flex-end;
+        }
+
+        .flex-1 {
+            flex: 1 1 0%;
+        }
+
+        .w-full {
+            width: 100%;
+        }
+
+        .block {
+            display: block;
+        }
+
+        .relative {
+            position: relative;
+        }
+
+        .rounded-md {
+            border-radius: 0.375rem;
+        }
+
+        .rounded-lg {
+            border-radius: 0.5rem;
+        }
+
+        .rounded-l-none {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+
+        .shadow-sm {
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        .shadow-md {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .border {
+            border-width: 1px;
+        }
+
+        .border-gray-200 {
+            border-color: #e5e7eb;
+        }
+
+        .border-gray-300 {
+            border-color: #d1d5db;
+        }
+
+        .border-red-500 {
+            border-color: #ef4444;
+        }
+
+        .bg-gray-50 {
+            background-color: #f9fafb;
+        }
+
+        .bg-gray-100 {
+            background-color: #f3f4f6;
+        }
+
+        .bg-white {
+            background-color: #ffffff;
+        }
+
+        .hover\:bg-red-50:hover {
+            background-color: #fef2f2;
+        }
+
+        .hover\:text-red-700:hover {
+            color: #b91c1c;
+        }
+
+        .text-xs {
+            font-size: 0.75rem;
+        }
+
+        .text-sm {
+            font-size: 0.875rem;
+        }
+
+        .text-lg {
+            font-size: 1.125rem;
+        }
+
+        .text-xl {
+            font-size: 1.25rem;
+        }
+
+        .text-2xl {
+            font-size: 1.5rem;
+        }
+
+        .text-3xl {
+            font-size: 1.875rem;
+        }
+
+        .cursor-not-allowed {
+            cursor: not-allowed;
+        }
+
+        /* Column spans for responsive grid */
+        .col-span-full {
+            grid-column: 1 / -1;
+        }
+
+        @media (min-width: 768px) {
+            .md\:col-span-1 {
+                grid-column: span 1 / span 1;
+            }
+            
+            .md\:col-span-2 {
+                grid-column: span 2 / span 2;
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-6 no-print">
+    <!-- Header -->
+    <div class="invoice-header text-center">
+        <h1 class="text-3xl font-bold mb-2">Create Invoice</h1>
+        <p class="text-blue-100">Generate professional quotes and invoices for your customers</p>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mb-4">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
+                        {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                        {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                        {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                        {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                        {% endif %}
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Back Button -->
+    <div class="mb-4">
+        <a href="{{ url_for('invoices') }}" class="btn btn-secondary">
+            <span class="mr-2">←</span> Back to Invoices
+        </a>
+    </div>
+
+    <form id="invoiceForm" method="POST" action="{{ url_for('create_invoice') }}" class="space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <!-- Customer Information -->
+        <div class="form-section">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Customer Information</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="form-group">
+                    <label for="customer_name" class="block text-sm font-medium text-gray-700 mb-1">
+                        Customer Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="customer_name" name="customer_name" required
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                           placeholder="Enter customer name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="customer_phone" class="block text-sm font-medium text-gray-700 mb-1">
+                        Customer Phone
+                    </label>
+                    <input type="tel" id="customer_phone" name="customer_phone"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                           placeholder="Enter customer phone">
+                </div>
+            </div>
+            
+            <div class="form-group mt-4">
+                <label for="customer_address" class="block text-sm font-medium text-gray-700 mb-1">
+                    Customer Address
+                </label>
+                <textarea id="customer_address" name="customer_address" rows="3"
+                          class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                          placeholder="Enter customer address"></textarea>
+            </div>
+        </div>
+
+        <!-- Invoice Details -->
+        <div class="form-section">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Invoice Details</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="form-group">
+                    <label for="valid_until" class="block text-sm font-medium text-gray-700 mb-1">
+                        Quote Valid Until
+                    </label>
+                    <input type="date" id="valid_until" name="valid_until"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                           min="{{ today }}">
+                </div>
+                
+                <div class="form-group">
+                    <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">
+                        Notes
+                    </label>
+                    <textarea id="notes" name="notes" rows="2"
+                              class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                              placeholder="Additional notes or terms"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Find Product Section -->
+        <div class="form-section">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Find Product</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div class="form-group">
+                    <button type="button" id="scan-barcode-btn" class="btn btn-info w-full">
+                        <i class="fas fa-barcode mr-2"></i> Scan Barcode
+                    </button>
+                </div>
+                <div class="form-group">
+                    <input type="text" id="barcode-input" 
+                           class="form-input w-full p-2 rounded-md border-gray-300"
+                           placeholder="Enter barcode manually">
+                </div>
+                <div class="form-group">
+                    <button type="button" id="add-product-btn" class="btn btn-success w-full">
+                        <i class="fas fa-plus mr-2"></i> Add
+                    </button>
+                </div>
+                <div class="form-group">
+                    <button type="button" id="test-api-btn" class="btn btn-warning w-full">
+                        <i class="fas fa-bug mr-2"></i> Test API
+                    </button>
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="flex">
+                    <input type="text" id="product-search-input" 
+                           class="form-input flex-1 p-2 rounded-l-md border-gray-300"
+                           placeholder="Search by product name, category, or batch number">
+                    <button type="button" id="search-product-btn" class="btn btn-primary rounded-l-none">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Items to Invoice -->
+        <div class="form-section">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Items to Invoice</h3>
+            
+            <div id="invoice-items-container" class="space-y-4">
+            </div>
+            
+            <div class="mt-4">
+                <button type="button" id="add-another-item-btn" class="btn btn-success">
+                    <i class="fas fa-plus mr-2"></i> Add Another Item
+                </button>
+            </div>
+        </div>
+
+        <!-- Total -->
+        <div class="grand-total-section text-center">
+            <h3 class="text-2xl font-bold">Total Amount: GH₵<span id="grand-total">0.00</span></h3>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex justify-end space-x-4">
+            <a href="{{ url_for('invoices') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+            <button type="submit" class="btn btn-success">
+                <i class="fas fa-file-invoice mr-2"></i> Create Invoice
+            </button>
+        </div>
+
+        <input type="hidden" name="invoice_items_json" id="invoice-items-json">
+    </form>
+</div>
+
+<script>
+    let inventoryItems = [];
+    const businessType = "{{ business_type }}";
+    const invoiceItemsContainer = document.getElementById('invoice-items-container');
+    const addAnotherItemBtn = document.getElementById('add-another-item-btn');
+    const grandTotalSpan = document.getElementById('grand-total');
+    const invoiceItemsJsonInput = document.getElementById('invoice-items-json');
+    const invoiceForm = document.getElementById('invoiceForm');
+    const productSearchInput = document.getElementById('product-search-input');
+    const searchProductBtn = document.getElementById('search-product-btn');
+    const barcodeInput = document.getElementById('barcode-input');
+    const addProductBtn = document.getElementById('add-product-btn');
+    const testApiBtn = document.getElementById('test-api-btn');
+
+    let invoiceItems = [];
+
+    // Searchable Dropdown Component
+    class SearchableDropdown {
+        constructor(container, options = {}) {
+            this.container = container;
+            this.options = options;
+            this.isOpen = false;
+            this.selectedOption = null;
+            this.filteredOptions = [];
+            this.highlightedIndex = -1;
+            
+            this.createDropdown();
+            this.bindEvents();
+        }
+        
+        createDropdown() {
+            this.container.innerHTML = `
+                <div class="searchable-dropdown-input" tabindex="0">
+                    <span class="searchable-dropdown-placeholder">Select a Product</span>
+                    <i class="fas fa-chevron-down searchable-dropdown-arrow"></i>
+                </div>
+                <div class="searchable-dropdown-list">
+                    <input type="text" class="searchable-dropdown-search" placeholder="Search products..." />
+                    <div class="searchable-dropdown-options"></div>
+                </div>
+            `;
+            
+            this.inputElement = this.container.querySelector('.searchable-dropdown-input');
+            this.placeholderElement = this.container.querySelector('.searchable-dropdown-placeholder');
+            this.arrowElement = this.container.querySelector('.searchable-dropdown-arrow');
+            this.listElement = this.container.querySelector('.searchable-dropdown-list');
+            this.searchElement = this.container.querySelector('.searchable-dropdown-search');
+            this.optionsContainer = this.container.querySelector('.searchable-dropdown-options');
+        }
+        
+        bindEvents() {
+            // Toggle dropdown on click
+            this.inputElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggle();
+            });
+            
+            // Handle search input
+            this.searchElement.addEventListener('input', (e) => {
+                this.filterOptions(e.target.value);
+            });
+            
+            // Handle keyboard navigation
+            this.searchElement.addEventListener('keydown', (e) => {
+                this.handleKeyDown(e);
+            });
+            
+            this.inputElement.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.toggle();
+                }
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!this.container.contains(e.target)) {
+                    this.close();
+                }
+            });
+        }
+        
+        setOptions(options) {
+            this.allOptions = options;
+            this.filteredOptions = [...options];
+            this.renderOptions();
+        }
+        
+        filterOptions(searchTerm) {
+            const term = searchTerm.toLowerCase();
+            this.filteredOptions = this.allOptions.filter(option => 
+                option.text.toLowerCase().includes(term) ||
+                option.productName.toLowerCase().includes(term)
+            );
+            this.highlightedIndex = -1;
+            this.renderOptions();
+        }
+        
+        renderOptions() {
+            if (this.filteredOptions.length === 0) {
+                this.optionsContainer.innerHTML = '<div class="no-results">No products found</div>';
+                return;
+            }
+            
+            this.optionsContainer.innerHTML = this.filteredOptions.map((option, index) => `
+                <div class="searchable-dropdown-option" data-value="${option.value}" data-index="${index}">
+                    ${option.text}
+                </div>
+            `).join('');
+            
+            // Bind option click events
+            this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((optionEl, index) => {
+                optionEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.selectOption(index);
+                });
+            });
+        }
+        
+        handleKeyDown(e) {
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    this.highlightNext();
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    this.highlightPrevious();
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    if (this.highlightedIndex >= 0) {
+                        this.selectOption(this.highlightedIndex);
+                    }
+                    break;
+                case 'Escape':
+                    this.close();
+                    break;
+            }
+        }
+        
+        highlightNext() {
+            this.highlightedIndex = Math.min(this.highlightedIndex + 1, this.filteredOptions.length - 1);
+            this.updateHighlight();
+        }
+        
+        highlightPrevious() {
+            this.highlightedIndex = Math.max(this.highlightedIndex - 1, 0);
+            this.updateHighlight();
+        }
+        
+        updateHighlight() {
+            this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((el, index) => {
+                el.classList.toggle('highlighted', index === this.highlightedIndex);
+            });
+            
+            // Scroll highlighted option into view
+            if (this.highlightedIndex >= 0) {
+                const highlightedEl = this.optionsContainer.querySelector('.highlighted');
+                if (highlightedEl) {
+                    highlightedEl.scrollIntoView({ block: 'nearest' });
+                }
+            }
+        }
+        
+        selectOption(index) {
+            if (index < 0 || index >= this.filteredOptions.length) return;
+            
+            const option = this.filteredOptions[index];
+            this.selectedOption = option;
+            this.placeholderElement.textContent = option.productName;
+            this.placeholderElement.classList.remove('searchable-dropdown-placeholder');
+            
+            // Mark selected in options
+            this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((el, i) => {
+                el.classList.toggle('selected', i === index);
+            });
+            
+            this.close();
+            
+            // Trigger change event
+            if (this.options.onChange) {
+                this.options.onChange(option);
+            }
+        }
+        
+        getValue() {
+            return this.selectedOption ? this.selectedOption.value : '';
+        }
+        
+        getSelectedOption() {
+            return this.selectedOption;
+        }
+        
+        setValue(value) {
+            const option = this.allOptions.find(opt => opt.value === value);
+            if (option) {
+                const index = this.filteredOptions.findIndex(opt => opt.value === value);
+                if (index >= 0) {
+                    this.selectOption(index);
+                }
+            }
+        }
+        
+        reset() {
+            this.selectedOption = null;
+            this.placeholderElement.textContent = 'Select a Product';
+            this.placeholderElement.classList.add('searchable-dropdown-placeholder');
+            this.searchElement.value = '';
+            this.filterOptions('');
+            this.close();
+        }
+        
+        toggle() {
+            if (this.isOpen) {
+                this.close();
+            } else {
+                this.open();
+            }
+        }
+        
+        open() {
+            this.isOpen = true;
+            this.listElement.classList.add('open');
+            this.arrowElement.classList.add('open');
+            this.searchElement.focus();
+            this.filterOptions('');
+        }
+        
+        close() {
+            this.isOpen = false;
+            this.listElement.classList.remove('open');
+            this.arrowElement.classList.remove('open');
+            this.highlightedIndex = -1;
+            this.searchElement.value = '';
+        }
+    }
+
+    function flashMessage(message, category) {
+        const existingAlerts = document.querySelectorAll('.alert.dynamic-alert');
+        existingAlerts.forEach(alert => alert.remove());
+
+        const alertContainer = document.querySelector('form').previousElementSibling;
+        if (alertContainer && alertContainer.classList.contains('mb-4')) {
+            const alertDiv = document.createElement('div');
+            alertDiv.classList.add('alert', `alert-${category}`, 'rounded-lg', 'p-4', 'mb-3', 'shadow-md', 'dynamic-alert');
+            let iconHtml = '';
+            if (category === 'success') iconHtml = '<i class="fas fa-check-circle"></i>';
+            else if (category === 'danger') iconHtml = '<i class="fas fa-times-circle"></i>';
+            else if (category === 'warning') iconHtml = '<i class="fas fa-exclamation-triangle"></i>';
+            else if (category === 'info') iconHtml = '<i class="fas fa-info-circle"></i>';
+            alertDiv.innerHTML = `${iconHtml} ${message}`;
+            alertContainer.prepend(alertDiv);
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
+    }
+
+    function createItemRow(itemData = {}) {
+        const row = document.createElement('div');
+        row.className = 'item-row grid grid-cols-1 md:grid-cols-5 gap-4 bg-gray-50 p-4 rounded-md shadow-sm border border-gray-200 relative';
+        row.innerHTML = `
+            <div class="form-group col-span-full md:col-span-2">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Product</label>
+                <div class="searchable-dropdown"></div>
+            </div>
+            <div class="form-group">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Unit Type</label>
+                <select class="unit-type-select form-input w-full p-2 rounded-md border-gray-300">
+                    <option value="pack">Pack</option>
+                    <option value="piece">${businessType === 'Pharmacy' ? 'Tab' : 'Piece'}</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
+                <input type="number" step="any" min="0" class="quantity-input form-input w-full p-2 rounded-md border-gray-300" value="1">
+            </div>
+            <div class="form-group">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH₵)</label>
+                <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
+            </div>
+            <div class="form-group col-span-full md:col-span-1 flex items-end justify-between">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Item Total (GH₵)</label>
+                    <input type="text" class="item-total-display form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
+                </div>
+                <button type="button" class="remove-item-btn text-red-500 hover:text-red-700 focus:outline-none p-2 rounded-full hover:bg-red-50">
+                    <i class="fas fa-times-circle text-xl"></i>
+                </button>
+            </div>
+        `;
+
+        const dropdownContainer = row.querySelector('.searchable-dropdown');
+        const unitTypeSelect = row.querySelector('.unit-type-select');
+        const quantityInput = row.querySelector('.quantity-input');
+        const unitPriceInput = row.querySelector('.unit-price-input');
+        const itemTotalDisplay = row.querySelector('.item-total-display');
+        const removeItemBtn = row.querySelector('.remove-item-btn');
+
+        // Create searchable dropdown
+        const productDropdown = new SearchableDropdown(dropdownContainer, {
+            onChange: (selectedOption) => {
+                updateRowCalculations();
+            }
+        });
+
+        // Populate dropdown options
+        const dropdownOptions = inventoryItems
+            .filter(item => !item.product_name.startsWith('Serialization Error'))
+            .map(item => {
+                const currentStock = parseFloat(item.current_stock) || 0;
+                const salePrice = parseFloat(item.sale_price) || 0;
+                const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
+                const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+                
+                return {
+                    value: item.id,
+                    text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GHS${salePrice.toFixed(2)} / GHS${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
+                    productName: item.product_name,
+                    salePrice: salePrice,
+                    currentStock: currentStock,
+                    numberOfTabs: parseFloat(item.number_of_tabs) || 1,
+                    unitPricePerTab: unitPricePerTab,
+                    isFixedPrice: item.is_fixed_price,
+                    fixedSalePrice: parseFloat(item.fixed_sale_price) || 0,
+                    barcode: item.barcode || '',
+                    itemType: item.item_type || '',
+                    purchasePrice: parseFloat(item.purchase_price) || 0,
+                    markupPercentagePharmacy: parseFloat(item.markup_percentage_pharmacy) || 0
+                };
+            });
+        
+        productDropdown.setOptions(dropdownOptions);
+
+        const updateRowCalculations = () => {
+            const selectedOption = productDropdown.getSelectedOption();
+            if (!selectedOption) {
+                unitPriceInput.value = '0.00';
+                unitPriceInput.readOnly = true;
+                itemTotalDisplay.value = '0.00';
+                updateGrandTotal();
+                return;
+            }
+
+            const productId = selectedOption.value;
+            const product = inventoryItems.find(item => item.id == productId);
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const unitType = unitTypeSelect.value;
+
+            if (!product || isNaN(quantity) || quantity <= 0) {
+                unitPriceInput.value = '0.00';
+                itemTotalDisplay.value = '0.00';
+                updateGrandTotal();
+                return;
+            }
+
+            let price = 0;
+            const fixedSalePrice = parseFloat(product.fixed_sale_price || 0);
+            const numberOfTabs = parseFloat(product.number_of_tabs || 1);
+            const regularSalePrice = parseFloat(product.sale_price || 0);
+            const unitPricePerTab = parseFloat(product.unit_price_per_tab || 0);
+            const purchasePrice = parseFloat(product.purchase_price || 0);
+            const markupPercentagePharmacy = parseFloat(product.markup_percentage_pharmacy) || 0;
+
+            if (selectedOption.isFixedPrice === 'true') {
+                unitPriceInput.readOnly = true;
+                if (unitType === 'pack') {
+                    price = fixedSalePrice;
+                } else {
+                    price = fixedSalePrice / numberOfTabs;
+                }
+            } else {
+                unitPriceInput.readOnly = false;
+                if (product.item_type === 'Pharmacy') {
+                    price = purchasePrice * (1 + (markupPercentagePharmacy / 100));
+                } else {
+                    if (unitType === 'pack') {
+                        price = regularSalePrice;
+                    } else {
+                        price = unitPricePerTab;
+                    }
+                }
+            }
+            
+            if (unitType !== 'pack' && parseFloat(product.unit_price_per_tab || 0) > 0) {
+                price = parseFloat(product.unit_price_per_tab);
+            }
+
+            unitPriceInput.value = price.toFixed(2);
+            itemTotalDisplay.value = (price * quantity).toFixed(2);
+
+            let effectiveStock = parseFloat(product.current_stock) || 0;
+            let requestedEffectiveQuantity = quantity;
+
+            if (unitType === 'pack') {
+                requestedEffectiveQuantity = quantity * numberOfTabs;
+            }
+
+            if (requestedEffectiveQuantity > effectiveStock) {
+                quantityInput.classList.add('border-red-500');
+                flashMessage(`Insufficient stock for ${product.product_name}. Available: ${effectiveStock.toFixed(2)} units.`, 'warning');
+            } else {
+                quantityInput.classList.remove('border-red-500');
+            }
+            updateGrandTotal();
+        };
+
+        unitTypeSelect.addEventListener('change', updateRowCalculations);
+        quantityInput.addEventListener('input', updateRowCalculations);
+        unitPriceInput.addEventListener('input', updateRowCalculations);
+
+        removeItemBtn.addEventListener('click', () => {
+            row.remove();
+            updateGrandTotal();
+        });
+
+        if (Object.keys(itemData).length > 0) {
+            const productToPopulate = inventoryItems.find(item => item.id == itemData.product_id);
+            if (productToPopulate) {
+                productDropdown.setValue(itemData.product_id);
+                unitTypeSelect.value = itemData.unit_type || 'pack';
+                quantityInput.value = itemData.quantity || 1;
+                unitPriceInput.value = parseFloat(itemData.unit_price || 0).toFixed(2);
+                itemTotalDisplay.value = parseFloat(itemData.item_total || 0).toFixed(2);
+            }
+            updateRowCalculations();
+        } else {
+            unitPriceInput.readOnly = true;
+        }
+
+        // Store reference to dropdown for external access
+        row.productDropdown = productDropdown;
+        
+        return row;
+    }
+
+    function updateGrandTotal() {
+        let total = 0;
+        const itemRows = invoiceItemsContainer.querySelectorAll('.item-row');
+        invoiceItems = [];
+
+        itemRows.forEach(row => {
+            const productDropdown = row.productDropdown;
+            const quantityInput = row.querySelector('.quantity-input');
+            const unitPriceInput = row.querySelector('.unit-price-input');
+            const itemTotalDisplay = row.querySelector('.item-total-display');
+            const unitTypeSelect = row.querySelector('.unit-type-select');
+
+            const selectedOption = productDropdown.getSelectedOption();
+            const productId = selectedOption ? selectedOption.value : '';
+            const productName = selectedOption ? selectedOption.productName : '';
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const unitPrice = parseFloat(unitPriceInput.value) || 0;
+            const itemTotal = parseFloat(itemTotalDisplay.value) || 0;
+            const unitType = unitTypeSelect.value;
+
+            if (productId && quantity > 0 && unitPrice >= 0) {
+                total += itemTotal;
+                invoiceItems.push({
+                    product_id: productId,
+                    product_name: productName,
+                    quantity: quantity,
+                    unit_type: unitType,
+                    unit_price: unitPrice,
+                    item_total_amount: itemTotal
+                });
+            }
+        });
+        grandTotalSpan.textContent = total.toFixed(2);
+        invoiceItemsJsonInput.value = JSON.stringify(invoiceItems);
+    }
+
+    // Test API function
+    function testInventoryAPI() {
+        fetch('/api/inventory-items', {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+            }
+        })
+        .then(response => {
+            console.log('API Response Status:', response.status);
+            return response.json();
+        })
+        .then(data => {
+            console.log('API Response Data:', data);
+            if (data.success) {
+                flashMessage(`API working! Found ${data.items.length} products.`, 'success');
+            } else {
+                flashMessage('API returned error: ' + data.message, 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('API Test Error:', error);
+            flashMessage('API test failed: ' + error.message, 'danger');
+        });
+    }
+
+    // Event listeners
+    addAnotherItemBtn.addEventListener('click', () => {
+        invoiceItemsContainer.appendChild(createItemRow());
+        updateGrandTotal();
+    });
+
+    testApiBtn.addEventListener('click', testInventoryAPI);
+
+    // Load products on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Page loaded, starting initialization...');
+        
+        // Always add an initial item row first, regardless of API status
+        console.log('Creating initial item row...');
+        try {
+            const initialRow = createItemRow();
+            invoiceItemsContainer.appendChild(initialRow);
+            console.log('Initial item row created and added successfully');
+            updateGrandTotal();
+        } catch (error) {
+            console.error('Error creating initial item row:', error);
+            // Fallback: create a basic row
+            const fallbackRow = document.createElement('div');
+            fallbackRow.className = 'item-row p-4 bg-gray-50 border rounded-md';
+            fallbackRow.innerHTML = '<p class="text-red-500">Error loading item form. Please refresh the page.</p>';
+            invoiceItemsContainer.appendChild(fallbackRow);
+        }
+        
+        // Then try to load products from API
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        
+        console.log('Loading products from API...');
+        
+        fetch('/api/inventory-items', {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': csrfToken
+            }
+        })
+        .then(response => {
+            console.log('API Response Status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('API Response Data:', data);
+            if (data.success && data.items) {
+                inventoryItems = data.items;
+                console.log(`Loaded ${inventoryItems.length} products`);
+                
+                // Update existing dropdowns with the loaded data
+                const existingRows = document.querySelectorAll('.item-row');
+                existingRows.forEach(row => {
+                    if (row.productDropdown) {
+                        const dropdownOptions = inventoryItems
+                            .filter(item => !item.product_name.startsWith('Serialization Error'))
+                            .map(item => {
+                                const currentStock = parseFloat(item.current_stock) || 0;
+                                const salePrice = parseFloat(item.sale_price) || 0;
+                                const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
+                                const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
+                                
+                                return {
+                                    value: item.id,
+                                    text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GHS${salePrice.toFixed(2)} / GHS${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
+                                    productName: item.product_name,
+                                    salePrice: salePrice,
+                                    currentStock: currentStock,
+                                    numberOfTabs: parseFloat(item.number_of_tabs) || 1,
+                                    unitPricePerTab: unitPricePerTab,
+                                    isFixedPrice: item.is_fixed_price,
+                                    fixedSalePrice: parseFloat(item.fixed_sale_price) || 0,
+                                    barcode: item.barcode || '',
+                                    itemType: item.item_type || '',
+                                    purchasePrice: parseFloat(item.purchase_price) || 0,
+                                    markupPercentagePharmacy: parseFloat(item.markup_percentage_pharmacy) || 0
+                                };
+                            });
+                        
+                        row.productDropdown.setOptions(dropdownOptions);
+                        console.log(`Updated dropdown for row with ${dropdownOptions.length} options`);
+                    }
+                });
+                
+                flashMessage(`Successfully loaded ${inventoryItems.length} products.`, 'success');
+            } else {
+                throw new Error(data.message || 'Failed to load product list');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading products:', error);
+            flashMessage('Error loading product list: ' + error.message + ' - You can still create invoices with manual entry.', 'warning');
+        });
+    });
+
+    // Form submission
+    invoiceForm.addEventListener('submit', function(event) {
+        updateGrandTotal();
+        
+        if (invoiceItems.length === 0 || invoiceItems.some(item => item.quantity <= 0 || item.product_id === '')) {
+            event.preventDefault();
+            flashMessage('Please add at least one valid item with a quantity greater than zero.', 'danger');
+            return;
+        }
+    });
+</script>
+{% endblock %}

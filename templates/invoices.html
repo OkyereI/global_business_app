@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+
+{% block head %}
+    {{ super() }}
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/offline-styles.css') }}">
+    <style>
+        /* Custom styles for invoices */
+        .invoice-card {
+            transition: all 0.2s ease;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .invoice-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .status-draft { background-color: #f3f4f6; color: #374151; }
+        .status-sent { background-color: #dbeafe; color: #1e40af; }
+        .status-accepted { background-color: #d4edda; color: #155724; }
+        .status-expired { background-color: #f8d7da; color: #721c24; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="container mx-auto p-6">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Invoices</h1>
+                <p class="text-gray-600">Manage customer quotes and invoices</p>
+            </div>
+            <a href="{{ url_for('create_invoice') }}" class="btn btn-primary">
+                <i class="fas fa-plus mr-2"></i> Create Invoice
+            </a>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} rounded-lg p-4 mb-3 shadow-md">
+                            {% if category == 'success' %}<i class="fas fa-check-circle"></i>
+                            {% elif category == 'danger' %}<i class="fas fa-times-circle"></i>
+                            {% elif category == 'warning' %}<i class="fas fa-exclamation-triangle"></i>
+                            {% elif category == 'info' %}<i class="fas fa-info-circle"></i>
+                            {% endif %}
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Search and Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <!-- Search -->
+            <div class="md:col-span-2">
+                <form method="GET" class="flex">
+                    <input type="text" name="search" value="{{ search_query or '' }}" 
+                           placeholder="Search by invoice number, customer name, or phone..."
+                           class="form-input flex-1 rounded-l-md border-gray-300 shadow-sm">
+                    <button type="submit" class="btn btn-primary rounded-l-none">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Stats -->
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold text-blue-800">Total Invoice Value</h3>
+                <p class="text-2xl font-bold text-blue-600">GH₵{{ "%.2f"|format(total_invoice_value) }}</p>
+            </div>
+        </div>
+
+        <!-- Invoices List -->
+        {% if invoices %}
+            <div class="grid grid-cols-1 gap-4">
+                {% for invoice in invoices %}
+                    <div class="invoice-card bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-4 mb-3">
+                                    <h3 class="text-lg font-semibold text-gray-800">
+                                        {{ invoice.invoice_number }}
+                                    </h3>
+                                    <span class="status-badge status-{{ invoice.status }}">
+                                        {{ invoice.status }}
+                                    </span>
+                                </div>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-gray-600">
+                                    <div>
+                                        <span class="font-medium text-gray-700">Customer:</span><br>
+                                        {{ invoice.customer_name }}
+                                        {% if invoice.customer_phone %}
+                                            <br><span class="text-xs">{{ invoice.customer_phone }}</span>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div>
+                                        <span class="font-medium text-gray-700">Amount:</span><br>
+                                        <span class="text-lg font-bold text-green-600">GH₵{{ "%.2f"|format(invoice.total_amount) }}</span>
+                                    </div>
+                                    
+                                    <div>
+                                        <span class="font-medium text-gray-700">Created:</span><br>
+                                        {{ invoice.created_at.strftime('%Y-%m-%d %H:%M') }}<br>
+                                        <span class="text-xs">by {{ invoice.created_by }}</span>
+                                    </div>
+                                    
+                                    <div>
+                                        {% if invoice.valid_until %}
+                                            <span class="font-medium text-gray-700">Valid Until:</span><br>
+                                            {{ invoice.valid_until.strftime('%Y-%m-%d') }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                
+                                {% if invoice.notes %}
+                                    <div class="mt-3 p-3 bg-gray-50 rounded-md">
+                                        <span class="font-medium text-gray-700">Notes:</span>
+                                        <p class="text-sm text-gray-600 mt-1">{{ invoice.notes }}</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Actions -->
+                            <div class="flex flex-col gap-2 ml-4">
+                                <a href="{{ url_for('view_invoice', invoice_id=invoice.id) }}" 
+                                   class="btn btn-primary text-xs px-3 py-1">
+                                    <i class="fas fa-eye mr-1"></i> View
+                                </a>
+                                
+                                <a href="{{ url_for('print_invoice', invoice_id=invoice.id) }}" 
+                                   class="btn btn-secondary text-xs px-3 py-1">
+                                    <i class="fas fa-print mr-1"></i> Print
+                                </a>
+                                
+                                {% if session.role in ['admin', 'sales'] %}
+                                    <form method="POST" action="{{ url_for('delete_invoice', invoice_id=invoice.id) }}" 
+                                          onsubmit="return confirm('Are you sure you want to delete this invoice?')" class="inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                        <button type="submit" class="btn btn-danger text-xs px-3 py-1 w-full">
+                                            <i class="fas fa-trash mr-1"></i> Delete
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-12">
+                <div class="max-w-md mx-auto">
+                    <div class="mb-4">
+                        <i class="fas fa-file-invoice text-gray-300 text-6xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold text-gray-600 mb-2">No Invoices Found</h3>
+                    <p class="text-gray-500 mb-6">
+                        {% if search_query %}
+                            No invoices match your search criteria. Try adjusting your search terms.
+                        {% else %}
+                            You haven't created any invoices yet. Create your first invoice to get started.
+                        {% endif %}
+                    </p>
+                    <a href="{{ url_for('create_invoice') }}" class="btn btn-primary">
+                        <i class="fas fa-plus mr-2"></i> Create Your First Invoice
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

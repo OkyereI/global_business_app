@@ -299,7 +299,69 @@
                                         <i class="fas fa-cash-register mr-2"></i> Record New Sale
                                     </a>
                                 </div>
+
                                 {% endif %}
+                                <div class="col-lg-6 mb-4">
+    <div class="card p-3">
+        <h3 class="h5 font-weight-semibold text-dark mb-3">
+            <i class="fas fa-file-invoice-dollar mr-2"></i>Invoice Management
+        </h3>
+        
+        <!-- Quick Invoice Stats -->
+        <div class="row mb-3">
+            <div class="col-sm-6">
+                <div class="p-2 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-warning">Pending Invoices:</p>
+                    <p class="h5 font-weight-bold text-warning">{{ pending_invoices_count or 0 }}</p>
+                </div>
+            </div>
+            <div class="col-sm-6">
+                <div class="p-2 rounded shadow-sm text-center bg-light">
+                    <p class="small font-weight-medium text-success">This Month:</p>
+                    <p class="h5 font-weight-bold text-success">GH₵{{ "%.2f" | format(monthly_invoice_total or 0) }}</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Invoice Actions -->
+        <div class="row no-gutters">
+            {% if user_role in ['admin', 'sales'] %}
+            <div class="col-sm-6 p-2">
+                <a href="{{ url_for('create_invoice') }}" class="btn btn-primary d-flex align-items-center justify-content-center p-3">
+                    <i class="fas fa-plus mr-2"></i> Create Invoice
+                </a>
+            </div>
+            {% endif %}
+            <div class="col-sm-6 p-2">
+                <a href="{{ url_for('invoices') }}" class="btn btn-secondary d-flex align-items-center justify-content-center p-3">
+                    <i class="fas fa-list mr-2"></i> View All
+                </a>
+            </div>
+        </div>
+        
+        <!-- Recent Invoices Preview -->
+        {% if recent_invoices %}
+        <hr class="my-3">
+        <h6 class="font-weight-semibold text-dark mb-2">Recent Invoices:</h6>
+        <div class="list-group list-group-flush">
+            {% for invoice in recent_invoices[:3] %}
+            <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                <div>
+                    <strong>{{ invoice.invoice_number }}</strong><br>
+                    <small class="text-muted">{{ invoice.customer_name }}</small>
+                </div>
+                <div class="text-right">
+                    <div class="font-weight-bold">GH₵{{ "%.2f" | format(invoice.total_amount) }}</div>
+                    <small class="badge badge-{{'success' if invoice.payment_status == 'Paid' else 'warning' if invoice.payment_status == 'Partial' else 'secondary'}}">
+                        {{ invoice.payment_status }}
+                    </small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
                                 <div class="col-sm-6 p-2">
                                     <a href="{{ url_for('inventory') }}" class="btn btn-secondary d-flex align-items-center justify-content-center p-3">
                                         <i class="fas fa-boxes mr-2"></i> View Inventory
@@ -320,7 +382,7 @@
                             </div>
                         </div>
                     </div>
-
+                    
                     {# Business Overview Card #}
                     <div class="col-lg-6 mb-4">
                         <div class="card p-3">

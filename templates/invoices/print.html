@@ -1,0 +1,368 @@
+<!-- templates/invoices/print.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice {{ invoice.invoice_number }} - {{business.name}}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .invoice-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+        }
+        
+        .invoice-header {
+            border-bottom: 3px solid #333;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .company-info {
+            float: left;
+            width: 50%;
+        }
+        
+        .invoice-info {
+            float: right;
+            width: 45%;
+            text-align: right;
+        }
+        
+        .invoice-title {
+            font-size: 36px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .company-name {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .clearfix::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+        
+        .customer-info {
+            margin-bottom: 30px;
+        }
+        
+        .bill-to {
+            float: left;
+            width: 50%;
+        }
+        
+        .payment-info {
+            float: right;
+            width: 45%;
+            text-align: right;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        
+        .items-table th,
+        .items-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        
+        .items-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .text-right {
+            text-align: right;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .totals-section {
+            float: right;
+            width: 300px;
+            margin-top: 20px;
+        }
+        
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .totals-table td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .total-row {
+            font-weight: bold;
+            font-size: 16px;
+            border-top: 2px solid #333 !important;
+        }
+        
+        .notes-section {
+            margin-top: 40px;
+            clear: both;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-paid {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-partial {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .status-unpaid {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .footer {
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            text-align: center;
+            color: #666;
+            font-size: 11px;
+        }
+        
+        @media print {
+            body {
+                margin: 0;
+                padding: 10px;
+                font-size: 11px;
+            }
+            
+            .invoice-container {
+                max-width: none;
+                width: 100%;
+            }
+            
+            /* Enhanced print styles for better readability */
+            body, table, th, td, div, p, span, h1, h2, h3, h4, h5, h6 {
+                color: #000 !important;
+                font-weight: 600 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            .items-table th {
+                font-weight: 900 !important;
+                background-color: #f0f0f0 !important;
+            }
+            
+            .company-name, .invoice-title {
+                font-weight: 900 !important;
+            }
+            
+            .total-row {
+                font-weight: 900 !important;
+                font-size: 14px !important;
+            }
+            
+            .items-table, .items-table th, .items-table td, .totals-table td {
+                border: 2px solid #000 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice-container">
+        <!-- Invoice Header -->
+        <div class="invoice-header clearfix">
+            <div class="company-info">
+                <div class="company-name">{{ business.name }}</div>
+                <div>{{ business.type }}</div>
+                {% if business.address %}<div>{{ business.address }}</div>{% endif %}
+                {% if business.location %}<div>{{ business.location }}</div>{% endif %}
+                {% if business.contact %}<div>Phone: {{ business.contact }}</div>{% endif %}
+                {% if business.email %}<div>Email: {{ business.email }}</div>{% endif %}
+            </div>
+            <div class="invoice-info">
+                <div class="invoice-title">INVOICE</div>
+                <div><strong>Invoice #:</strong> {{ invoice.invoice_number }}</div>
+                <div><strong>Date:</strong> {{ invoice.invoice_date.strftime('%d/%m/%Y') }}</div>
+                {% if invoice.due_date %}
+                <div><strong>Due Date:</strong> {{ invoice.due_date.strftime('%d/%m/%Y') }}</div>
+                {% endif %}
+                <div style="margin-top: 10px;">
+                    <span class="status-badge status-{{'paid' if invoice.payment_status == 'Paid' else 'partial' if invoice.payment_status == 'Partial' else 'unpaid'}}">
+                        {{ invoice.payment_status }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Information -->
+        <div class="customer-info clearfix">
+            <div class="bill-to">
+                <div class="info-label">BILL TO:</div>
+                <div><strong>{{ invoice.customer_name }}</strong></div>
+                {% if invoice.customer_phone %}<div>{{ invoice.customer_phone }}</div>{% endif %}
+                {% if invoice.customer_email %}<div>{{ invoice.customer_email }}</div>{% endif %}
+                {% if invoice.customer_address %}
+                <div>{{ invoice.customer_address | replace('\n', '<br>') | safe }}</div>
+                {% endif %}
+            </div>
+            <div class="payment-info">
+                <div class="info-label">PAYMENT DETAILS:</div>
+                <div><strong>Total Amount:</strong> GH₵{{ "%.2f" | format(invoice.total_amount) }}</div>
+                {% if invoice.payments %}
+                <div><strong>Amount Paid:</strong> GH₵{{ "%.2f" | format(invoice.payments | sum(attribute='amount_paid')) }}</div>
+                <div><strong>Balance Due:</strong> GH₵{{ "%.2f" | format(invoice.total_amount - (invoice.payments | sum(attribute='amount_paid') or 0)) }}</div>
+                {% else %}
+                <div><strong>Amount Due:</strong> GH₵{{ "%.2f" | format(invoice.total_amount) }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Invoice Items -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 30%;">Item</th>
+                    <th style="width: 35%;">Description</th>
+                    <th style="width: 10%;" class="text-center">Qty</th>
+                    <th style="width: 12.5%;" class="text-right">Unit Price</th>
+                    <th style="width: 12.5%;" class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.get_items() %}
+                <tr>
+                    <td><strong>{{ item.product }}</strong></td>
+                    <td>{{ item.description or '-' }}</td>
+                    <td class="text-center">{{ item.quantity }}</td>
+                    <td class="text-right">GH₵{{ "%.2f" | format(item.unit_price) }}</td>
+                    <td class="text-right"><strong>GH₵{{ "%.2f" | format(item.total) }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Invoice Totals -->
+        <div class="totals-section">
+            <table class="totals-table">
+                <tr>
+                    <td class="text-right"><strong>Subtotal:</strong></td>
+                    <td class="text-right"><strong>GH₵{{ "%.2f" | format(invoice.subtotal) }}</strong></td>
+                </tr>
+                {% if invoice.discount_rate > 0 %}
+                <tr>
+                    <td class="text-right">Discount ({{ invoice.discount_rate }}%):</td>
+                    <td class="text-right">-GH₵{{ "%.2f" | format(invoice.discount_amount) }}</td>
+                </tr>
+                {% endif %}
+                {% if invoice.tax_rate > 0 %}
+                <tr>
+                    <td class="text-right">Tax ({{ invoice.tax_rate }}%):</td>
+                    <td class="text-right">GH₵{{ "%.2f" | format(invoice.tax_amount) }}</td>
+                </tr>
+                {% endif %}
+                <tr class="total-row">
+                    <td class="text-right">TOTAL:</td>
+                    <td class="text-right">GH₵{{ "%.2f" | format(invoice.total_amount) }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Notes and Terms -->
+        <div class="notes-section">
+            {% if invoice.notes %}
+            <div style="margin-bottom: 20px;">
+                <div class="info-label">NOTES:</div>
+                <div>{{ invoice.notes }}</div>
+            </div>
+            {% endif %}
+            
+            {% if invoice.terms_and_conditions %}
+            <div style="margin-bottom: 20px;">
+                <div class="info-label">TERMS AND CONDITIONS:</div>
+                <div style="font-size: 11px; color: #666;">{{ invoice.terms_and_conditions }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Payment History (if any) -->
+        {% if invoice.payments %}
+        <div style="margin-top: 30px; clear: both;">
+            <div class="info-label">PAYMENT HISTORY:</div>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Date</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Method</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Reference</th>
+                        <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in invoice.payments %}
+                    <tr>
+                        <td style="border: 1px solid #ddd; padding: 8px;">{{ payment.payment_date.strftime('%d/%m/%Y') }}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">{{ payment.payment_method }}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px;">{{ payment.reference_number or '-' }}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: right;"><strong>GH₵{{ "%.2f" | format(payment.amount_paid) }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <div class="footer">
+            <div>Thank you for your business!</div>
+            <div>Invoice generated on {{ invoice.created_at.strftime('%d/%m/%Y at %I:%M %p') }}</div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-print when page loads (optional)
+        // window.onload = function() { window.print(); }
+    </script>
+</body>
+</html>

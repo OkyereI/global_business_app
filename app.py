@@ -441,6 +441,59 @@ def create_app():
                 "batch_number": "N/A",
                 "is_active": False
             }
+    def serialize_hirable_item(item):
+        """
+        Serializes a HirableItem object to a dictionary for JSON conversion.
+        Uses getattr for robust attribute access and safe_convert for type handling.
+        """
+        try:
+            # Use getattr() for robust attribute access
+            _id = getattr(item, 'id', None)
+            _item_name = getattr(item, 'item_name', None)
+            _description = getattr(item, 'description', None)
+            _rental_price_per_day = getattr(item, 'rental_price_per_day', None)
+            _current_stock = getattr(item, 'current_stock', None)
+            _business_id = getattr(item, 'business_id', None)
+            _last_updated = getattr(item, 'last_updated', None)
+            _is_active = getattr(item, 'is_active', None)
+
+            # Handle dates more defensively
+            last_updated_iso = None
+            if isinstance(_last_updated, (datetime, date)):
+                last_updated_iso = _last_updated.isoformat()
+
+            return {
+                'id': safe_convert(_id, str, ''),
+                'item_name': safe_convert(_item_name, str, 'N/A'),
+                'description': safe_convert(_description, str, 'N/A'),
+                'rental_price_per_day': safe_convert(_rental_price_per_day, float, 0.0),
+                'daily_hire_price': safe_convert(_rental_price_per_day, float, 0.0),  # Backward compatibility
+                'current_stock': safe_convert(_current_stock, int, 0),
+                'business_id': safe_convert(_business_id, str, ''),
+                'last_updated': last_updated_iso,
+                'is_active': safe_convert(_is_active, bool, True)
+            }
+        except Exception as e:
+            # Log the specific exception for debugging
+            error_id = getattr(item, 'id', 'UNKNOWN_ID_ERROR')
+            error_item_name = getattr(item, 'item_name', 'UNKNOWN_ITEM_NAME_ERROR')
+            print(f"CRITICAL: HirableItem serialization failed for item '{error_item_name}' (ID: {error_id}). "
+                f"Exception Type: {e.__class__.__name__}, Message: {str(e)}")
+            
+            # Return a minimal, error-safe dictionary
+            return {
+                "id": "serialization_error_" + str(error_id)[:8],
+                "item_name": f"Serialization Error (ID: {str(error_id)[:8]})",
+                "description": "Error occurred during serialization",
+                "rental_price_per_day": 0.0,
+                "daily_hire_price": 0.0,
+                "current_stock": 0,
+                "business_id": "",
+                "last_updated": None,
+                "is_active": False
+            }
+
+
     def calculate_company_balance_details(company_id):
         """
         Calculates the balance, total debtors, and total creditors for a single company
@@ -1959,93 +2012,30 @@ def create_app():
                 logging.warning(f"Sale {sale_id} already exists. Conflict.")
                 return jsonify({"message": "Sale already exists"}), 409
 
-            # Create the sales record with offline data structure
             sale_record = SalesRecord(
                 id=sale_id,
                 business_id=data['business_id'],
-                transaction_date=datetime.fromisoformat(data['transaction_date']),
-                customer_phone=data.get('customer_phone'),
-                sales_person_name=data.get('sales_person_name'),
+                sales_person_id=data['sales_person_id'],
+                customer_id=data.get('customer_id'),
                 grand_total_amount=data['grand_total_amount'],
                 payment_method=data['payment_method'],
-                receipt_number=data.get('receipt_number'),
-                reference_number=data.get('reference_number'),
+                transaction_date=datetime.fromisoformat(data['transaction_date']),
                 synced_to_remote=True
             )
-            
-            # Process items and update inventory
-            items_sold = data.get('items', [])
-            inventory_updates = []
-            
-            logging.info(f"[SALES SYNC] Processing {len(items_sold)} items for sale {sale_id}, business_id: {data['business_id']}")
-            
-            for item_data in items_sold:
-                inventory_item_id = item_data.get('inventory_item_id')
-                quantity_sold = float(item_data.get('quantity_sold', 0))
-                sale_unit_type = item_data.get('sale_unit_type', 'pack')
-                product_name = item_data.get('product_name', 'Unknown')
-                
-                logging.info(f"[SALES SYNC] Processing item: {product_name}, inventory_item_id: {inventory_item_id}, quantity: {quantity_sold}, unit_type: {sale_unit_type}")
-                
-                if not inventory_item_id:
-                    logging.warning(f"[SALES SYNC] Skipping item with no inventory_item_id in sale {sale_id}")
-                    continue
-                
-                # Find the inventory item
-                inventory_item = InventoryItem.query.filter_by(
-                    id=inventory_item_id, 
-                    business_id=data['business_id']
-                ).first()
-                
-                if not inventory_item:
-                    logging.error(f"[SALES SYNC] Inventory item {inventory_item_id} not found for sale {sale_id} in business {data['business_id']}")
-                    # Let's also check if the item exists with any business_id
-                    any_business_item = InventoryItem.query.filter_by(id=inventory_item_id).first()
-                    if any_business_item:
-                        logging.error(f"[SALES SYNC] Item {inventory_item_id} exists but with different business_id: {any_business_item.business_id}")
-                    else:
-                        logging.error(f"[SALES SYNC] Item {inventory_item_id} does not exist in any business")
-                    continue
-                
-                # Calculate quantity to deduct based on sale unit type
-                quantity_to_deduct = quantity_sold
-                if sale_unit_type == 'pack':
-                    quantity_to_deduct = quantity_sold * (inventory_item.number_of_tabs or 1)
-                
-                logging.info(f"[SALES SYNC] Found inventory item: {inventory_item.product_name}, current_stock: {inventory_item.current_stock}, quantity_to_deduct: {quantity_to_deduct}")
-                
-                # Check if we have enough stock
-                if inventory_item.current_stock < quantity_to_deduct:
-                    logging.error(f"[SALES SYNC] Insufficient stock for {inventory_item.product_name}. Available: {inventory_item.current_stock}, Required: {quantity_to_deduct}")
-                    db.session.rollback()
-                    return jsonify({"message": f"Insufficient stock for {inventory_item.product_name}"}), 400
-                
-                # Update inventory
-                old_stock = inventory_item.current_stock
-                inventory_item.current_stock -= quantity_to_deduct
-                inventory_item.last_updated = datetime.now()
-                inventory_item.synced_to_remote = False  # Mark for re-sync
-                
-                logging.info(f"[SALES SYNC] Updated {inventory_item.product_name}: {old_stock} -> {inventory_item.current_stock} (deducted {quantity_to_deduct})")
-                
-                inventory_updates.append({
-                    'product_name': inventory_item.product_name,
-                    'quantity_deducted': quantity_to_deduct,
-                    'old_stock': old_stock,
-                    'new_stock': inventory_item.current_stock
-                })
-            
-            # Set the items_sold JSON data (using offline format)
-            sale_record.set_items_sold(items_sold)
             db.session.add(sale_record)
-            
+
+            for item_data in data.get('items', []):
+                sale_item = SalesItem(
+                    id=item_data['id'],
+                    sales_record_id=sale_record.id,
+                    inventory_item_id=item_data['inventory_item_id'],
+                    quantity_sold=item_data['quantity_sold'],
+                    unit_price_at_sale=item_data['unit_price_at_sale']
+                )
+                db.session.add(sale_item)
+
             db.session.commit()
-            
-            logging.info(f"Sale {sale_id} recorded successfully with {len(inventory_updates)} inventory updates")
-            return jsonify({
-                "message": "Sales record pushed successfully",
-                "inventory_updates": inventory_updates
-            }), 201
+            return jsonify({"message": "Sales record pushed successfully"}), 201
 
         except Exception as e:
             db.session.rollback()
@@ -4978,7 +4968,7 @@ def create_app():
     @app.route('/inventory/delete/<item_id>', methods=['GET', 'POST'])
     @csrf.exempt
     @login_required
-    def delete_inventory_item(item_id):
+    def delete_inventory_item(item_id): 
         """Marks an inventory item as inactive."""
         if session.get('role') not in ['admin'] or not get_current_business_id():
             flash('You do not have permission to delete inventory items or no business selected.', 'danger')
@@ -8888,7 +8878,493 @@ def create_app():
             app.logger.error(f"Error fetching dashboard data: {e}")
             return jsonify({'error': 'An internal error occurred.'}), 500
 
-    
+    """
+Server-side API Endpoints for Additional Sync Functions
+These endpoints need to be added to your REMOTE/ONLINE Flask app (the one hosted on Render)
+to handle the incoming sync requests from local clients.
+"""
+
+    # ===============================
+    # COMPANY SYNC API ENDPOINTS (Server-side)
+    # ===============================
+
+    @app.route('/api/v1/companies/upsert', methods=['POST'])
+    @api_key_required
+    def api_upsert_companies():
+        """API endpoint to receive and upsert company data from local clients."""
+        try:
+            data = request.get_json()
+            business_id = data.get('business_id')
+            companies_data = data.get('companies', [])
+            
+            if not business_id or not companies_data:
+                return jsonify({'status': 'error', 'message': 'Missing business_id or companies data.'}), 400
+            
+            # Verify business exists
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            synced_companies = []
+            
+            for company_data in companies_data:
+                company_id = company_data.get('id')  # This would be the remote_id from local client
+                
+                if company_id:
+                    # Update existing company
+                    company = Company.query.filter_by(id=company_id, business_id=business_id).first()
+                    if company:
+                        company.name = company_data.get('name', company.name)
+                        company.contact_person = company_data.get('contact_person', company.contact_person)
+                        company.phone = company_data.get('phone', company.phone)
+                        company.email = company_data.get('email', company.email)
+                        company.address = company_data.get('address', company.address)
+                        company.company_type = company_data.get('company_type', company.company_type)
+                        company.is_active = company_data.get('is_active', company.is_active)
+                        company.notes = company_data.get('notes', company.notes)
+                        company.last_updated = datetime.utcnow()
+                        
+                        synced_companies.append({'id': company.id, 'name': company.name, 'action': 'updated'})
+                        logging.info(f"[API][Company Upsert] Updated company: {company.name}")
+                
+                if not company_id or not company:
+                    # Create new company
+                    new_company = Company(
+                        business_id=business_id,
+                        name=company_data.get('name', 'Unknown Company'),
+                        contact_person=company_data.get('contact_person', ''),
+                        phone=company_data.get('phone', ''),
+                        email=company_data.get('email', ''),
+                        address=company_data.get('address', ''),
+                        company_type=company_data.get('company_type', 'Customer'),
+                        is_active=company_data.get('is_active', True),
+                        notes=company_data.get('notes', ''),
+                        created_at=datetime.utcnow(),
+                        last_updated=datetime.utcnow()
+                    )
+                    
+                    db.session.add(new_company)
+                    db.session.flush()  # Get the ID
+                    
+                    synced_companies.append({'id': new_company.id, 'name': new_company.name, 'action': 'created'})
+                    logging.info(f"[API][Company Upsert] Created new company: {new_company.name}")
+            
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully processed {len(companies_data)} companies.',
+                'synced_companies': synced_companies
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"[API][Company Upsert] Error processing companies: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error processing companies: {str(e)}'}), 500
+
+    @app.route('/api/v1/businesses/<business_id>/companies', methods=['GET'])
+    @api_key_required
+    def api_get_business_companies(business_id):
+        """API endpoint to retrieve all companies for a specific business."""
+        try:
+            # Verify business exists
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            companies = Company.query.filter_by(business_id=business_id, is_active=True).all()
+            
+            company_list = []
+            for company in companies:
+                company_dict = {
+                    'id': company.id,
+                    'business_id': company.business_id,
+                    'name': company.name,
+                    'contact_person': company.contact_person,
+                    'phone': company.phone,
+                    'email': company.email,
+                    'address': company.address,
+                    'company_type': company.company_type,
+                    'is_active': company.is_active,
+                    'notes': company.notes,
+                    'created_at': company.created_at.isoformat() if company.created_at else None,
+                    'last_updated': company.last_updated.isoformat() if company.last_updated else None
+                }
+                company_list.append(company_dict)
+            
+            logging.info(f"[API][Get Companies] Retrieved {len(company_list)} companies for business {business.name}")
+            return jsonify(company_list), 200
+            
+        except Exception as e:
+            logging.error(f"[API][Get Companies] Error retrieving companies: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error retrieving companies: {str(e)}'}), 500
+
+    # ===============================
+    # HIRABLE ITEM SYNC API ENDPOINTS (Server-side)
+    # ===============================
+
+    @app.route('/api/v1/hirable-items/upsert', methods=['POST'])
+    @api_key_required
+    def api_upsert_hirable_items():
+        """API endpoint to receive and upsert hirable item data from local clients."""
+        try:
+            data = request.get_json()
+            business_id = data.get('business_id')
+            hirable_items_data = data.get('hirable_items', [])
+            
+            if not business_id or not hirable_items_data:
+                return jsonify({'status': 'error', 'message': 'Missing business_id or hirable_items data.'}), 400
+            
+            # Verify business exists and is Hardware type
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            if business.type != 'Hardware':
+                return jsonify({'status': 'error', 'message': 'Hirable items are only available for Hardware businesses.'}), 400
+            
+            synced_items = []
+            
+            for item_data in hirable_items_data:
+                item_id = item_data.get('id')  # This would be the remote_id from local client
+                
+                if item_id:
+                    # Update existing hirable item
+                    item = HirableItem.query.filter_by(id=item_id, business_id=business_id).first()
+                    if item:
+                        item.item_name = item_data.get('item_name', item.item_name)
+                        item.description = item_data.get('description', item.description)
+                        item.rental_price_per_day = item_data.get('rental_price_per_day', item.rental_price_per_day)
+                        item.current_stock = item_data.get('current_stock', item.current_stock)
+                        item.is_active = item_data.get('is_active', item.is_active)
+                        item.last_updated = datetime.utcnow()
+                        
+                        synced_items.append({'id': item.id, 'name': item.item_name, 'action': 'updated'})
+                        logging.info(f"[API][Hirable Upsert] Updated hirable item: {item.item_name}")
+                
+                if not item_id or not item:
+                    # Create new hirable item
+                    new_item = HirableItem(
+                        business_id=business_id,
+                        item_name=item_data.get('item_name', 'Unknown Item'),
+                        description=item_data.get('description', ''),
+                        rental_price_per_day=item_data.get('rental_price_per_day', 0.0),
+                        current_stock=item_data.get('current_stock', 0),
+                        is_active=item_data.get('is_active', True),
+                        created_at=datetime.utcnow(),
+                        last_updated=datetime.utcnow()
+                    )
+                    
+                    db.session.add(new_item)
+                    db.session.flush()  # Get the ID
+                    
+                    synced_items.append({'id': new_item.id, 'name': new_item.item_name, 'action': 'created'})
+                    logging.info(f"[API][Hirable Upsert] Created new hirable item: {new_item.item_name}")
+            
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully processed {len(hirable_items_data)} hirable items.',
+                'synced_items': synced_items
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"[API][Hirable Upsert] Error processing hirable items: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error processing hirable items: {str(e)}'}), 500
+
+    @app.route('/api/v1/businesses/<business_id>/hirable-items', methods=['GET'])
+    @api_key_required
+    def api_get_business_hirable_items(business_id):
+        """API endpoint to retrieve all hirable items for a specific business."""
+        try:
+            # Verify business exists and is Hardware type
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            if business.type != 'Hardware':
+                return jsonify({'status': 'error', 'message': 'Hirable items are only available for Hardware businesses.'}), 400
+            
+            hirable_items = HirableItem.query.filter_by(business_id=business_id, is_active=True).all()
+            
+            item_list = []
+            for item in hirable_items:
+                item_dict = {
+                    'id': item.id,
+                    'business_id': item.business_id,
+                    'item_name': item.item_name,
+                    'description': item.description,
+                    'rental_price_per_day': float(item.rental_price_per_day),
+                    'current_stock': item.current_stock,
+                    'is_active': item.is_active,
+                    'created_at': item.created_at.isoformat() if item.created_at else None,
+                    'last_updated': item.last_updated.isoformat() if item.last_updated else None
+                }
+                item_list.append(item_dict)
+            
+            logging.info(f"[API][Get Hirable Items] Retrieved {len(item_list)} hirable items for business {business.name}")
+            return jsonify(item_list), 200
+            
+        except Exception as e:
+            logging.error(f"[API][Get Hirable Items] Error retrieving hirable items: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error retrieving hirable items: {str(e)}'}), 500
+
+    # ===============================
+    # RENTAL RECORD SYNC API ENDPOINTS (Server-side)
+    # ===============================
+
+    @app.route('/api/v1/rentals/upsert', methods=['POST'])
+    @api_key_required
+    def api_upsert_rentals():
+        """API endpoint to receive and upsert rental record data from local clients."""
+        try:
+            data = request.get_json()
+            business_id = data.get('business_id')
+            rental_records_data = data.get('rental_records', [])
+            
+            if not business_id or not rental_records_data:
+                return jsonify({'status': 'error', 'message': 'Missing business_id or rental_records data.'}), 400
+            
+            # Verify business exists and is Hardware type
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            if business.type != 'Hardware':
+                return jsonify({'status': 'error', 'message': 'Rental records are only available for Hardware businesses.'}), 400
+            
+            synced_rentals = []
+            
+            for rental_data in rental_records_data:
+                rental_id = rental_data.get('id')  # This would be the remote_id from local client
+                
+                if rental_id:
+                    # Update existing rental record
+                    rental = RentalRecord.query.filter_by(id=rental_id, business_id=business_id).first()
+                    if rental:
+                        rental.customer_name = rental_data.get('customer_name', rental.customer_name)
+                        rental.customer_phone = rental_data.get('customer_phone', rental.customer_phone)
+                        rental.hirable_item_id = rental_data.get('hirable_item_id', rental.hirable_item_id)
+                        rental.quantity_rented = rental_data.get('quantity_rented', rental.quantity_rented)
+                        rental.rental_start_date = datetime.fromisoformat(rental_data['rental_start_date']) if rental_data.get('rental_start_date') else rental.rental_start_date
+                        rental.rental_end_date = datetime.fromisoformat(rental_data['rental_end_date']) if rental_data.get('rental_end_date') else rental.rental_end_date
+                        rental.daily_rate = rental_data.get('daily_rate', rental.daily_rate)
+                        rental.total_amount = rental_data.get('total_amount', rental.total_amount)
+                        rental.status = rental_data.get('status', rental.status)
+                        rental.notes = rental_data.get('notes', rental.notes)
+                        rental.last_updated = datetime.utcnow()
+                        
+                        synced_rentals.append({'id': rental.id, 'customer': rental.customer_name, 'action': 'updated'})
+                        logging.info(f"[API][Rental Upsert] Updated rental record for: {rental.customer_name}")
+                
+                if not rental_id or not rental:
+                    # Create new rental record
+                    new_rental = RentalRecord(
+                        business_id=business_id,
+                        customer_name=rental_data.get('customer_name', 'Unknown Customer'),
+                        customer_phone=rental_data.get('customer_phone', ''),
+                        hirable_item_id=rental_data.get('hirable_item_id'),
+                        quantity_rented=rental_data.get('quantity_rented', 1),
+                        rental_start_date=datetime.fromisoformat(rental_data['rental_start_date']) if rental_data.get('rental_start_date') else None,
+                        rental_end_date=datetime.fromisoformat(rental_data['rental_end_date']) if rental_data.get('rental_end_date') else None,
+                        daily_rate=rental_data.get('daily_rate', 0.0),
+                        total_amount=rental_data.get('total_amount', 0.0),
+                        status=rental_data.get('status', 'Active'),
+                        notes=rental_data.get('notes', ''),
+                        date_recorded=datetime.utcnow(),
+                        last_updated=datetime.utcnow()
+                    )
+                    
+                    db.session.add(new_rental)
+                    db.session.flush()  # Get the ID
+                    
+                    synced_rentals.append({'id': new_rental.id, 'customer': new_rental.customer_name, 'action': 'created'})
+                    logging.info(f"[API][Rental Upsert] Created new rental record for: {new_rental.customer_name}")
+            
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully processed {len(rental_records_data)} rental records.',
+                'synced_rentals': synced_rentals
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"[API][Rental Upsert] Error processing rental records: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error processing rental records: {str(e)}'}), 500
+
+    @app.route('/api/v1/businesses/<business_id>/rentals', methods=['GET'])
+    @api_key_required
+    def api_get_business_rentals(business_id):
+        """API endpoint to retrieve all rental records for a specific business."""
+        try:
+            # Verify business exists and is Hardware type
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            if business.type != 'Hardware':
+                return jsonify({'status': 'error', 'message': 'Rental records are only available for Hardware businesses.'}), 400
+            
+            rental_records = RentalRecord.query.filter_by(business_id=business_id).all()
+            
+            rental_list = []
+            for rental in rental_records:
+                rental_dict = {
+                    'id': rental.id,
+                    'business_id': rental.business_id,
+                    'customer_name': rental.customer_name,
+                    'customer_phone': rental.customer_phone,
+                    'hirable_item_id': rental.hirable_item_id,
+                    'quantity_rented': rental.quantity_rented,
+                    'rental_start_date': rental.rental_start_date.isoformat() if rental.rental_start_date else None,
+                    'rental_end_date': rental.rental_end_date.isoformat() if rental.rental_end_date else None,
+                    'daily_rate': float(rental.daily_rate),
+                    'total_amount': float(rental.total_amount),
+                    'status': rental.status,
+                    'notes': rental.notes,
+                    'date_recorded': rental.date_recorded.isoformat() if rental.date_recorded else None,
+                    'last_updated': rental.last_updated.isoformat() if rental.last_updated else None
+                }
+                rental_list.append(rental_dict)
+            
+            logging.info(f"[API][Get Rentals] Retrieved {len(rental_list)} rental records for business {business.name}")
+            return jsonify(rental_list), 200
+            
+        except Exception as e:
+            logging.error(f"[API][Get Rentals] Error retrieving rental records: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error retrieving rental records: {str(e)}'}), 500
+
+    # ===============================
+    # FUTURE ORDER SYNC API ENDPOINTS (Server-side)
+    # ===============================
+
+    @app.route('/api/v1/future-orders/upsert', methods=['POST'])
+    @api_key_required
+    def api_upsert_future_orders():
+        """API endpoint to receive and upsert future order data from local clients."""
+        try:
+            data = request.get_json()
+            business_id = data.get('business_id')
+            future_orders_data = data.get('future_orders', [])
+            
+            if not business_id or not future_orders_data:
+                return jsonify({'status': 'error', 'message': 'Missing business_id or future_orders data.'}), 400
+            
+            # Verify business exists and is Hardware type
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            if business.type != 'Hardware':
+                return jsonify({'status': 'error', 'message': 'Future orders are only available for Hardware businesses.'}), 400
+            
+            synced_orders = []
+            
+            for order_data in future_orders_data:
+                order_id = order_data.get('id')  # This would be the remote_id from local client
+                
+                if order_id:
+                    # Update existing future order
+                    order = FutureOrder.query.filter_by(id=order_id, business_id=business_id).first()
+                    if order:
+                        order.customer_name = order_data.get('customer_name', order.customer_name)
+                        order.customer_phone = order_data.get('customer_phone', order.customer_phone)
+                        order.order_description = order_data.get('order_description', order.order_description)
+                        order.total_amount = order_data.get('total_amount', order.total_amount)
+                        order.amount_paid = order_data.get('amount_paid', order.amount_paid)
+                        order.remaining_balance = order_data.get('remaining_balance', order.remaining_balance)
+                        order.order_date = datetime.fromisoformat(order_data['order_date']) if order_data.get('order_date') else order.order_date
+                        order.expected_completion_date = datetime.fromisoformat(order_data['expected_completion_date']) if order_data.get('expected_completion_date') else order.expected_completion_date
+                        order.status = order_data.get('status', order.status)
+                        order.notes = order_data.get('notes', order.notes)
+                        order.last_updated = datetime.utcnow()
+                        
+                        synced_orders.append({'id': order.id, 'customer': order.customer_name, 'action': 'updated'})
+                        logging.info(f"[API][Future Order Upsert] Updated future order for: {order.customer_name}")
+                
+                if not order_id or not order:
+                    # Create new future order
+                    new_order = FutureOrder(
+                        business_id=business_id,
+                        customer_name=order_data.get('customer_name', 'Unknown Customer'),
+                        customer_phone=order_data.get('customer_phone', ''),
+                        order_description=order_data.get('order_description', ''),
+                        total_amount=order_data.get('total_amount', 0.0),
+                        amount_paid=order_data.get('amount_paid', 0.0),
+                        remaining_balance=order_data.get('remaining_balance', 0.0),
+                        order_date=datetime.fromisoformat(order_data['order_date']) if order_data.get('order_date') else datetime.utcnow(),
+                        expected_completion_date=datetime.fromisoformat(order_data['expected_completion_date']) if order_data.get('expected_completion_date') else None,
+                        status=order_data.get('status', 'Pending'),
+                        notes=order_data.get('notes', ''),
+                        created_at=datetime.utcnow(),
+                        last_updated=datetime.utcnow()
+                    )
+                    
+                    db.session.add(new_order)
+                    db.session.flush()  # Get the ID
+                    
+                    synced_orders.append({'id': new_order.id, 'customer': new_order.customer_name, 'action': 'created'})
+                    logging.info(f"[API][Future Order Upsert] Created new future order for: {new_order.customer_name}")
+            
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully processed {len(future_orders_data)} future orders.',
+                'synced_orders': synced_orders
+            }), 200
+            
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"[API][Future Order Upsert] Error processing future orders: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error processing future orders: {str(e)}'}), 500
+
+    @app.route('/api/v1/businesses/<business_id>/future-orders', methods=['GET'])
+    @api_key_required
+    def api_get_business_future_orders(business_id):
+        """API endpoint to retrieve all future orders for a specific business."""
+        try:
+            # Verify business exists and is Hardware type
+            business = Business.query.filter_by(id=business_id).first()
+            if not business:
+                return jsonify({'status': 'error', 'message': 'Business not found.'}), 404
+            
+            if business.type != 'Hardware':
+                return jsonify({'status': 'error', 'message': 'Future orders are only available for Hardware businesses.'}), 400
+            
+            future_orders = FutureOrder.query.filter_by(business_id=business_id).all()
+            
+            order_list = []
+            for order in future_orders:
+                order_dict = {
+                    'id': order.id,
+                    'business_id': order.business_id,
+                    'customer_name': order.customer_name,
+                    'customer_phone': order.customer_phone,
+                    'order_description': order.order_description,
+                    'total_amount': float(order.total_amount),
+                    'amount_paid': float(order.amount_paid),
+                    'remaining_balance': float(order.remaining_balance),
+                    'order_date': order.order_date.isoformat() if order.order_date else None,
+                    'expected_completion_date': order.expected_completion_date.isoformat() if order.expected_completion_date else None,
+                    'status': order.status,
+                    'notes': order.notes,
+                    'created_at': order.created_at.isoformat() if order.created_at else None,
+                    'last_updated': order.last_updated.isoformat() if order.last_updated else None
+                }
+                order_list.append(order_dict)
+            
+            logging.info(f"[API][Get Future Orders] Retrieved {len(order_list)} future orders for business {business.name}")
+            return jsonify(order_list), 200
+            
+        except Exception as e:
+            logging.error(f"[API][Get Future Orders] Error retrieving future orders: {str(e)}")
+            return jsonify({'status': 'error', 'message': f'Error retrieving future orders: {str(e)}'}), 500
+
     return app
 
     # The final Flask app instance is created here
