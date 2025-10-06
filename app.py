@@ -623,7 +623,22 @@ def create_app():
             'fixed_sale_price': float(item.fixed_sale_price),
             'is_active': bool(item.is_active)
         }
-
+        item_data = {
+            'id': item.id,
+            'product_name': item.product_name,
+            'category': item.category,
+            'purchase_price': item.purchase_price,
+            'sale_price': item.sale_price,
+            'current_stock': item.current_stock,
+            'is_fixed_price': item.is_fixed_price,
+            'fixed_sale_price': item.fixed_sale_price,
+            # NEW: Add price range fields
+            'use_price_range': getattr(item, 'use_price_range', False),
+            'min_sale_price': getattr(item, 'min_sale_price', 0.0),
+            'preferred_sale_price': getattr(item, 'preferred_sale_price', item.sale_price),
+            'max_sale_price': getattr(item, 'max_sale_price', 0.0)
+        }
+        return item_data
     def serialize_sale_record_api(sale):
         """Converts a SaleRecord SQLAlchemy object to a JSON-serializable dictionary for API."""
         return {
@@ -4457,6 +4472,11 @@ def create_app():
     # app.py (your add_inventory_item route)
     @app.route('/inventory/add', methods=['GET', 'POST'])
     def add_inventory_item():
+
+        """
+        Updated add_inventory_item route that includes price range functionality
+        This replaces your existing add_inventory_item function
+        """
         # ACCESS CONTROL: Allows admin role
         if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
             flash('You do not have permission to add inventory items or no business selected.', 'danger')
@@ -4466,33 +4486,29 @@ def create_app():
         business_type = get_current_business_type()
 
         # Determine which item types are relevant for the current business type
-    
         relevant_item_types = []
         if business_type == 'Pharmacy':
             relevant_item_types = ['Pharmacy']
         elif business_type == 'Hardware':
             relevant_item_types = ['Hardware Material']
-
         elif business_type in ['Supermarket', 'Provision Store']:
             relevant_item_types = ['Provision Store']
-        # The following two elifs are redundant with the one above, but kept for direct mapping to original.
         elif business_type == 'Supermarket':
             relevant_item_types = ['Supermarket']
         elif business_type == 'Provision Store':
             relevant_item_types = ['Provision Store']
         else:
-            # Fallback or general type if none matches. Consider if a business can have diverse types.
-            relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store'] # Include all if flexible
+            relevant_item_types = ['Pharmacy', 'Hardware Material', 'Supermarket', 'Provision Store']
 
         available_inventory_items = InventoryItem.query.filter(
             InventoryItem.business_id == business_id,
             InventoryItem.is_active == True,
             InventoryItem.item_type.in_(relevant_item_types)
         ).all()
-        # Assuming serialize_inventory_item_api exists for consistent serialization with API needs
+        
         serialized_inventory_items = [serialize_inventory_item_api(item) for item in available_inventory_items]
         
-        # Get pharmacy info for receipts (ensure it's clean for template rendering)
+        # Get pharmacy info for receipts
         raw_pharmacy_info = session.get('business_info', {})
         if isinstance(raw_pharmacy_info, dict):
             pharmacy_info = {
@@ -4504,7 +4520,6 @@ def create_app():
                 'contact': str(raw_pharmacy_info.get('contact', 'N/A'))
             }
         else:
-            # Fallback if session['business_info'] is not a dict
             business_details = Business.query.filter_by(id=business_id).first()
             if business_details:
                 pharmacy_info = {
@@ -4524,26 +4539,23 @@ def create_app():
         # Fetch other businesses for the import section
         other_businesses = []
         if session.get('role') == 'admin':
-            # Filter businesses of the same type, excluding the current business
             other_businesses_query = Business.query.filter(
                 Business.id != business_id,
-                Business.type == business_type # Only show businesses of the same type for import
+                Business.type == business_type
             )
             other_businesses = other_businesses_query.all()
-
 
         if request.method == 'POST':
             product_name = request.form.get('product_name', '').strip()
             category = request.form.get('category', '').strip()
             
-            # Safely get numerical inputs, default to 0.0 or 1 if conversion fails or missing
+            # Safely get numerical inputs
             try:
                 purchase_price = float(request.form.get('purchase_price', 0.0))
                 current_stock = float(request.form.get('current_stock', 0.0))
                 number_of_tabs = int(request.form.get('number_of_tabs', 1))
             except ValueError:
                 flash('Invalid input for numerical fields (Price, Stock, Units per Pack). Please enter valid numbers.', 'danger')
-                # Re-render with existing form data to preserve user input
                 item_data_for_form_on_error = {
                     'product_name': product_name, 'category': category,
                     'purchase_price': request.form.get('purchase_price', '0.00'),
@@ -4554,175 +4566,101 @@ def create_app():
                     'item_type': request.form.get('item_type', business_type),
                     'expiry_date': request.form.get('expiry_date', ''),
                     'is_fixed_price': 'is_fixed_price' in request.form,
-                    'fixed_sale_price': request.form.get('fixed_sale_price', '0.00')
+                    'fixed_sale_price': request.form.get('fixed_sale_price', '0.00'),
+                    # NEW: Price range fields
+                    'use_price_range': 'use_price_range' in request.form,
+                    'min_sale_price': request.form.get('min_sale_price', '0.00'),
+                    'preferred_sale_price': request.form.get('preferred_sale_price', '0.00'),
+                    'max_sale_price': request.form.get('max_sale_price', '0.00')
                 }
                 return render_template('add_edit_inventory.html', title='Add Inventory Item',
                                     item=item_data_for_form_on_error, user_role=session.get('role'),
                                     business_type=business_type, current_year=datetime.now().year,
                                     pharmacy_info=pharmacy_info, other_businesses=other_businesses)
 
-
             batch_number = request.form.get('batch_number', '').strip()
-            raw_barcode = request.form.get('barcode', '').strip() # Get the barcode string
-            
-            # Set barcode to None if it's an empty string, otherwise keep the value
+            raw_barcode = request.form.get('barcode', '').strip()
             barcode_to_save = raw_barcode if raw_barcode else None
 
             # Validate required string fields
             if not product_name or not category:
                 flash('Product Name and Category are required fields.', 'danger')
-                item_data_for_form_on_error = {
-                    'product_name': product_name, 'category': category,
-                    'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                    'number_of_tabs': number_of_tabs,
-                    'item_type': request.form.get('item_type', business_type),
-                    'expiry_date': request.form.get('expiry_date', ''),
-                    'is_fixed_price': 'is_fixed_price' in request.form,
-                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
-                }
-                return render_template('add_edit_inventory.html', title='Add Inventory Item',
-                                    item=item_data_for_form_on_error, user_role=session.get('role'),
-                                    business_type=business_type, current_year=datetime.now().year,
-                                    pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                return redirect(request.url)
 
-
-            # Check if barcode is unique if provided and not None
-            if barcode_to_save: # Only check uniqueness if barcode_to_save is not None/empty
+            # Check if barcode is unique if provided
+            if barcode_to_save:
                 existing_barcode_item = InventoryItem.query.filter_by(
                     business_id=business_id,
                     barcode=barcode_to_save
                 ).first()
                 if existing_barcode_item:
                     flash('Barcode already in use for another product.', 'danger')
-                    item_data_for_form_on_error = {
-                        'product_name': product_name, 'category': category,
-                        'purchase_price': purchase_price, 'current_stock': current_stock,
-                        'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                        'number_of_tabs': number_of_tabs,
-                        'item_type': request.form.get('item_type', business_type),
-                        'expiry_date': request.form.get('expiry_date', ''),
-                        'is_fixed_price': 'is_fixed_price' in request.form,
-                        'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
-                    }
-                    return render_template('add_edit_inventory.html', title='Add Inventory Item',
-                                        item=item_data_for_form_on_error, user_role=session.get('role'),
-                                        business_type=business_type, current_year=datetime.now().year,
-                                        pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                    return redirect(request.url)
             
             expiry_date_str = request.form.get('expiry_date', '').strip()
-            
             expiry_date_obj = None 
             if expiry_date_str:
                 try:
                     expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
                 except ValueError:
                     flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
-                    item_data_for_form_on_error = {
-                        'product_name': product_name, 'category': category,
-                        'purchase_price': purchase_price, 'current_stock': current_stock,
-                        'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                        'number_of_tabs': number_of_tabs,
-                        'item_type': request.form.get('item_type', business_type),
-                        'expiry_date': '',
-                        'is_fixed_price': 'is_fixed_price' in request.form,
-                        'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
-                    }
-                    return render_template('add_edit_inventory.html', title='Add Inventory Item',
-                                        item=item_data_for_form_on_error, user_role=session.get('role'),
-                                        business_type=business_type, current_year=datetime.now().year,
-                                        pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                    return redirect(request.url)
 
             if number_of_tabs <= 0:
                 flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-                item_data_for_form_on_error = {
-                    'product_name': product_name, 'category': category,
-                    'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                    'number_of_tabs': number_of_tabs,
-                    'item_type': request.form.get('item_type', business_type),
-                    'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
-                    'is_fixed_price': 'is_fixed_price' in request.form,
-                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
-                }
-                return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year, pharmacy_info=pharmacy_info, other_businesses=other_businesses)
-
+                return redirect(request.url)
 
             if InventoryItem.query.filter_by(product_name=product_name, business_id=business_id).first():
                 flash('Product with this name already exists for this business.', 'danger')
-                item_data_for_form_on_error = {
-                    'product_name': product_name, 'category': category,
-                    'purchase_price': purchase_price, 'current_stock': current_stock,
-                    'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                    'number_of_tabs': number_of_tabs,
-                    'item_type': request.form.get('item_type', business_type),
-                    'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
-                    'is_fixed_price': 'is_fixed_price' in request.form,
-                    'fixed_sale_price': float(request.form.get('fixed_sale_price', 0.0))
-                }
-                return render_template('add_edit_inventory.html', title='Add Inventory Item', item=item_data_for_form_on_error, user_role=session.get('role'), business_type=business_type, current_year=datetime.now().year, pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                return redirect(request.url)
             
+            # Handle pricing logic
             sale_price = 0.0
             unit_price_per_tab = 0.0
             
             is_fixed_price = 'is_fixed_price' in request.form
-            fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0)) # Ensure it's always a float
+            fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
+            
+            # NEW: Handle price range fields
+            use_price_range = 'use_price_range' in request.form
+            min_sale_price = float(request.form.get('min_sale_price', 0.0)) if use_price_range else 0.0
+            preferred_sale_price = float(request.form.get('preferred_sale_price', 0.0)) if use_price_range else 0.0
+            max_sale_price = float(request.form.get('max_sale_price', 0.0)) if use_price_range else 0.0
+            
+            # Validate price range logic
+            if use_price_range:
+                if min_sale_price >= max_sale_price:
+                    flash('Minimum price must be less than maximum price.', 'danger')
+                    return redirect(request.url)
+                if preferred_sale_price < min_sale_price or preferred_sale_price > max_sale_price:
+                    flash('Preferred price must be between minimum and maximum prices.', 'danger')
+                    return redirect(request.url)
 
             if is_fixed_price:
                 sale_price = fixed_sale_price
                 if number_of_tabs > 0:
                     unit_price_per_tab = fixed_sale_price / number_of_tabs
             else:
-                # If not fixed price and not pharmacy, assume a sale_price input field is needed
-                # Since the form doesn't have it, we must ensure it's provided or handled
                 if business_type != 'Pharmacy':
-                    # This field is MISSING from your HTML template
-                    # You need to add an input for name="sale_price" if you want to use this logic
                     input_sale_price = request.form.get('sale_price')
                     if input_sale_price is None or input_sale_price.strip() == '':
                         flash('Sale Price is required for non-fixed price items in this business type.', 'danger')
-                        item_data_for_form_on_error = {
-                            'product_name': product_name, 'category': category,
-                            'purchase_price': purchase_price, 'current_stock': current_stock,
-                            'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                            'number_of_tabs': number_of_tabs,
-                            'item_type': request.form.get('item_type', business_type),
-                            'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
-                            'is_fixed_price': is_fixed_price,
-                            'fixed_sale_price': fixed_sale_price
-                        }
-                        return render_template('add_edit_inventory.html', title='Add Inventory Item',
-                                            item=item_data_for_form_on_error, user_role=session.get('role'),
-                                            business_type=business_type, current_year=datetime.now().year,
-                                            pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                        return redirect(request.url)
                     try:
                         sale_price = float(input_sale_price)
                     except ValueError:
                         flash('Invalid input for Sale Price. Please enter a valid number.', 'danger')
-                        item_data_for_form_on_error = {
-                            'product_name': product_name, 'category': category,
-                            'purchase_price': purchase_price, 'current_stock': current_stock,
-                            'batch_number': batch_number, 'barcode': raw_barcode, # Use raw_barcode for rendering
-                            'number_of_tabs': number_of_tabs,
-                            'item_type': request.form.get('item_type', business_type),
-                            'expiry_date': expiry_date_obj.strftime('%Y-%m-%d') if expiry_date_obj else '',
-                            'is_fixed_price': is_fixed_price,
-                            'fixed_sale_price': fixed_sale_price
-                        }
-                        return render_template('add_edit_inventory.html', title='Add Inventory Item',
-                                            item=item_data_for_form_on_error, user_role=session.get('role'),
-                                            business_type=business_type, current_year=datetime.now().year,
-                                            pharmacy_info=pharmacy_info, other_businesses=other_businesses)
+                        return redirect(request.url)
                     
                     if number_of_tabs > 0:
                         unit_price_per_tab = sale_price / number_of_tabs
-                else: # Business type is Pharmacy, and not fixed price
+                else:  # Business type is Pharmacy, and not fixed price
                     markup_percentage = float(request.form.get('markup_percentage_pharmacy', 0.0)) / 100
                     sale_price = purchase_price + (purchase_price * markup_percentage)
                     if number_of_tabs > 0:
                         unit_price_per_tab = sale_price / number_of_tabs
 
-
+            # Create new inventory item with price range support
             new_item = InventoryItem(
                 business_id=business_id,
                 product_name=product_name,
@@ -4731,25 +4669,30 @@ def create_app():
                 sale_price=sale_price,
                 current_stock=current_stock,
                 batch_number=batch_number,
-                barcode=barcode_to_save, # Use the processed barcode_to_save here
+                barcode=barcode_to_save,
                 number_of_tabs=number_of_tabs,
                 unit_price_per_tab=unit_price_per_tab,
-                item_type=request.form.get('item_type', business_type), # Use the selected item_type from form
+                item_type=request.form.get('item_type', business_type),
                 expiry_date=expiry_date_obj,
                 is_fixed_price=is_fixed_price,
                 fixed_sale_price=fixed_sale_price,
-                is_active=True
+                is_active=True,
+                # NEW: Add price range fields
+                use_price_range=use_price_range,
+                min_sale_price=min_sale_price,
+                preferred_sale_price=preferred_sale_price,
+                max_sale_price=max_sale_price
             )
+            
             db.session.add(new_item)
             db.session.commit()
             flash(f'Inventory item "{product_name}" added successfully!', 'success')
             return redirect(url_for('inventory'))
         
         # GET request / Initial render
-        # Ensure all context variables are passed on GET for initial form rendering
         return render_template('add_edit_inventory.html',
                             title='Add Inventory Item',
-                            item={}, # Empty item for new form
+                            item=None,
                             user_role=session.get('role'),
                             business_type=business_type,
                             current_year=datetime.now().year,
@@ -4758,10 +4701,13 @@ def create_app():
 
 
 
-
     @app.route('/inventory/edit/<item_id>', methods=['GET', 'POST'])
     # @login_required
     def edit_inventory_item(item_id):
+        """
+        Updated edit_inventory_item route that includes price range functionality
+        This replaces your existing edit_inventory_item function
+        """
         # ACCESS CONTROL: Allows admin role
         if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
             flash('You do not have permission to edit inventory items or no business selected.', 'danger')
@@ -4771,18 +4717,15 @@ def create_app():
         item_to_edit = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
         business_type = get_current_business_type()
 
-        relevant_item_types = []
-        if business_type == 'Pharmacy':
-            relevant_item_types = ['Pharmacy']
-        elif business_type == 'Hardware':
-            relevant_item_types = ['Hardware Material']
-        elif business_type in ['Supermarket', 'Provision Store']:
-            relevant_item_types = ['Provision Store'] 
-
         if request.method == 'POST':
-            # Define is_fixed_price and fixed_sale_price early to avoid NameError
             is_fixed_price = 'is_fixed_price' in request.form
             fixed_sale_price = float(request.form.get('fixed_sale_price', 0.0))
+            
+            # NEW: Handle price range fields
+            use_price_range = 'use_price_range' in request.form
+            min_sale_price = float(request.form.get('min_sale_price', 0.0)) if use_price_range else 0.0
+            preferred_sale_price = float(request.form.get('preferred_sale_price', 0.0)) if use_price_range else 0.0
+            max_sale_price = float(request.form.get('max_sale_price', 0.0)) if use_price_range else 0.0
 
             try:
                 product_name = request.form['product_name'].strip()
@@ -4794,34 +4737,14 @@ def create_app():
                 item_type = request.form['item_type']
                 number_of_tabs = int(request.form.get('number_of_tabs', 1))
                 
-                # Helper function to prepare common form data for re-rendering on error
-                def prepare_error_form_data(
-                    product_name, category, purchase_price, current_stock,
-                    batch_number, new_barcode, number_of_tabs, item_type,
-                    expiry_date_str_or_obj, is_fixed_price_checked, fixed_sale_price, markup_percentage_pharmacy_val
-                ):
-                    error_item_data = {
-                        'id': item_to_edit.id,
-                        'product_name': product_name, 
-                        'category': category,
-                        'purchase_price': purchase_price, 
-                        'current_stock': current_stock,
-                        'batch_number': batch_number, 
-                        'barcode': new_barcode,
-                        'number_of_tabs': number_of_tabs,
-                        'item_type': item_type,
-                        'is_fixed_price': is_fixed_price_checked, 
-                        'fixed_sale_price': fixed_sale_price,
-                        'is_active': 'is_active' in request.form 
-                    }
-                    if isinstance(expiry_date_str_or_obj, date):
-                        error_item_data['expiry_date'] = expiry_date_str_or_obj.strftime('%Y-%m-%d')
-                    else:
-                        error_item_data['expiry_date'] = expiry_date_str_or_obj
-
-                    if business_type == 'Pharmacy':
-                        error_item_data['markup_percentage_pharmacy'] = float(markup_percentage_pharmacy_val or 0.0)
-                    return error_item_data
+                # Validate price range logic
+                if use_price_range:
+                    if min_sale_price >= max_sale_price:
+                        flash('Minimum price must be less than maximum price.', 'danger')
+                        return redirect(request.url)
+                    if preferred_sale_price < min_sale_price or preferred_sale_price > max_sale_price:
+                        flash('Preferred price must be between minimum and maximum prices.', 'danger')
+                        return redirect(request.url)
 
                 # Barcode uniqueness check
                 barcode_to_save = new_barcode if new_barcode else None
@@ -4833,18 +4756,7 @@ def create_app():
                     ).first()
                     if existing_barcode:
                         flash('Barcode already in use for another product.', 'danger')
-                        return render_template('add_edit_inventory.html',
-                                            title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                                            item=prepare_error_form_data(
-                                                    product_name, category, purchase_price, current_stock,
-                                                    batch_number, new_barcode, number_of_tabs, item_type,
-                                                    request.form.get('expiry_date', ''), 
-                                                    is_fixed_price, # Use defined variable
-                                                    fixed_sale_price, # Use defined variable
-                                                    request.form.get('markup_percentage_pharmacy', 0.0)
-                                            ), 
-                                            user_role=session.get('role'),
-                                            business_type=business_type, current_year=datetime.now().year)
+                        return redirect(request.url)
                 
                 expiry_date_str = request.form.get('expiry_date', '').strip()
                 expiry_date_obj = None
@@ -4853,47 +4765,18 @@ def create_app():
                         expiry_date_obj = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
                     except ValueError:
                         flash('Invalid expiry date format. Please use YYYY-MM-DD.', 'danger')
-                        return render_template('add_edit_inventory.html',
-                                            title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                                            item=prepare_error_form_data(
-                                                    product_name, category, purchase_price, current_stock,
-                                                    batch_number, new_barcode, number_of_tabs, item_type,
-                                                    '', 
-                                                    is_fixed_price, # Use defined variable
-                                                    fixed_sale_price, # Use defined variable
-                                                    request.form.get('markup_percentage_pharmacy', 0.0)
-                                            ), 
-                                            user_role=session.get('role'),
-                                            business_type=business_type, current_year=datetime.now().year)
+                        return redirect(request.url)
 
                 if number_of_tabs <= 0:
                     flash('Number of units/pieces per pack must be greater than zero.', 'danger')
-                    return render_template('add_edit_inventory.html',
-                                            title='Edit Inventory Item', 
-                                            item=prepare_error_form_data(
-                                                    product_name, category, purchase_price, current_stock,
-                                                    batch_number, new_barcode, number_of_tabs, item_type,
-                                                    expiry_date_obj, is_fixed_price, fixed_sale_price,
-                                                    request.form.get('markup_percentage_pharmacy', 0.0)
-                                            ), 
-                                            user_role=session.get('role'),
-                                            business_type=business_type, current_year=datetime.now().year)
+                    return redirect(request.url)
 
                 # Product name uniqueness check (excluding current item)
                 if InventoryItem.query.filter(InventoryItem.product_name == product_name, InventoryItem.business_id == business_id, InventoryItem.id != item_id).first():
                     flash('Product with this name already exists for this business.', 'danger')
-                    return render_template('add_edit_inventory.html',
-                                            title='Edit Inventory Item', 
-                                            item=prepare_error_form_data(
-                                                    product_name, category, purchase_price, current_stock,
-                                                    batch_number, new_barcode, number_of_tabs, item_type,
-                                                    expiry_date_obj, is_fixed_price, fixed_sale_price,
-                                                    request.form.get('markup_percentage_pharmacy', 0.0)
-                                            ), 
-                                            user_role=session.get('role'),
-                                            business_type=business_type, current_year=datetime.now().year)
+                    return redirect(request.url)
                 
-                # --- If all validations pass, update the item ---
+                # Update the item
                 item_to_edit.product_name = product_name
                 item_to_edit.category = category
                 item_to_edit.purchase_price = purchase_price
@@ -4907,7 +4790,14 @@ def create_app():
                 item_to_edit.is_fixed_price = is_fixed_price
                 item_to_edit.fixed_sale_price = fixed_sale_price
                 item_to_edit.is_active = 'is_active' in request.form
+                
+                # NEW: Update price range fields
+                item_to_edit.use_price_range = use_price_range
+                item_to_edit.min_sale_price = min_sale_price
+                item_to_edit.preferred_sale_price = preferred_sale_price
+                item_to_edit.max_sale_price = max_sale_price
 
+                # Calculate sale price
                 sale_price = 0.0
                 unit_price_per_tab = 0.0
 
@@ -4934,85 +4824,248 @@ def create_app():
                 db.session.commit()
                 flash(f'Inventory item "{product_name}" updated successfully!', 'success')
                 return redirect(url_for('inventory'))
+                
             except ValueError as e:
                 db.session.rollback()
                 flash(f'Invalid input data. Please check your numbers and dates. Error: {e}', 'danger')
-                return render_template('add_edit_inventory.html',
-                                    title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                                    item=prepare_error_form_data(
-                                            request.form.get('product_name', ''), 
-                                            request.form.get('category', ''), 
-                                            float(request.form.get('purchase_price', 0.0)), 
-                                            float(request.form.get('current_stock', 0.0)),
-                                            request.form.get('batch_number', ''), 
-                                            request.form.get('barcode', ''),
-                                            int(request.form.get('number_of_tabs', 1)), 
-                                            request.form.get('item_type', ''),
-                                            request.form.get('expiry_date', ''), 
-                                            is_fixed_price, # Use defined variable
-                                            fixed_sale_price, # Use defined variable
-                                            request.form.get('markup_percentage_pharmacy', 0.0)
-                                    ),
-                                    user_role=session.get('role'),
-                                    business_type=business_type, 
-                                    current_year=datetime.now().year)
+                return redirect(request.url)
             except Exception as e:
                 db.session.rollback()
                 flash(f'An unexpected error occurred: {e}', 'danger')
                 return redirect(url_for('inventory'))
 
-        # --- GET Request / Initial Render ---
-        item_data_for_form = {
+        # GET Request / Initial Render - prepare item data with price range fields
+        item_data = {
             'id': item_to_edit.id,
             'product_name': item_to_edit.product_name,
             'category': item_to_edit.category,
             'purchase_price': item_to_edit.purchase_price,
             'sale_price': item_to_edit.sale_price,
             'current_stock': item_to_edit.current_stock,
-            'last_updated': item_to_edit.last_updated.isoformat(),
-            'batch_number': item_to_edit.batch_number,
-            'barcode': item_to_edit.barcode,
+            'batch_number': item_to_edit.batch_number or '',
+            'barcode': item_to_edit.barcode or '',
             'number_of_tabs': item_to_edit.number_of_tabs,
-            'unit_price_per_tab': item_to_edit.unit_price_per_tab,
             'item_type': item_to_edit.item_type,
+            'expiry_date': item_to_edit.expiry_date.strftime('%Y-%m-%d') if item_to_edit.expiry_date else '',
             'is_fixed_price': item_to_edit.is_fixed_price,
             'fixed_sale_price': item_to_edit.fixed_sale_price,
-            'is_active': item_to_edit.is_active
+            'is_active': item_to_edit.is_active,
+            'markup_percentage_pharmacy': item_to_edit.markup_percentage_pharmacy if business_type == 'Pharmacy' else 0.0,
+            # NEW: Include price range fields (with defaults for existing items)
+            'use_price_range': getattr(item_to_edit, 'use_price_range', False),
+            'min_sale_price': getattr(item_to_edit, 'min_sale_price', 0.0),
+            'preferred_sale_price': getattr(item_to_edit, 'preferred_sale_price', item_to_edit.sale_price),
+            'max_sale_price': getattr(item_to_edit, 'max_sale_price', 0.0)
         }
-
-        item_data_for_form['expiry_date'] = item_to_edit.expiry_date.strftime('%Y-%m-%d') if item_to_edit.expiry_date else ''
-        
-        if business_type == 'Pharmacy' and not item_to_edit.is_fixed_price and item_to_edit.purchase_price is not None and item_to_edit.purchase_price > 0:
-            if item_to_edit.markup_percentage_pharmacy is not None:
-                item_data_for_form['markup_percentage_pharmacy'] = float(item_to_edit.markup_percentage_pharmacy)
-            else:
-                markup_percentage = ((item_to_edit.sale_price - item_to_edit.purchase_price) / item_to_edit.purchase_price) * 100
-                item_data_for_form['markup_percentage_pharmacy'] = float(f"{markup_percentage:.2f}")
-        else:
-            item_data_for_form['markup_percentage_pharmacy'] = 0.0
 
         return render_template('add_edit_inventory.html',
                             title=f'Edit Inventory Item: {item_to_edit.product_name}',
-                            item=item_data_for_form,
-                            business_type=business_type,
+                            item=item_data,
                             user_role=session.get('role'),
+                            business_type=business_type, 
                             current_year=datetime.now().year)
 
-    # @app.route('/inventory/delete/<item_id>')
-    # def delete_inventory_item(item_id):
-    #     # ACCESS CONTROL: Allows admin role
-    #     if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
-    #         flash('You do not have permission to delete inventory items or no business selected.', 'danger')
-    #         return redirect(url_for('dashboard'))
-        
-    #     business_id = get_current_business_id()
-    #     item_to_delete = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first_or_404()
-        
-    #     item_to_delete.is_active = False # Soft delete
-    #     db.session.commit()
+    @app.route('/api/get_inventory_for_sale', methods=['GET'])
+    @login_required
+    def get_inventory_for_sale():
+        """
+        API endpoint to get all active inventory items for sales form
+        Returns JSON with inventory data including price range information
+        """
+        try:
+            # Get current business ID from session
+            business_id = session.get('business_id')
+            if not business_id:
+                return jsonify({
+                    'success': False, 
+                    'error': 'No business selected'
+                }), 400
 
-    #     flash(f'Inventory item "{item_to_delete.product_name}" marked as inactive successfully!', 'success')
-    #     return redirect(url_for('inventory'))
+            # Query active inventory items for current business
+            inventory_items = InventoryItem.query.filter_by(
+                business_id=business_id,
+                is_active=True
+            ).order_by(InventoryItem.product_name).all()
+
+            # Serialize inventory data
+            items_data = []
+            for item in inventory_items:
+                try:
+                    # Calculate sale prices
+                    sale_price = float(item.sale_price) if item.sale_price else 0.0
+                    number_of_tabs = float(item.number_of_tabs) if item.number_of_tabs else 1.0
+                    unit_price_per_tab = sale_price / number_of_tabs if number_of_tabs > 0 else 0.0
+
+                    item_data = {
+                        'id': item.id,
+                        'product_name': item.product_name or '',
+                        'category': item.category or '',
+                        'current_stock': float(item.current_stock) if item.current_stock else 0.0,
+                        'sale_price': sale_price,
+                        'unit_price_per_tab': unit_price_per_tab,
+                        'number_of_tabs': number_of_tabs,
+                        'batch_number': item.batch_number or '',
+                        'barcode': item.barcode or '',
+                        'item_type': item.item_type or '',
+                        'purchase_price': float(item.purchase_price) if item.purchase_price else 0.0,
+                        
+                        # Legacy fixed price support
+                        'is_fixed_price': bool(item.is_fixed_price) if hasattr(item, 'is_fixed_price') else False,
+                        'fixed_sale_price': float(item.fixed_sale_price) if hasattr(item, 'fixed_sale_price') and item.fixed_sale_price else 0.0,
+                        
+                        # NEW: Price range support
+                        'use_price_range': bool(item.use_price_range) if hasattr(item, 'use_price_range') else False,
+                        'min_sale_price': float(item.min_sale_price) if hasattr(item, 'min_sale_price') and item.min_sale_price else 0.0,
+                        'preferred_sale_price': float(item.preferred_sale_price) if hasattr(item, 'preferred_sale_price') and item.preferred_sale_price else 0.0,
+                        'max_sale_price': float(item.max_sale_price) if hasattr(item, 'max_sale_price') and item.max_sale_price else 0.0,
+                    }
+                    
+                    items_data.append(item_data)
+                    
+                except Exception as item_error:
+                    # Log individual item errors but continue processing
+                    app.logger.warning(f"Error processing inventory item {item.id}: {str(item_error)}")
+                    continue
+
+            return jsonify({
+                'success': True,
+                'items': items_data,
+                'count': len(items_data)
+            })
+
+        except Exception as e:
+            app.logger.error(f"Error in get_inventory_for_sale: {str(e)}")
+            return jsonify({
+                'success': False, 
+                'error': f'Failed to load inventory: {str(e)}'
+            }), 500
+
+
+
+    @app.route('/api/get_item_price_info/<item_id>')
+    def get_item_price_info(item_id):
+        """
+        NEW API endpoint to get price range information for a specific item
+        Used by the sales interface to show price negotiation options
+        """
+        if 'username' not in session or not get_current_business_id():
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        business_id = get_current_business_id()
+        item = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first()
+        
+        if not item:
+            return jsonify({'error': 'Item not found'}), 404
+        
+        # Calculate profit margins
+        def calculate_profit_info(sale_price, purchase_price):
+            if purchase_price > 0:
+                profit_amount = sale_price - purchase_price
+                profit_percentage = (profit_amount / purchase_price) * 100
+                return {
+                    'profit_amount': round(profit_amount, 2),
+                    'profit_percentage': round(profit_percentage, 2),
+                    'is_profitable': profit_amount > 0
+                }
+            return {'profit_amount': 0, 'profit_percentage': 0, 'is_profitable': False}
+        
+        price_info = {
+            'item_id': item.id,
+            'product_name': item.product_name,
+            'purchase_price': item.purchase_price,
+            'current_sale_price': item.sale_price,
+            'current_stock': item.current_stock,
+            'use_price_range': getattr(item, 'use_price_range', False),
+            'is_fixed_price': item.is_fixed_price,
+            'fixed_sale_price': item.fixed_sale_price
+        }
+        
+        # Add price range information if enabled
+        if getattr(item, 'use_price_range', False):
+            price_info.update({
+                'min_sale_price': getattr(item, 'min_sale_price', 0.0),
+                'preferred_sale_price': getattr(item, 'preferred_sale_price', item.sale_price),
+                'max_sale_price': getattr(item, 'max_sale_price', 0.0),
+                'min_profit_info': calculate_profit_info(getattr(item, 'min_sale_price', 0.0), item.purchase_price),
+                'preferred_profit_info': calculate_profit_info(getattr(item, 'preferred_sale_price', item.sale_price), item.purchase_price),
+                'max_profit_info': calculate_profit_info(getattr(item, 'max_sale_price', 0.0), item.purchase_price)
+            })
+        
+        return jsonify(price_info)
+
+    @app.route('/api/validate_sale_price', methods=['POST'])
+    def validate_sale_price():
+        """
+        NEW API endpoint to validate a proposed sale price against item constraints
+        Used during sales to ensure prices are within acceptable ranges
+        """
+        if 'username' not in session or not get_current_business_id():
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        data = request.get_json()
+        item_id = data.get('item_id')
+        proposed_price = float(data.get('proposed_price', 0))
+        
+        business_id = get_current_business_id()
+        item = InventoryItem.query.filter_by(id=item_id, business_id=business_id).first()
+        
+        if not item:
+            return jsonify({'error': 'Item not found'}), 404
+        
+        validation_result = {
+            'is_valid': True,
+            'message': 'Price is acceptable',
+            'warnings': []
+        }
+        
+        # Check if item uses price range
+        if getattr(item, 'use_price_range', False):
+            min_price = getattr(item, 'min_sale_price', 0.0)
+            max_price = getattr(item, 'max_sale_price', 0.0)
+            
+            if proposed_price < min_price:
+                validation_result = {
+                    'is_valid': False,
+                    'message': f'Price too low. Minimum allowed: ${min_price:.2f}',
+                    'warnings': ['This price may result in a loss']
+                }
+            elif proposed_price > max_price:
+                validation_result = {
+                    'is_valid': False,
+                    'message': f'Price too high. Maximum allowed: ${max_price:.2f}',
+                    'warnings': ['This price exceeds the maximum allowed']
+                }
+        
+        # Check if item has fixed pricing
+        elif item.is_fixed_price:
+            if proposed_price != item.fixed_sale_price:
+                validation_result = {
+                    'is_valid': False,
+                    'message': f'This item has a fixed price: ${item.fixed_sale_price:.2f}',
+                    'warnings': ['Fixed price items cannot be discounted']
+                }
+        
+        # Calculate profit information
+        if item.purchase_price > 0:
+            profit_amount = proposed_price - item.purchase_price
+            profit_percentage = (profit_amount / item.purchase_price) * 100
+            
+            validation_result['profit_info'] = {
+                'profit_amount': round(profit_amount, 2),
+                'profit_percentage': round(profit_percentage, 2),
+                'is_profitable': profit_amount > 0
+            }
+            
+            # Add profit-based warnings
+            if profit_amount <= 0:
+                validation_result['warnings'].append('This sale will result in a loss')
+            elif profit_percentage < 10:
+                validation_result['warnings'].append('Low profit margin')
+        
+        return jsonify(validation_result)
+
+
+
 
     @app.route('/inventory/delete/<item_id>', methods=['GET', 'POST'])
     @csrf.exempt
