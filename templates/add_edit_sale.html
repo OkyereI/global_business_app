@@ -1,4 +1,3 @@
-
 {% extends 'base.html' %}
 
 {% block head %}
@@ -11,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
     <style>
         body {
-            font-family: 'Aerial', sans-serif;
+            font-family: 'Arial', sans-serif;
             background-color: #f4f7f6;
         }
         .container {
@@ -36,6 +35,130 @@
         
         .hidden {
             display: none;
+        }
+
+        /* NEW: Price adjustment controls */
+        .price-control-group {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+        
+        .price-range-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85em;
+            margin-bottom: 8px;
+            color: #6c757d;
+        }
+        
+        .price-input-with-slider {
+            position: relative;
+        }
+        
+        .price-slider {
+            width: 100%;
+            margin: 8px 0;
+            appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(to right, #dc3545 0%, #ffc107 50%, #28a745 100%);
+            outline: none;
+        }
+        
+        .price-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .price-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .profit-indicator {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .profit-high {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .profit-medium {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        
+        .profit-low {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .profit-loss {
+            background-color: #f5c6cb;
+            color: #721c24;
+            border: 1px solid #f1b5bb;
+        }
+        
+        .price-suggestions {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        
+        .price-suggestion-btn {
+            padding: 2px 6px;
+            font-size: 0.75em;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .price-suggestion-btn:hover {
+            background: #e9ecef;
+        }
+        
+        .unit-price-input-enhanced {
+            border: 2px solid #e9ecef;
+            transition: border-color 0.2s;
+        }
+        
+        .unit-price-input-enhanced.profit {
+            border-color: #28a745;
+        }
+        
+        .unit-price-input-enhanced.loss {
+            border-color: #dc3545;
+        }
+        
+        .unit-price-input-enhanced.break-even {
+            border-color: #ffc107;
         }
 
         /* Searchable Dropdown Styles */
@@ -292,6 +415,7 @@
         </form>
     </div>
 
+    <!-- Barcode Scanner Modal -->
     <div id="barcode-scanner-container">
         <div id="barcode-scanner"></div>
         <div class="scanner-controls">
@@ -305,10 +429,11 @@
         <p class="text-white mt-4">Point the camera at a barcode to scan</p>
     </div>
 
+    <!-- Receipt Modal -->
     <div id="receipt-modal" class="hidden fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
         <div class="bg-white rounded-lg shadow-xl max-w-lg w-full p-6 relative">
             <div id="receipt-content">
-                </div>
+            </div>
             <div class="flex justify-end mt-4 space-x-2 no-print">
                 <button id="print-receipt-btn" class="btn bg-blue-600 text-white font-bold py-2 px-4 rounded-md"><i class="fas fa-print"></i> Print</button>
                 <button id="close-receipt-btn" class="btn bg-gray-500 text-white font-bold py-2 px-4 rounded-md"><i class="fas fa-times-circle"></i> Close</button>
@@ -345,7 +470,47 @@
         let scannerActive = false;
         let QuaggaInstance = null;
 
-        // Searchable Dropdown Component
+        // FIXED: Pass business info properly to JavaScript for receipts
+        const businessInfo = {
+            name: "{{ pharmacy_info.name | default('Business Name') }}",
+            address: "{{ pharmacy_info.address | default('N/A') }}",
+            location: "{{ pharmacy_info.location | default('') }}",
+            contact: "{{ pharmacy_info.contact | default('N/A') }}"
+        };
+
+        // FIXED: Load inventory data from backend
+        async function loadInventoryData() {
+            try {
+                const response = await fetch('/api/get_inventory_for_sale', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success && Array.isArray(data.items)) {
+                    inventoryItems = data.items;
+                } else {
+                    console.error('Invalid response format:', data);
+                    flashMessage('Failed to load inventory data. Invalid response format.', 'danger');
+                    inventoryItems = [];
+                }
+
+            } catch (error) {
+                console.error('Error loading inventory:', error);
+                flashMessage(`Failed to load inventory data: ${error.message}`, 'danger');
+                inventoryItems = [];
+            }
+        }
+
+        // Searchable Dropdown Component - ENHANCED WITH PRICE RANGE SUPPORT
         class SearchableDropdown {
             constructor(container, options = {}) {
                 this.container = container;
@@ -362,7 +527,7 @@
             createDropdown() {
                 this.container.innerHTML = `
                     <div class="searchable-dropdown-input" tabindex="0">
-                        <span class="searchable-dropdown-placeholder">Select a Product</span>
+                        <span class="searchable-dropdown-placeholder">Search products...</span>
                         <i class="fas fa-chevron-down searchable-dropdown-arrow"></i>
                     </div>
                     <div class="searchable-dropdown-list">
@@ -380,18 +545,15 @@
             }
             
             bindEvents() {
-                // Toggle dropdown on click
                 this.inputElement.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.toggle();
                 });
                 
-                // Handle search input
                 this.searchElement.addEventListener('input', (e) => {
                     this.filterOptions(e.target.value);
                 });
                 
-                // Handle keyboard navigation
                 this.searchElement.addEventListener('keydown', (e) => {
                     this.handleKeyDown(e);
                 });
@@ -403,7 +565,6 @@
                     }
                 });
                 
-                // Close dropdown when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!this.container.contains(e.target)) {
                         this.close();
@@ -439,7 +600,6 @@
                     </div>
                 `).join('');
                 
-                // Bind option click events
                 this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((optionEl, index) => {
                     optionEl.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -485,7 +645,6 @@
                     el.classList.toggle('highlighted', index === this.highlightedIndex);
                 });
                 
-                // Scroll highlighted option into view
                 if (this.highlightedIndex >= 0) {
                     const highlightedEl = this.optionsContainer.querySelector('.highlighted');
                     if (highlightedEl) {
@@ -502,14 +661,12 @@
                 this.placeholderElement.textContent = option.productName;
                 this.placeholderElement.classList.remove('searchable-dropdown-placeholder');
                 
-                // Mark selected in options
                 this.optionsContainer.querySelectorAll('.searchable-dropdown-option').forEach((el, i) => {
                     el.classList.toggle('selected', i === index);
                 });
                 
                 this.close();
                 
-                // Trigger change event
                 if (this.options.onChange) {
                     this.options.onChange(option);
                 }
@@ -535,7 +692,7 @@
             
             reset() {
                 this.selectedOption = null;
-                this.placeholderElement.textContent = 'Select a Product';
+                this.placeholderElement.textContent = 'Search products...';
                 this.placeholderElement.classList.add('searchable-dropdown-placeholder');
                 this.searchElement.value = '';
                 this.filterOptions('');
@@ -586,6 +743,7 @@
             }
         }
 
+        // ENHANCED: Create item row with price range support
         function createItemRow(itemData = {}) {
             const row = document.createElement('div');
             row.className = 'item-row grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 bg-gray-50 p-4 rounded-md shadow-sm border border-gray-200 relative';
@@ -605,9 +763,23 @@
                     <label class="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
                     <input type="number" step="any" min="0" class="quantity-input form-input w-full p-2 rounded-md border-gray-300" value="0">
                 </div>
-                <div class="form-group">
+                <div class="form-group col-span-full md:col-span-2">
                     <label class="block text-xs font-medium text-gray-600 mb-1">Unit Price (GH&#8373;)</label>
-                    <input type="number" step="0.01" min="0" class="unit-price-input form-input w-full p-2 rounded-md border-gray-300 bg-gray-100 cursor-not-allowed" value="0.00" readonly>
+                    <div class="unit-price-container">
+                        <input type="number" step="0.01" min="0" class="unit-price-input unit-price-input-enhanced form-input w-full p-2 rounded-md border-gray-300" value="0.00">
+                        <div class="price-control-group" style="display: none;">
+                            <div class="price-range-info">
+                                <span class="range-label">Negotiation Range:</span>
+                                <span class="profit-indicator" id="profit-status">-</span>
+                            </div>
+                            <input type="range" class="price-slider" min="0" max="100" step="0.01" value="0">
+                            <div class="price-suggestions">
+                                <button type="button" class="price-suggestion-btn min-price-btn">Min</button>
+                                <button type="button" class="price-suggestion-btn preferred-price-btn">Preferred</button>
+                                <button type="button" class="price-suggestion-btn max-price-btn">Max</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group col-span-full md:col-span-1 flex items-end justify-between">
                     <div>
@@ -626,15 +798,25 @@
             const unitPriceInput = row.querySelector('.unit-price-input');
             const itemTotalDisplay = row.querySelector('.item-total-display');
             const removeItemBtn = row.querySelector('.remove-item-btn');
+            const priceControlGroup = row.querySelector('.price-control-group');
+            const priceSlider = row.querySelector('.price-slider');
+            const profitStatus = row.querySelector('#profit-status');
+            const minPriceBtn = row.querySelector('.min-price-btn');
+            const preferredPriceBtn = row.querySelector('.preferred-price-btn');
+            const maxPriceBtn = row.querySelector('.max-price-btn');
+
+            let currentProduct = null;
 
             // Create searchable dropdown
             const productDropdown = new SearchableDropdown(dropdownContainer, {
                 onChange: (selectedOption) => {
+                    currentProduct = inventoryItems.find(item => item.id == selectedOption.value);
+                    setupPriceControls();
                     updateRowCalculations();
                 }
             });
 
-            // Populate dropdown options
+            // Populate dropdown options with PRICE RANGE SUPPORT
             const dropdownOptions = inventoryItems
                 .filter(item => !item.product_name.startsWith('Serialization Error'))
                 .map(item => {
@@ -643,9 +825,19 @@
                     const unitPricePerTab = parseFloat(item.unit_price_per_tab) || 0;
                     const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
                     
+                    // NEW: Handle different pricing models
+                    let priceInfo = '';
+                    if (item.use_price_range && item.min_sale_price > 0) {
+                        priceInfo = `Range: GH₵${parseFloat(item.min_sale_price).toFixed(2)}-${parseFloat(item.max_sale_price).toFixed(2)}`;
+                    } else if (item.is_fixed_price && item.fixed_sale_price > 0) {
+                        priceInfo = `Fixed: GH₵${parseFloat(item.fixed_sale_price).toFixed(2)}`;
+                    } else {
+                        priceInfo = `GH₵${salePrice.toFixed(2)}`;
+                    }
+                    
                     return {
                         value: item.id,
-                        text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - GHS${salePrice.toFixed(2)} / GHS${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
+                        text: `${item.product_name} (Stock: ${currentStock.toFixed(2)}) - ${priceInfo} / GH₵${unitPricePerTab.toFixed(2)} per ${unitLabel}`,
                         productName: item.product_name,
                         salePrice: salePrice,
                         currentStock: currentStock,
@@ -653,20 +845,94 @@
                         unitPricePerTab: unitPricePerTab,
                         isFixedPrice: item.is_fixed_price,
                         fixedSalePrice: parseFloat(item.fixed_sale_price) || 0,
+                        // NEW: Price range fields
+                        usePriceRange: item.use_price_range || false,
+                        minSalePrice: parseFloat(item.min_sale_price) || 0,
+                        preferredSalePrice: parseFloat(item.preferred_sale_price) || 0,
+                        maxSalePrice: parseFloat(item.max_sale_price) || 0,
                         barcode: item.barcode || '',
                         itemType: item.item_type || '',
-                        purchasePrice: parseFloat(item.purchase_price) || 0,
-                        markupPercentagePharmacy: parseFloat(item.markup_percentage_pharmacy) || 0
+                        purchasePrice: parseFloat(item.purchase_price) || 0
                     };
                 });
             
             productDropdown.setOptions(dropdownOptions);
 
+            // NEW: Setup price controls based on product type
+            function setupPriceControls() {
+                if (!currentProduct) return;
+
+                const usePriceRange = currentProduct.usePriceRange;
+                const isFixedPrice = currentProduct.isFixedPrice;
+                const hasRangeData = currentProduct.minSalePrice > 0 && currentProduct.maxSalePrice > 0;
+
+                if (usePriceRange && hasRangeData) {
+                    // Range-based pricing - show controls
+                    priceControlGroup.style.display = 'block';
+                    unitPriceInput.readOnly = false;
+                    unitPriceInput.classList.add('unit-price-input-enhanced');
+                    
+                    // Setup slider
+                    priceSlider.min = currentProduct.minSalePrice;
+                    priceSlider.max = currentProduct.maxSalePrice;
+                    priceSlider.value = currentProduct.preferredSalePrice || currentProduct.minSalePrice;
+                    
+                    // Update range info
+                    const rangeLabel = row.querySelector('.range-label');
+                    rangeLabel.textContent = `Range: GH₵${currentProduct.minSalePrice.toFixed(2)} - GH₵${currentProduct.maxSalePrice.toFixed(2)}`;
+                    
+                    // Setup suggestion buttons
+                    minPriceBtn.textContent = `Min (${currentProduct.minSalePrice.toFixed(2)})`;
+                    preferredPriceBtn.textContent = `Preferred (${(currentProduct.preferredSalePrice || currentProduct.minSalePrice).toFixed(2)})`;
+                    maxPriceBtn.textContent = `Max (${currentProduct.maxSalePrice.toFixed(2)})`;
+                } else if (isFixedPrice) {
+                    // Fixed price - no negotiation
+                    priceControlGroup.style.display = 'none';
+                    unitPriceInput.readOnly = true;
+                    unitPriceInput.classList.remove('unit-price-input-enhanced');
+                } else {
+                    // Regular pricing - editable but no special controls
+                    priceControlGroup.style.display = 'none';
+                    unitPriceInput.readOnly = false;
+                    unitPriceInput.classList.add('unit-price-input-enhanced');
+                }
+            }
+
+            // NEW: Update profit indicator
+            function updateProfitIndicator(price) {
+                if (!currentProduct) return;
+                
+                const purchasePrice = currentProduct.purchasePrice || 0;
+                const profit = price - purchasePrice;
+                const profitPercent = purchasePrice > 0 ? ((profit / purchasePrice) * 100) : 0;
+                
+                // Update visual indicator
+                unitPriceInput.classList.remove('profit', 'loss', 'break-even');
+                profitStatus.classList.remove('profit-high', 'profit-medium', 'profit-low', 'profit-loss');
+                
+                if (profit > purchasePrice * 0.3) { // 30%+ profit
+                    unitPriceInput.classList.add('profit');
+                    profitStatus.classList.add('profit-high');
+                    profitStatus.innerHTML = `<i class="fas fa-arrow-up"></i> High Profit: +${profitPercent.toFixed(1)}%`;
+                } else if (profit > purchasePrice * 0.1) { // 10-30% profit
+                    unitPriceInput.classList.add('profit');
+                    profitStatus.classList.add('profit-medium');
+                    profitStatus.innerHTML = `<i class="fas fa-arrow-up"></i> Good Profit: +${profitPercent.toFixed(1)}%`;
+                } else if (profit > 0) { // Small profit
+                    unitPriceInput.classList.add('break-even');
+                    profitStatus.classList.add('profit-low');
+                    profitStatus.innerHTML = `<i class="fas fa-minus"></i> Low Profit: +${profitPercent.toFixed(1)}%`;
+                } else { // Loss
+                    unitPriceInput.classList.add('loss');
+                    profitStatus.classList.add('profit-loss');
+                    profitStatus.innerHTML = `<i class="fas fa-arrow-down"></i> Loss: ${profitPercent.toFixed(1)}%`;
+                }
+            }
+
             const updateRowCalculations = () => {
                 const selectedOption = productDropdown.getSelectedOption();
                 if (!selectedOption) {
                     unitPriceInput.value = '0.00';
-                    unitPriceInput.readOnly = true;
                     itemTotalDisplay.value = '0.00';
                     updateGrandTotal();
                     return;
@@ -684,66 +950,116 @@
                     return;
                 }
 
-                let price = 0;
-                const fixedSalePrice = parseFloat(product.fixed_sale_price || 0);
-                const numberOfTabs = parseFloat(product.number_of_tabs || 1);
-                const regularSalePrice = parseFloat(product.sale_price || 0);
-                const unitPricePerTab = parseFloat(product.unit_price_per_tab || 0);
-                const purchasePrice = parseFloat(product.purchase_price || 0);
-                const markupPercentagePharmacy = parseFloat(product.markup_percentage_pharmacy) || 0;
-
-                if (selectedOption.isFixedPrice === 'true') {
-                    unitPriceInput.readOnly = true;
-                    if (unitType === 'pack') {
-                        price = fixedSalePrice;
+                // Set initial price if not manually set
+                if (parseFloat(unitPriceInput.value) === 0) {
+                    let initialPrice = 0;
+                    const numberOfTabs = parseFloat(product.number_of_tabs || 1);
+                    
+                    if (product.use_price_range && product.preferred_sale_price > 0) {
+                        // Use preferred price from range
+                        initialPrice = unitType === 'pack' ? product.preferred_sale_price : (product.preferred_sale_price / numberOfTabs);
+                    } else if (product.is_fixed_price && product.fixed_sale_price > 0) {
+                        // Use fixed sale price
+                        initialPrice = unitType === 'pack' ? product.fixed_sale_price : (product.fixed_sale_price / numberOfTabs);
                     } else {
-                        price = fixedSalePrice / numberOfTabs;
+                        // Use regular sale price
+                        const regularSalePrice = parseFloat(product.sale_price || 0);
+                        const unitPricePerTab = parseFloat(product.unit_price_per_tab || 0);
+                        initialPrice = unitType === 'pack' ? regularSalePrice : unitPricePerTab;
                     }
-                } else {
-                    unitPriceInput.readOnly = false;
-                    if (product.item_type === 'Pharmacy') {
-                        price = purchasePrice * (1 + (markupPercentagePharmacy / 100));
-                    } else {
-                        if (unitType === 'pack') {
-                            price = regularSalePrice;
-                        } else {
-                            price = unitPricePerTab;
-                        }
+                    
+                    unitPriceInput.value = initialPrice.toFixed(2);
+                    
+                    // Update slider position
+                    if (priceSlider && product.use_price_range) {
+                        priceSlider.value = initialPrice;
                     }
                 }
                 
-                if (unitType !== 'pack' && parseFloat(product.unit_price_per_tab || 0) > 0) {
-                    price = parseFloat(product.unit_price_per_tab);
-                }
+                const currentPrice = parseFloat(unitPriceInput.value) || 0;
+                updateProfitIndicator(currentPrice);
+                itemTotalDisplay.value = (currentPrice * quantity).toFixed(2);
 
-                unitPriceInput.value = price.toFixed(2);
-                itemTotalDisplay.value = (price * quantity).toFixed(2);
-
+                // Stock validation
                 let effectiveStock = parseFloat(product.current_stock) || 0;
                 let requestedEffectiveQuantity = quantity;
 
-                if (unitType === 'pack') {
-                    requestedEffectiveQuantity = quantity * numberOfTabs;
+                if (unitType !== 'pack') {
+                    requestedEffectiveQuantity = quantity / parseFloat(product.number_of_tabs || 1);
                 }
 
                 if (requestedEffectiveQuantity > effectiveStock) {
                     quantityInput.classList.add('border-red-500');
-                    flashMessage(`Insufficient stock for ${product.product_name}. Available: ${effectiveStock.toFixed(2)} units.`, 'warning');
+                    flashMessage(`Insufficient stock for ${product.product_name}. Available: ${effectiveStock.toFixed(2)} packs.`, 'warning');
                 } else {
                     quantityInput.classList.remove('border-red-500');
                 }
+                
                 updateGrandTotal();
             };
 
+            // Event listeners
             unitTypeSelect.addEventListener('change', updateRowCalculations);
             quantityInput.addEventListener('input', updateRowCalculations);
-            unitPriceInput.addEventListener('input', updateRowCalculations);
+            unitPriceInput.addEventListener('input', () => {
+                const price = parseFloat(unitPriceInput.value) || 0;
+                if (currentProduct && currentProduct.usePriceRange) {
+                    // Validate against range if available
+                    if (currentProduct.minSalePrice > 0 && currentProduct.maxSalePrice > 0) {
+                        if (price < currentProduct.minSalePrice || price > currentProduct.maxSalePrice) {
+                            flashMessage(`Price should be between GH₵${currentProduct.minSalePrice.toFixed(2)} and GH₵${currentProduct.maxSalePrice.toFixed(2)}`, 'warning');
+                        }
+                    }
+                    
+                    if (priceSlider) {
+                        priceSlider.value = price;
+                    }
+                }
+                updateProfitIndicator(price);
+                updateRowCalculations();
+            });
+
+            // NEW: Slider control
+            if (priceSlider) {
+                priceSlider.addEventListener('input', () => {
+                    const price = parseFloat(priceSlider.value);
+                    unitPriceInput.value = price.toFixed(2);
+                    updateProfitIndicator(price);
+                    updateRowCalculations();
+                });
+            }
+
+            // NEW: Suggestion buttons
+            minPriceBtn.addEventListener('click', () => {
+                if (currentProduct && currentProduct.minSalePrice > 0) {
+                    unitPriceInput.value = currentProduct.minSalePrice.toFixed(2);
+                    if (priceSlider) priceSlider.value = currentProduct.minSalePrice;
+                    updateRowCalculations();
+                }
+            });
+
+            preferredPriceBtn.addEventListener('click', () => {
+                if (currentProduct && currentProduct.preferredSalePrice > 0) {
+                    unitPriceInput.value = currentProduct.preferredSalePrice.toFixed(2);
+                    if (priceSlider) priceSlider.value = currentProduct.preferredSalePrice;
+                    updateRowCalculations();
+                }
+            });
+
+            maxPriceBtn.addEventListener('click', () => {
+                if (currentProduct && currentProduct.maxSalePrice > 0) {
+                    unitPriceInput.value = currentProduct.maxSalePrice.toFixed(2);
+                    if (priceSlider) priceSlider.value = currentProduct.maxSalePrice;
+                    updateRowCalculations();
+                }
+            });
 
             removeItemBtn.addEventListener('click', () => {
                 row.remove();
                 updateGrandTotal();
             });
 
+            // Pre-populate if editing
             if (Object.keys(itemData).length > 0) {
                 const productToPopulate = inventoryItems.find(item => item.id == itemData.product_id);
                 if (productToPopulate) {
@@ -754,8 +1070,6 @@
                     itemTotalDisplay.value = parseFloat(itemData.item_total_amount).toFixed(2);
                 }
                 updateRowCalculations();
-            } else {
-                unitPriceInput.readOnly = true;
             }
 
             // Store reference to dropdown for external access
@@ -800,11 +1114,13 @@
             cartItemsJsonInput.value = JSON.stringify(cart);
         }
 
+        // Initialize with empty cart item
         addAnotherItemBtn.addEventListener('click', () => {
             cartItemsContainer.appendChild(createItemRow());
             updateGrandTotal();
         });
 
+        // Search functionality
         searchButton.addEventListener('click', function() {
             const currentSearchQuery = itemSearchInput.value.trim();
             const currentUrl = new URL(window.location.href);
@@ -819,6 +1135,7 @@
             }
         });
 
+        // Scanner functionality
         function startScanner() {
             if (scannerActive) return;
 
@@ -909,78 +1226,20 @@
         });
 
         function fetchProductByBarcodeAndPopulateRow(barcode, rowElement) {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
-            fetch("{{ url_for('get_product_by_barcode') }}", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken
-                },
-                body: JSON.stringify({ barcode: barcode })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.product) {
-                    populateProductRow(rowElement, data.product);
-                    flashMessage(`Product '${data.product.product_name}' added!`, 'success');
-                    barcodeInput.value = '';
-                    updateGrandTotal();
-                } else {
-                    flashMessage(data.message || 'Product not found.', 'warning');
-                    rowElement.productDropdown.reset();
-                    barcodeInput.value = '';
-                    updateGrandTotal();
+            // Find product by barcode
+            const product = inventoryItems.find(item => item.barcode === barcode);
+            if (product) {
+                const productDropdown = rowElement.productDropdown;
+                if (productDropdown) {
+                    productDropdown.setValue(product.id);
+                    flashMessage(`Found product: ${product.product_name}`, 'success');
                 }
-            })
-            .catch(error => {
-                console.error('Error fetching product:', error);
-                flashMessage('Error fetching product. Please try again.', 'danger');
-                barcodeInput.value = '';
-                updateGrandTotal();
-            });
-        }
-
-        function populateProductRow(rowElement, product) {
-            const productDropdown = rowElement.productDropdown;
-            const unitTypeSelect = rowElement.querySelector('.unit-type-select');
-            const quantityInput = rowElement.querySelector('.quantity-input');
-
-            // Add product to dropdown if not exists
-            const existingOptions = productDropdown.allOptions || [];
-            if (!existingOptions.find(opt => opt.value === product.id)) {
-                const unitLabel = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
-                const newOption = {
-                    value: product.id,
-                    text: `${product.product_name} (Stock: ${product.current_stock.toFixed(2)}) - GHS${(product.sale_price || 0).toFixed(2)} / GHS${(product.unit_price_per_tab || 0).toFixed(2)} per ${unitLabel}`,
-                    productName: product.product_name,
-                    salePrice: product.sale_price,
-                    currentStock: product.current_stock,
-                    numberOfTabs: product.number_of_tabs || 1,
-                    unitPricePerTab: product.unit_price_per_tab || 0,
-                    isFixedPrice: product.is_fixed_price,
-                    fixedSalePrice: product.fixed_sale_price || 0,
-                    barcode: product.barcode || '',
-                    itemType: product.item_type || '',
-                    purchasePrice: product.purchase_price || 0,
-                    markupPercentagePharmacy: product.markup_percentage_pharmacy || 0
-                };
-                existingOptions.push(newOption);
-                productDropdown.setOptions(existingOptions);
-            }
-            
-            productDropdown.setValue(product.id);
-
-            if (parseFloat(product.unit_price_per_tab || 0) > 0 && (product.item_type === 'Pharmacy' || product.item_type === 'Hardware Material')) {
-                unitTypeSelect.value = 'piece';
-                unitTypeSelect.options[1].textContent = businessType === 'Pharmacy' ? 'Tab' : 'Piece';
             } else {
-                unitTypeSelect.value = 'pack';
+                flashMessage(`Product with barcode "${barcode}" not found.`, 'warning');
             }
-
-            quantityInput.value = 1;
         }
         
-        // Receipt generation functions
+        // FIXED: Receipt generation functions (keeping your original structure but fixing business info)
         function generateReceiptHtml(transactionDetails) {
             if (!transactionDetails || !transactionDetails.last_transaction_details || transactionDetails.last_transaction_details.length === 0) {
                 return '<h3 class="text-xl font-bold text-center text-gray-800">No transaction details found.</h3>';
@@ -996,9 +1255,9 @@
 
             return `
                 <div class="text-center font-mono">
-                    <h2 class="text-2xl font-bold">{{ pharmacy_info.name or 'Business Name' }}</h2>
-                    <p class="text-xs">{{ pharmacy_info.address or 'N/A' }}{% if pharmacy_info.location %}, {{ pharmacy_info.location }}{% endif %}</p>
-                    <p class="text-xs">Contact: {{ pharmacy_info.contact or 'N/A' }}</p>
+                    <h2 class="text-2xl font-bold">${businessInfo.name}</h2>
+                    <p class="text-xs">${businessInfo.address}${businessInfo.location ? ', ' + businessInfo.location : ''}</p>
+                    <p class="text-xs">Contact: ${businessInfo.contact}</p>
                     <div class="my-4 border-t border-b border-dashed border-gray-400 py-2">
                         <p class="text-sm">Receipt</p>
                         <p class="text-xs">Transaction ID: ${transactionDetails.last_transaction_id}</p>
@@ -1031,96 +1290,62 @@
             receiptModal.classList.remove('hidden');
         }
 
+        // Receipt modal functionality (keeping your original structure)
         printReceiptBtn.addEventListener('click', () => {
             const printContent = document.getElementById('receipt-content').innerHTML;
             const printWindow = window.open('', '', 'height=600,width=800');
             printWindow.document.write('<html><head><title>Print Receipt</title>');
             printWindow.document.write('<style>');
             printWindow.document.write(`
-                body {
-                    font-family: 'Inter', sans-serif;
-                    font-size: 12px;
-                }
+                body { font-family: Arial, sans-serif; margin: 20px; }
                 .receipt-container {
-                    width: 100%;
-                    max-width: 300px;
+                    max-width: 400px;
                     margin: 0 auto;
-                    padding: 10px;
-                    text-align: center;
+                    font-family: 'Courier New', monospace;
+                    line-height: 1.4;
                 }
-                .header h3 {
-                    font-size: 1.2em;
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                }
-                .details p {
-                    margin: 0;
-                }
-                .item-row {
-                    display: flex;
-                    justify-content: space-between;
-                    border-bottom: 1px dashed #ddd;
-                    padding: 5px 0;
-                }
-                .item-row > * {
-                    flex-shrink: 0;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                .item-row .product { flex-grow: 1; text-align: left; }
-                .item-row .qty { width: 50px; text-align: center; }
-                .item-row .total { width: 80px; text-align: right; }
-                .total {
-                    font-weight: bold;
-                    text-align: right;
-                    font-size: 1.1em;
-                    margin-top: 10px;
-                }
-                .footer {
-                    margin-top: 20px;
-                }
+                .text-center { text-align: center; }
+                .text-xs { font-size: 12px; }
+                .text-sm { font-size: 14px; }
+                .text-2xl { font-size: 24px; }
+                .font-bold { font-weight: bold; }
+                .font-semibold { font-weight: 600; }
+                .flex { display: flex; }
+                .justify-between { justify-content: space-between; }
+                .border-t { border-top: 1px solid #000; }
+                .border-b { border-bottom: 1px solid #000; }
+                .border-dashed { border-style: dashed; }
+                .border-gray-400 { border-color: #9ca3af; }
+                .py-1 { padding: 4px 0; }
+                .py-2 { padding: 8px 0; }
+                .my-4 { margin: 16px 0; }
+                .mt-4 { margin-top: 16px; }
+                .mt-6 { margin-top: 24px; }
+                .pt-2 { padding-top: 8px; }
+                .w-16 { width: 64px; }
+                .w-20 { width: 80px; }
+                .flex-1 { flex: 1; }
+                .text-right { text-align: right; }
+                .text-gray-600 { color: #4b5563; }
             `);
             printWindow.document.write('</style></head><body>');
+            printWindow.document.write('<div class="receipt-container">');
             printWindow.document.write(printContent);
-            printWindow.document.write('</body></html>');
+            printWindow.document.write('</div></body></html>');
             printWindow.document.close();
-            printWindow.onload = () => {
-                printWindow.print();
-            };
+            printWindow.print();
         });
 
         closeReceiptBtn.addEventListener('click', () => {
             receiptModal.classList.add('hidden');
         });
 
-
-        document.addEventListener('DOMContentLoaded', function() {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
-            fetch("{{ url_for('get_all_active_products') }}", {
-                method: 'GET',
-                headers: {
-                    'X-CSRFToken': csrfToken
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.products) {
-                    inventoryItems = data.products;
-
-                    const initialCartData = {{ sale.get('items', []) | tojson | safe }};
-                    if (initialCartData && initialCartData.length > 0) {
-                        initialCartData.forEach(item => {
-                            cartItemsContainer.appendChild(createItemRow(item));
-                        });
-                    } else {
-                        cartItemsContainer.appendChild(createItemRow());
-                    }
-                    updateGrandTotal();
-                } else {
-                    flashMessage(data.message || 'Failed to load product list.', 'danger');
-                    console.error('Failed to load all products:', data.message);
-                    cartItemsContainer.appendChild(createItemRow());
-                }
+        // Initialize data loading
+        loadInventoryData()
+            .then(() => {
+                // Add initial cart item after loading inventory
+                cartItemsContainer.appendChild(createItemRow());
+                updateGrandTotal();
             })
             .catch(error => {
                 flashMessage('Error loading product list. Please check console.', 'danger');
@@ -1128,7 +1353,7 @@
                 cartItemsContainer.appendChild(createItemRow());
             });
 
-            // Handle print-ready logic
+            // FIXED: Handle print-ready logic (preserving your original structure)
             const printReady = {{ print_ready | tojson }};
             const autoPrint = {{ auto_print | tojson }};
 
@@ -1150,7 +1375,6 @@
                     }, 500);
                 }
             }
-        });
 
         saleForm.addEventListener('submit', async function(event) {
             updateGrandTotal();

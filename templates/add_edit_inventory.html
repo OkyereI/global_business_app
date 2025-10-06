@@ -139,7 +139,7 @@
             margin-bottom: 20px;
         }
         
-        /* NEW: Styles for barcode input group */
+        /* Styles for barcode input group */
         .barcode-input-group {
             position: relative;
         }
@@ -153,6 +153,97 @@
             cursor: pointer;
             z-index: 10;
             color: #6c757d;
+        }
+
+        /* NEW: Enhanced Pricing Section Styles */
+        .pricing-section {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            background-color: #f8f9fa;
+        }
+        .pricing-toggle {
+            display: flex;
+            background-color: #e9ecef;
+            border-radius: 25px;
+            padding: 4px;
+            margin-bottom: 20px;
+            width: fit-content;
+        }
+        .pricing-toggle .toggle-option {
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            color: #6c757d;
+        }
+        .pricing-toggle .toggle-option.active {
+            background-color: #007bff;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,123,255,0.3);
+        }
+        .pricing-fields {
+            display: none;
+        }
+        .pricing-fields.active {
+            display: block;
+        }
+        .price-range-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .price-input-group {
+            position: relative;
+        }
+        .price-input-group label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .price-input-group input {
+            padding-left: 25px;
+        }
+        .price-input-group::before {
+            content: "₵";
+            position: absolute;
+            left: 10px;
+            top: 68%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            font-weight: bold;
+            z-index: 5;
+        }
+        .price-validation-msg {
+            font-size: 0.8em;
+            color: #dc3545;
+            margin-top: 5px;
+            display: none;
+        }
+        .price-validation-msg.show {
+            display: block;
+        }
+        .price-summary {
+            background-color: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+        .price-summary.hidden {
+            display: none;
+        }
+
+        /* Responsive design for price range */
+        @media (max-width: 768px) {
+            .price-range-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
         }
     </style>
 </head>
@@ -229,8 +320,10 @@
                     Manual Entry Form
                 </div>
                 <div class="card-body">
-                    <form method="POST">
+                    <form method="POST" id="inventoryForm">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        
+                        <!-- Basic Product Information -->
                         <div class="form-group">
                             <label for="product_name">Product Name</label>
                             <input type="text" class="form-control" id="product_name" name="product_name" value="{{ item.product_name if item else '' }}" required>
@@ -285,22 +378,108 @@
                             <label for="expiry_date">Expiry Date (Optional)</label>
                             <input type="date" class="form-control" id="expiry_date" name="expiry_date" value="{{ item.expiry_date if item and item.expiry_date else '' }}">
                         </div>
-                        <div class="form-group form-check">
-                            <input type="checkbox" class="form-check-input" id="is_fixed_price" name="is_fixed_price" {% if item and item.is_fixed_price %}checked{% endif %}>
-                            <label class="form-check-label" for="is_fixed_price">Fixed Sale Price?</label>
+
+                        <!-- Enhanced Pricing Section -->
+                        <div class="pricing-section">
+                            <h5><i class="fas fa-dollar-sign"></i> Pricing Configuration</h5>
+                            
+                            <!-- Pricing Mode Toggle -->
+                            <div class="pricing-toggle">
+                                <div class="toggle-option {% if not item or not item.use_price_range %}active{% endif %}" data-mode="fixed">
+                                    <i class="fas fa-lock"></i> Fixed Price
+                                </div>
+                                <div class="toggle-option {% if item and item.use_price_range %}active{% endif %}" data-mode="range">
+                                    <i class="fas fa-chart-line"></i> Price Range
+                                </div>
+                            </div>
+
+                            <!-- Hidden field for use_price_range -->
+                            <input type="hidden" id="use_price_range" name="use_price_range" value="{{ 'true' if item and item.use_price_range else 'false' }}">
+
+                            <!-- Fixed Price Fields -->
+                            <div id="fixed-pricing" class="pricing-fields {% if not item or not item.use_price_range %}active{% endif %}">
+                                <div class="form-group">
+                                    <label for="fixed_sale_price">
+                                        <i class="fas fa-tag"></i> Fixed Sale Price (GH₵)
+                                    </label>
+                                    <div class="price-input-group">
+                                        <input type="number" class="form-control" id="fixed_sale_price" name="fixed_sale_price" 
+                                               step="0.01" min="0" 
+                                               value="{{ '%.2f'|format(item.fixed_sale_price) if item and item.fixed_sale_price else '0.00' }}">
+                                    </div>
+                                    <small class="form-text text-muted">Set a single, fixed selling price for this item.</small>
+                                </div>
+                            </div>
+
+                            <!-- Price Range Fields -->
+                            <div id="range-pricing" class="pricing-fields {% if item and item.use_price_range %}active{% endif %}">
+                                <p class="text-muted">
+                                    <i class="fas fa-info-circle"></i> 
+                                    Set a flexible price range for this item. This allows for negotiation during sales.
+                                </p>
+                                
+                                <div class="price-range-grid">
+                                    <div class="price-input-group">
+                                        <label for="min_sale_price">
+                                            <i class="fas fa-arrow-down text-danger"></i> Minimum Price
+                                        </label>
+                                        <input type="number" class="form-control" id="min_sale_price" name="min_sale_price" 
+                                               step="0.01" min="0" 
+                                               value="{{ '%.2f'|format(item.min_sale_price) if item and item.min_sale_price else '0.00' }}">
+                                        <small class="form-text text-muted">Lowest acceptable price</small>
+                                    </div>
+                                    
+                                    <div class="price-input-group">
+                                        <label for="preferred_sale_price">
+                                            <i class="fas fa-star text-warning"></i> Preferred Price
+                                        </label>
+                                        <input type="number" class="form-control" id="preferred_sale_price" name="preferred_sale_price" 
+                                               step="0.01" min="0" 
+                                               value="{{ '%.2f'|format(item.preferred_sale_price) if item and item.preferred_sale_price else '0.00' }}">
+                                        <small class="form-text text-muted">Target selling price</small>
+                                    </div>
+                                    
+                                    <div class="price-input-group">
+                                        <label for="max_sale_price">
+                                            <i class="fas fa-arrow-up text-success"></i> Maximum Price
+                                        </label>
+                                        <input type="number" class="form-control" id="max_sale_price" name="max_sale_price" 
+                                               step="0.01" min="0" 
+                                               value="{{ '%.2f'|format(item.max_sale_price) if item and item.max_sale_price else '0.00' }}">
+                                        <small class="form-text text-muted">Highest possible price</small>
+                                    </div>
+                                </div>
+
+                                <!-- Price Validation Messages -->
+                                <div class="price-validation-msg" id="price-validation">
+                                    <i class="fas fa-exclamation-triangle"></i> Please ensure: Min ≤ Preferred ≤ Max
+                                </div>
+
+                                <!-- Price Summary -->
+                                <div class="price-summary hidden" id="price-summary">
+                                    <i class="fas fa-calculator"></i> 
+                                    <strong>Price Range Summary:</strong> 
+                                    <span id="summary-text"></span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-group" id="fixed_sale_price_group" style="display: {% if item and item.is_fixed_price %}block{% else %}none{% endif %};">
-                            <label for="fixed_sale_price">Fixed Sale Price (GH₵)</label>
-                            <input type="number" class="form-control" id="fixed_sale_price" name="fixed_sale_price" step="0.01" min="0" value="{{ '%.2f'|format(item.fixed_sale_price) if item else '0.00' }}">
-                        </div>
+
+                        <!-- Maintain backward compatibility with old fixed price field -->
+                        <input type="hidden" id="is_fixed_price" name="is_fixed_price" value="true">
+
                         {% if item %}
                         <div class="form-group form-check">
                             <input type="checkbox" class="form-check-input" id="is_active" name="is_active" {% if item.is_active %}checked{% endif %}>
                             <label class="form-check-label" for="is_active">Is Active?</label>
                         </div>
                         {% endif %}
-                        <button type="submit" class="btn btn-primary">Save Item</button>
-                        <a href="{{ url_for('inventory') }}" class="btn btn-secondary">Cancel</a>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> Save Item
+                        </button>
+                        <a href="{{ url_for('inventory') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Cancel
+                        </a>
                     </form>
                 </div>
             </div>
@@ -314,10 +493,10 @@
                     <h5 class="card-title">Import Inventory from CSV</h5>
                     <p class="card-text text-muted">
                         Upload a CSV file to add or update your inventory. The file must have the following columns: 
-                        <br><code>product_name, category, purchase_price, current_stock, batch_number, number_of_tabs, item_type, expiry_date, is_fixed_price, fixed_sale_price, is_active</code>
+                        <br><code>product_name, category, purchase_price, current_stock, batch_number, number_of_tabs, item_type, expiry_date, use_price_range, fixed_sale_price, min_sale_price, preferred_sale_price, max_sale_price, is_active</code>
                     </p>
                     <p class="card-text text-danger font-weight-bold">
-                        Note: The `is_fixed_price` and `is_active` columns must be "True" or "False".
+                        Note: The `use_price_range` and `is_active` columns must be "True" or "False".
                     </p>
                     <form action="{{ url_for('upload_current_inventory_csv') }}" method="POST" enctype="multipart/form-data">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -368,28 +547,120 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script>
         $(document).ready(function () {
+            // Sidebar toggle
             $('#sidebarCollapse').on('click', function () {
                 $('#sidebar').toggleClass('active');
             });
-            $('#is_fixed_price').change(function() {
-                if(this.checked) {
-                    $('#fixed_sale_price_group').show();
-                    $('#fixed_sale_price').prop('required', true);
+
+            // Pricing mode toggle functionality
+            $('.toggle-option').on('click', function() {
+                const mode = $(this).data('mode');
+                
+                // Update toggle visual state
+                $('.toggle-option').removeClass('active');
+                $(this).addClass('active');
+                
+                // Show/hide pricing fields
+                $('.pricing-fields').removeClass('active');
+                $(`#${mode}-pricing`).addClass('active');
+                
+                // Update hidden field
+                $('#use_price_range').val(mode === 'range' ? 'true' : 'false');
+                
+                // Update form validation
+                updatePricingValidation(mode);
+            });
+
+            // Price validation for range pricing
+            function validatePriceRange() {
+                const min = parseFloat($('#min_sale_price').val()) || 0;
+                const preferred = parseFloat($('#preferred_sale_price').val()) || 0;
+                const max = parseFloat($('#max_sale_price').val()) || 0;
+                
+                const isValid = min <= preferred && preferred <= max && min > 0;
+                
+                if (!isValid && (min > 0 || preferred > 0 || max > 0)) {
+                    $('#price-validation').addClass('show');
+                    $('#price-summary').addClass('hidden');
+                    return false;
                 } else {
-                    $('#fixed_sale_price_group').hide();
-                    $('#fixed_sale_price').prop('required', false);
-                    $('#fixed_sale_price').val('0.00');
+                    $('#price-validation').removeClass('show');
+                    if (min > 0 && preferred > 0 && max > 0) {
+                        updatePriceSummary(min, preferred, max);
+                    }
+                    return true;
+                }
+            }
+
+            // Update price summary
+            function updatePriceSummary(min, preferred, max) {
+                const summary = `GH₵${min.toFixed(2)} - GH₵${max.toFixed(2)} (Target: GH₵${preferred.toFixed(2)})`;
+                $('#summary-text').text(summary);
+                $('#price-summary').removeClass('hidden');
+            }
+
+            // Real-time price validation
+            $('#min_sale_price, #preferred_sale_price, #max_sale_price').on('input', function() {
+                if ($('#use_price_range').val() === 'true') {
+                    validatePriceRange();
                 }
             });
+
+            // Form validation based on pricing mode
+            function updatePricingValidation(mode) {
+                if (mode === 'fixed') {
+                    // Fixed pricing validation
+                    $('#fixed_sale_price').prop('required', true);
+                    $('#min_sale_price, #preferred_sale_price, #max_sale_price').prop('required', false);
+                } else {
+                    // Range pricing validation
+                    $('#fixed_sale_price').prop('required', false);
+                    $('#min_sale_price, #preferred_sale_price, #max_sale_price').prop('required', true);
+                }
+            }
+
+            // Form submission validation
+            $('#inventoryForm').on('submit', function(e) {
+                const mode = $('#use_price_range').val() === 'true' ? 'range' : 'fixed';
+                
+                if (mode === 'range') {
+                    if (!validatePriceRange()) {
+                        e.preventDefault();
+                        alert('Please fix the price range validation errors before submitting.');
+                        return false;
+                    }
+                } else {
+                    const fixedPrice = parseFloat($('#fixed_sale_price').val()) || 0;
+                    if (fixedPrice <= 0) {
+                        e.preventDefault();
+                        alert('Please enter a valid fixed sale price.');
+                        return false;
+                    }
+                }
+            });
+
+            // Initialize pricing validation based on current mode
+            const currentMode = $('#use_price_range').val() === 'true' ? 'range' : 'fixed';
+            updatePricingValidation(currentMode);
+            
+            // Initial price validation for existing items
+            if (currentMode === 'range') {
+                validatePriceRange();
+            }
+
+            // Barcode scanner functionality
             $('.barcode-scanner-btn').click(function() {
                 $(this).closest('.barcode-input-group').find('input').focus();
             });
+
             $('#barcode').on('keydown', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     $(this).closest('.form-group').next().find('input').focus();
                 }
             });
+
+            // File upload label update
             document.getElementById('csv_file').addEventListener('change', function(e) {
                 var fileName = e.target.files[0].name;
                 var nextSibling = e.target.nextElementSibling;

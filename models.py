@@ -125,7 +125,10 @@ class InventoryItem(db.Model):
     barcode = db.Column(db.String(100), nullable=True)
     markup_percentage_pharmacy = db.Column(db.Float, default=0.0, nullable=False)
     synced_to_remote = db.Column(db.Boolean, default=False, nullable=False)
-    
+    use_price_range = db.Column(db.Boolean, default=False, nullable=False)
+    min_sale_price = db.Column(db.Float, default=0.0, nullable=False)  
+    preferred_sale_price = db.Column(db.Float, default=0.0, nullable=False)
+    max_sale_price = db.Column(db.Float, default=0.0, nullable=False)
     business = db.relationship('Business', back_populates='inventory_items')
 
     __table_args__ = (
