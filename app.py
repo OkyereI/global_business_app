@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Global Configuration (if needed for constants) ---
 # Example: Placeholder for external API keys/URLs if they are truly global
 ARKESEL_API_KEY = os.getenv('ARKESEL_API_KEY')
-ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'YourSenderID')
+ARKESEL_SENDER_ID = os.getenv('ARKESEL_SENDER_ID', 'BizApp')  # Max 11 chars
 ARKESEL_SMS_URL = "https://sms.arkesel.com/sms/api" # Correct Arkesel SMS API URL
 REMOTE_SERVER_URL = os.getenv('ONLINE_FLASK_APP_BASE_URL', 'http://localhost:5000')
 # These should ideally come from Business info, but as fallback for SMS or defaults
@@ -6396,6 +6396,202 @@ def create_app():
                             end_date=end_date_str      # Passed for filter persistence
         )
 
+    @app.route('/debug_sales_json')
+    def debug_sales_json():
+        # ACCESS CONTROL: Allows admin role
+        if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+            flash('You do not have permission to access this debug page.', 'danger')
+            return redirect(url_for('dashboard'))
+
+        business_id = get_current_business_id()
+        today = date.today()
+        
+        # Get today's sales for debugging
+        today_sales = SalesRecord.query.filter_by(business_id=business_id).filter(
+            db.func.date(SalesRecord.transaction_date) == today
+        ).limit(3).all()  # Just get first 3 for debugging
+        
+        debug_info = []
+        for sale in today_sales:
+            items_sold = sale.get_items_sold()
+            debug_info.append({
+                'receipt_number': sale.receipt_number or sale.id[:8],
+                'raw_json': sale.items_sold_json,
+                'parsed_items': items_sold,
+                'first_item_keys': list(items_sold[0].keys()) if items_sold else []
+            })
+        
+        return f"<pre>{json.dumps(debug_info, indent=2, default=str)}</pre>"
+
+    def parse_sales_item_data(item_dict):
+        """Robust parsing of sales item data with extensive fallback logic"""
+        if not isinstance(item_dict, dict):
+            return {
+                'name': 'Unknown Product',
+                'quantity': 1.0,
+                'unitType': 'piece',
+                'unitPrice': 0.0,
+                'totalPrice': 0.0
+            }
+        
+        # Extract product name with YOUR ACTUAL FIELD NAMES first
+        product_name = (
+            item_dict.get('product_name') or          # YOUR ACTUAL FIELD
+            item_dict.get('name') or
+            item_dict.get('productName') or
+            item_dict.get('item_name') or
+            'Unknown Product'
+        )
+        
+        # Extract quantity with YOUR ACTUAL FIELD NAMES first
+        quantity_raw = (
+            item_dict.get('quantity_sold') or         # YOUR ACTUAL FIELD
+            item_dict.get('quantity') or
+            item_dict.get('qty') or
+            1
+        )
+        
+        try:
+            quantity = float(str(quantity_raw).replace(',', ''))
+            if quantity <= 0:
+                quantity = 1.0
+        except (ValueError, TypeError, AttributeError):
+            quantity = 1.0
+        
+        # Extract unit type with YOUR ACTUAL FIELD NAMES first
+        unit_type = (
+            item_dict.get('sale_unit_type') or        # YOUR ACTUAL FIELD
+            item_dict.get('unitType') or
+            item_dict.get('unit_type') or
+            item_dict.get('unit') or
+            'piece'
+        )
+        
+        # Extract unit price with YOUR ACTUAL FIELD NAMES first
+        unit_price = 0.0
+        price_candidates = [
+            item_dict.get('price_at_time_per_unit_sold'),  # YOUR ACTUAL FIELD
+            item_dict.get('unitPrice'),
+            item_dict.get('unit_price'),
+            item_dict.get('price'),
+            item_dict.get('sale_price')
+        ]
+        
+        for price_value in price_candidates:
+            if price_value is not None:
+                try:
+                    unit_price = float(str(price_value).replace(',', '').replace('GH₵', '').replace('GHS', '').replace('₵', ''))
+                    if unit_price > 0:
+                        break
+                except (ValueError, TypeError, AttributeError):
+                    continue
+        
+        # Extract total price with YOUR ACTUAL FIELD NAMES first
+        total_price = 0.0
+        total_candidates = [
+            item_dict.get('item_total_amount'),        # YOUR ACTUAL FIELD
+            item_dict.get('totalPrice'),
+            item_dict.get('total_price'),
+            item_dict.get('total'),
+            item_dict.get('amount')
+        ]
+        
+        for total_value in total_candidates:
+            if total_value is not None:
+                try:
+                    total_price = float(str(total_value).replace(',', '').replace('GH₵', '').replace('GHS', '').replace('₵', ''))
+                    if total_price > 0:
+                        break
+                except (ValueError, TypeError, AttributeError):
+                    continue
+        
+        # Calculate missing values
+        if unit_price == 0.0 and total_price > 0.0 and quantity > 0.0:
+            unit_price = total_price / quantity
+        elif total_price == 0.0 and unit_price > 0.0:
+            total_price = unit_price * quantity
+        
+        # FALLBACK: Try inventory lookup if both prices are still 0
+        if unit_price == 0.0 and total_price == 0.0:
+            business_id = get_current_business_id()
+            if business_id and product_name != 'Unknown Product':
+                try:
+                    inventory_item = InventoryItem.query.filter(
+                        InventoryItem.business_id == business_id,
+                        InventoryItem.product_name.ilike(f'%{product_name.strip()}%')
+                    ).first()
+                    
+                    if inventory_item and inventory_item.sale_price:
+                        unit_price = float(inventory_item.sale_price)
+                        total_price = unit_price * quantity
+                except Exception:
+                    pass  # Silent fallback failure
+        
+        return {
+            'name': str(product_name).strip(),
+            'quantity': quantity,
+            'unitType': str(unit_type).strip(),
+            'unitPrice': round(unit_price, 2),
+            'totalPrice': round(total_price, 2)
+        }
+    @app.route('/print_daily_sales_report')
+    def print_daily_sales_report():
+        # ACCESS CONTROL: Allows admin role
+        if 'username' not in session or session.get('role') not in ['admin'] or not get_current_business_id():
+            flash('You do not have permission to access daily sales reports or no business selected.', 'danger')
+            return redirect(url_for('dashboard'))
+
+        business_id = get_current_business_id()
+        today = date.today()
+        
+        today_sales = SalesRecord.query.filter_by(business_id=business_id).filter(
+            db.func.date(SalesRecord.transaction_date) == today
+        ).all()
+
+        total_sales_amount = sum(s.grand_total_amount for s in today_sales)
+        total_items_sold = 0.0
+        
+        product_sales_summary = {}
+        sales_details = []
+        
+        for sale in today_sales:
+            # Parse items from JSON with robust parsing
+            raw_items_sold = sale.get_items_sold()  # This returns the parsed JSON list
+            
+            # Process each item through our robust parser
+            processed_items = []
+            for raw_item in raw_items_sold:
+                parsed_item = parse_sales_item_data(raw_item)
+                processed_items.append(parsed_item)
+                
+                # Update totals
+                total_items_sold += parsed_item['quantity']
+                
+                # Update product summary
+                key = f"{parsed_item['name']} ({parsed_item['unitType']})"
+                product_sales_summary[key] = product_sales_summary.get(key, 0.0) + parsed_item['quantity']
+            
+            sale_detail = {
+                'receipt_number': sale.receipt_number or sale.id[:8],
+                'customer_phone': sale.customer_phone or 'N/A',
+                'sales_person': sale.sales_person_name,
+                'transaction_time': sale.transaction_date.strftime('%H:%M'),
+                'grand_total': sale.grand_total_amount,
+                'products': processed_items  # Use the processed items
+            }
+            sales_details.append(sale_detail)
+
+        business_name = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+        
+        return render_template('print_daily_sales_report.html',
+                             today=today,
+                             business_name=business_name,
+                             total_sales_amount=total_sales_amount,
+                             total_items_sold=total_items_sold,
+                             product_sales_summary=product_sales_summary,
+                             sales_details=sales_details,
+                             total_transactions=len(today_sales))
+
     @app.route('/send_daily_sales_sms_report')
     def send_daily_sales_sms_report():
         # ACCESS CONTROL: Allows admin role
@@ -6407,21 +6603,29 @@ def create_app():
         today = date.today()
         
         today_sales = SalesRecord.query.filter_by(business_id=business_id).filter(
-            db.func.date(SalesRecord.sale_date) == today
+            db.func.date(SalesRecord.transaction_date) == today
         ).all()
 
-        total_sales_amount = sum(s.total_amount for s in today_sales)
-        total_items_sold = sum(s.quantity_sold for s in today_sales) # This is approximate as it sums different units
-
+        total_sales_amount = sum(s.grand_total_amount for s in today_sales)
+        total_items_sold = 0.0
+        
         product_sales_summary = {}
         for sale in today_sales:
-            product_name = sale.product_name
-            quantity = sale.quantity_sold
-            unit_type = sale.sale_unit_type
-            key = f"{product_name} ({unit_type})"
-            product_sales_summary[key] = product_sales_summary.get(key, 0.0) + quantity
+            # Parse items from JSON with robust parsing
+            raw_items_sold = sale.get_items_sold()  # This returns the parsed JSON list
+            for raw_item in raw_items_sold:
+                parsed_item = parse_sales_item_data(raw_item)
+                
+                # Update totals
+                total_items_sold += parsed_item['quantity']
+                
+                # Update product summary
+                key = f"{parsed_item['name']} ({parsed_item['unitType']})"
+                product_sales_summary[key] = product_sales_summary.get(key, 0.0) + parsed_item['quantity']
 
         business_name_for_sms = session.get('business_info', {}).get('name', ENTERPRISE_NAME)
+        business_contact = session.get('business_info', {}).get('contact', '')
+        
         message = f"Daily Sales Report ({today.strftime('%Y-%m-%d')}):\n"
         message += f"Total Revenue: GH₵{total_sales_amount:.2f}\n"
         message += f"Total Items Sold (approx): {total_items_sold:.2f}\n"
@@ -6436,12 +6640,15 @@ def create_app():
         message += f"\nThank you for trading with us\n"
         message += f"From: {business_name_for_sms}"
 
-        if not ADMIN_PHONE_NUMBER:
-            flash('Admin phone number is not configured for SMS reports.', 'danger')
+        # Use business contact or fallback to ADMIN_PHONE_NUMBER
+        phone_to_send = business_contact or ADMIN_PHONE_NUMBER
+        
+        if not phone_to_send:
+            flash('Business contact phone number is not configured for SMS reports. Please update your business contact information.', 'danger')
             return redirect(url_for('reports'))
 
         sms_payload = {
-            'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': ADMIN_PHONE_NUMBER,
+            'action': 'send-sms', 'api_key': ARKESEL_API_KEY, 'to': phone_to_send,
             'from': ARKESEL_SENDER_ID, 'sms': message
         }
         
