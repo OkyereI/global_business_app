@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Sales Report - {{ today.strftime('%Y-%m-%d') }}</title>
+    <style>
+        @media print {
+            body {
+                margin: 0;
+                font-size: 12px;
+            }
+            .no-print {
+                display: none;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.4;
+            margin: 20px;
+            background-color: #ffffff;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 20px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            color: #333;
+        }
+
+        .header h2 {
+            margin: 5px 0;
+            font-size: 18px;
+            color: #666;
+        }
+
+        .report-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+        }
+
+        .report-info div {
+            flex: 1;
+        }
+
+        .summary-section {
+            margin-bottom: 30px;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+            text-align: center;
+        }
+
+        .summary-card.green {
+            border-left-color: #28a745;
+        }
+
+        .summary-card.blue {
+            border-left-color: #007bff;
+        }
+
+        .summary-card.purple {
+            border-left-color: #6f42c1;
+        }
+
+        .summary-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .summary-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .product-summary {
+            margin-bottom: 30px;
+        }
+
+        .product-summary h2 {
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .product-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 10px;
+        }
+
+        .product-item {
+            background-color: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sales-details {
+            margin-bottom: 30px;
+        }
+
+        .sales-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .sales-table th,
+        .sales-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            font-size: 12px;
+        }
+
+        .sales-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+
+        .sales-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .items-cell {
+            max-width: 200px;
+            font-size: 11px;
+        }
+
+        .item-entry {
+            margin-bottom: 5px;
+            padding: 3px;
+            background-color: #e9ecef;
+            border-radius: 3px;
+        }
+
+        .total-row {
+            font-weight: bold;
+            background-color: #e9ecef !important;
+        }
+
+        .print-button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 20px 0;
+        }
+
+        .print-button:hover {
+            background-color: #0056b3;
+        }
+
+        .back-button {
+            background-color: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 20px 10px 20px 0;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-button:hover {
+            background-color: #545b62;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+
+        h1, h2 {
+            color: #333;
+        }
+
+        .no-sales {
+            text-align: center;
+            padding: 40px;
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <!-- Print Controls -->
+    <div class="no-print">
+        <a href="{{ url_for('reports') }}" class="back-button">← Back to Reports</a>
+        <button onclick="window.print()" class="print-button">🖨️ Print Report</button>
+    </div>
+
+    <!-- Report Header -->
+    <div class="header">
+        <h1>{{ business_name }}</h1>
+        <h2>Daily Sales Report</h2>
+        <p>{{ today.strftime('%A, %B %d, %Y') }}</p>
+    </div>
+
+    <!-- Report Information -->
+    <div class="report-info">
+        <div>
+            <strong>Report Generated:</strong><br>
+            {{ today.strftime('%Y-%m-%d %H:%M:%S') }}
+        </div>
+        <div>
+            <strong>Report Period:</strong><br>
+            {{ today.strftime('%Y-%m-%d') }} (Today)
+        </div>
+        <div>
+            <strong>Business:</strong><br>
+            {{ business_name }}
+        </div>
+    </div>
+
+    {% if total_transactions > 0 %}
+    <!-- Summary Section -->
+    <div class="summary-section">
+        <h2>📊 Sales Summary</h2>
+        <div class="summary-grid">
+            <div class="summary-card green">
+                <h3>Total Revenue</h3>
+                <div class="value">GH₵{{ "%.2f"|format(total_sales_amount) }}</div>
+            </div>
+            <div class="summary-card blue">
+                <h3>Total Transactions</h3>
+                <div class="value">{{ total_transactions }}</div>
+            </div>
+            <div class="summary-card purple">
+                <h3>Items Sold</h3>
+                <div class="value">{{ "%.1f"|format(total_items_sold) }}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Average Sale</h3>
+                <div class="value">GH₵{{ "%.2f"|format(total_sales_amount / total_transactions) }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Sales Summary -->
+    {% if product_sales_summary %}
+    <div class="product-summary">
+        <h2>📦 Product Sales Summary</h2>
+        <div class="product-list">
+            {% for product_key, quantity in product_sales_summary.items() %}
+            <div class="product-item">
+                <span>{{ product_key }}</span>
+                <strong>{{ "%.1f"|format(quantity) }} units</strong>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Detailed Sales Transactions -->
+    <div class="sales-details">
+        <h2>🧾 Detailed Transactions</h2>
+        <table class="sales-table">
+            <thead>
+                <tr>
+                    <th>Receipt #</th>
+                    <th>Time</th>
+                    <th>Sales Person</th>
+                    <th>Customer</th>
+                    <th>Items</th>
+                    <th>Total (GH₵)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sale in sales_details %}
+                <tr>
+                    <td>{{ sale.receipt_number }}</td>
+                    <td>{{ sale.transaction_time }}</td>
+                    <td>{{ sale.sales_person }}</td>
+                    <td>{{ sale.customer_phone }}</td>
+                    <td class="items-cell">
+                        {% for item in sale.products %}
+                        <div class="item-entry">
+                            {{ item.name }} - {{ item.quantity }} {{ item.unitType }} @ GH₵{{ "%.2f"|format(item.unitPrice) }}
+                        </div>
+                        {% else %}
+                        <div class="item-entry">No items found in this sale</div>
+                        {% endfor %}
+                    </td>
+                    <td>{{ "%.2f"|format(sale.grand_total) }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="total-row">
+                    <td colspan="5"><strong>TOTAL</strong></td>
+                    <td><strong>GH₵{{ "%.2f"|format(total_sales_amount) }}</strong></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    {% else %}
+    <!-- No Sales Message -->
+    <div class="no-sales">
+        <h2>📋 No Sales Recorded</h2>
+        <p>No sales transactions were recorded for {{ today.strftime('%B %d, %Y') }}.</p>
+        <p>This report will be updated automatically as sales are recorded throughout the day.</p>
+    </div>
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="footer">
+        <p>Report generated on {{ today.strftime('%Y-%m-%d at %H:%M:%S') }}</p>
+        <p>{{ business_name }} - Powered by Business Management System</p>
+    </div>
+
+    <script>
+        // Auto-print when the page loads (optional)
+        // window.onload = function() { window.print(); }
+        
+        // Print function
+        function printReport() {
+            window.print();
+        }
+        
+        // Add keyboard shortcut for printing (Ctrl+P)
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+            }
+        });
+    </script>
+</body>
+</html>

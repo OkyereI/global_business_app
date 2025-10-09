@@ -237,6 +237,27 @@
         .sms-report-button i {
             margin-right: 0.5rem; /* mr-2 */
         }
+        
+        /* Print report button styles */
+        .print-report-button {
+            background-color: #16a34a; /* bg-green-600 */
+            color: white; /* text-white */
+            font-weight: 700; /* font-bold */
+            padding: 0.5rem 1rem; /* py-2 px-4 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow */
+            transition: all 0.2s ease; /* transition duration-200 */
+            text-decoration: none; /* remove underline */
+            display: inline-flex;
+            align-items: center;
+            margin-right: 0.75rem; /* mr-3 */
+        }
+        .print-report-button:hover {
+            background-color: #15803d; /* hover:bg-green-700 */
+        }
+        .print-report-button i {
+            margin-right: 0.5rem; /* mr-2 */
+        }
 
         /* Table styles */
         .table-overflow-auto {
@@ -426,7 +447,10 @@
                 </div>
                 {% if user_role == 'admin' %}
                 <div class="mt-6 text-right sms-report-container">
-                    <a href="{{ url_for('send_daily_sales_sms_report') }}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-200 sms-report-button">
+                    <a href="{{ url_for('print_daily_sales_report') }}" target="_blank" class="print-report-button">
+                        <i class="fas fa-print mr-2"></i> Print Daily Sales Report
+                    </a>
+                    <a href="{{ url_for('send_daily_sales_sms_report') }}" class="sms-report-button">
                         <i class="fas fa-sms mr-2"></i> Send Daily Sales SMS Report
                     </a>
                 </div>
