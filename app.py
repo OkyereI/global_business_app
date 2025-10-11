@@ -1790,26 +1790,34 @@ def create_app():
                 # For robustness, we might re-verify/deduct here or log discrepancies.
                 # For now, we assume stock was handled locally and just record the sale.
                 
-                # Check if this exact sale record (by ID and transaction_id) already exists to prevent duplicates on sync
-                existing_sale = SalesRecord.query.filter_by(id=sale_id, business_id=business_id, transaction_id=transaction_id).first()
+                # Check if this exact sale record (by ID) already exists to prevent duplicates on sync
+                existing_sale = SalesRecord.query.filter_by(id=sale_id, business_id=business_id).first()
                 if existing_sale:
-                    errors.append(f"Sale record with ID '{sale_id}' and transaction ID '{transaction_id}' already exists. Skipping.")
+                    errors.append(f"Sale record with ID '{sale_id}' already exists. Skipping.")
                     continue # Skip adding duplicate
 
+                # Create item for the sale - using the current model structure
+                item_data = {
+                    'product_id': product_id,
+                    'product_name': product_name,
+                    'quantity_sold': quantity_sold,
+                    'sale_unit_type': sale_unit_type,
+                    'price_at_time_per_unit_sold': price_at_time_per_unit_sold,
+                    'total_amount': total_amount
+                }
+                
                 new_sale = SalesRecord(
                     id=sale_id, # Use provided ID for idempotency
                     business_id=business_id,
-                    product_id=product_id,
-                    product_name=product_name,
-                    quantity_sold=quantity_sold,
-                    sale_unit_type=sale_unit_type,
-                    price_at_time_per_unit_sold=price_at_time_per_unit_sold,
-                    total_amount=total_amount,
-                    sale_date=sale_date_obj,
+                    transaction_date=sale_date_obj,
                     customer_phone=customer_phone,
                     sales_person_name=sales_person_name,
+                    grand_total_amount=total_amount,
                     reference_number=reference_number,
-                    transaction_id=transaction_id
+                    receipt_number=transaction_id,  # Use transaction_id as receipt_number
+                    items_sold_json=json.dumps([item_data]),  # Store item as JSON array
+                    is_synced=True,
+                    synced_to_remote=True
                 )
                 db.session.add(new_sale)
                 recorded_count += 1
@@ -5779,36 +5787,50 @@ def create_app():
             return redirect(url_for('dashboard'))
         
         business_id = get_current_business_id()
-        # Fetch all sale records for this transaction ID
-        sales_to_delete = SalesRecord.query.filter_by(
-            transaction_id=transaction_id, # Use transaction_id here
+        # Fetch the sale record for this transaction ID
+        sale_record = SalesRecord.query.filter_by(
+            id=transaction_id, # Use id (primary key) here
             business_id=business_id
-        ).all()
+        ).first()
 
-        if not sales_to_delete:
+        if not sale_record:
             flash('Sale transaction not found.', 'danger')
             return redirect(url_for('sales'))
         
-        transaction_id_for_flash = sales_to_delete[0].transaction_id # Get ID for flash message
+        transaction_id_for_flash = sale_record.id # Get ID for flash message
 
         # Return stock to inventory for all items in the transaction
-        for sale_record in sales_to_delete:
-            product = InventoryItem.query.filter_by(id=sale_record.product_id, business_id=business_id).first()
-            if product:
-                quantity_to_return = sale_record.quantity_sold
-                if sale_record.sale_unit_type == 'pack':
-                    # Need to fetch the product again to get number_of_tabs if not already available
-                    original_product_for_tabs = InventoryItem.query.filter_by(id=sale_record.product_id, business_id=business_id).first()
-                    if original_product_for_tabs:
-                        quantity_to_return = sale_record.quantity_sold * original_product_for_tabs.number_of_tabs
+        try:
+            items_sold = sale_record.get_items_sold()  # Get items from JSON
+            
+            for item in items_sold:
+                # Extract item details from the JSON structure
+                product_id = item.get('product_id')
+                quantity_sold = float(item.get('quantity_sold', 0))
+                sale_unit_type = item.get('sale_unit_type', 'unit')
                 
-                product.current_stock += quantity_to_return
-                product.last_updated = datetime.now()
-                db.session.add(product)
-            db.session.delete(sale_record) # Delete the individual sale record
-
-        db.session.commit()
-        flash(f'Sale transaction {transaction_id_for_flash[:8].upper()} and all its items deleted successfully! Stock returned to inventory.', 'success')
+                if product_id:
+                    product = InventoryItem.query.filter_by(id=product_id, business_id=business_id).first()
+                    if product:
+                        quantity_to_return = quantity_sold
+                        if sale_unit_type == 'pack':
+                            # Convert pack quantity back to individual units
+                            number_of_tabs = product.number_of_tabs or 1
+                            quantity_to_return = quantity_sold * number_of_tabs
+                        
+                        product.current_stock += quantity_to_return
+                        product.last_updated = datetime.now()
+                        db.session.add(product)
+                        
+            # Delete the sale record
+            db.session.delete(sale_record)
+            db.session.commit()
+            
+            flash(f'Sale transaction {transaction_id_for_flash[:8].upper()} deleted successfully! Stock returned to inventory.', 'success')
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error deleting transaction: {str(e)}', 'danger')
         return redirect(url_for('sales'))
 
     @app.route('/sales/print_receipt/<transaction_id>')
@@ -6231,8 +6253,8 @@ def create_app():
         Renders the HTML form for business registration.
         """
         return render_template('register_form.html')
+    
     @app.route('/reports')
-    # @login_required
     def reports():
         # ACCESS CONTROL: Only admin can view reports
         if session.get('role') != 'admin':
@@ -6283,8 +6305,24 @@ def create_app():
         total_cost_of_stock = 0.0
         # --- Calculate Total Sale Value of Current Stock ---
         total_sale_value_of_stock = 0.0
+        # --- NEW: Total Number of Stocks Available ---
+        total_inventory_count = 0
 
         inventory_items_for_stock_val = InventoryItem.query.filter_by(business_id=business_id, is_active=True).all()
+        
+        # Calculate total stock quantities (sum of all current_stock)
+        total_inventory_count = sum(item.current_stock or 0 for item in inventory_items_for_stock_val)
+        
+        # Calculate stock quantities by category
+        stocks_by_category = {}
+        for item in inventory_items_for_stock_val:
+            category = item.category or 'Uncategorized'
+            current_stock = item.current_stock or 0
+            if category in stocks_by_category:
+                stocks_by_category[category] += current_stock
+            else:
+                stocks_by_category[category] = current_stock
+        
         for item in inventory_items_for_stock_val:
             current_stock = item.current_stock or 0.0
             number_of_tabs = item.number_of_tabs or 1.0 # Ensure it's not zero for division
@@ -6320,7 +6358,7 @@ def create_app():
 
         # --- Total Actual Sales Revenue (overall for the business) ---
         # Using grand_total_amount as the correct column
-        total_sales_amount = db.session.query(db.func.sum(SalesRecord.grand_total_amount)).filter( # RENAMED THIS VARIABLE
+        total_sales_amount = db.session.query(db.func.sum(SalesRecord.grand_total_amount)).filter(
             SalesRecord.business_id == business_id
         ).scalar() or 0.0
 
@@ -6328,12 +6366,60 @@ def create_app():
         thirty_days_ago = datetime.now() - timedelta(days=30)
         sales_by_person = db.session.query(
             SalesRecord.sales_person_name,
-            db.func.sum(SalesRecord.grand_total_amount) # Use grand_total_amount
+            db.func.sum(SalesRecord.grand_total_amount)
         ).filter(
             SalesRecord.business_id == business_id,
-            SalesRecord.transaction_date >= thirty_days_ago # Use transaction_date
+            SalesRecord.transaction_date >= thirty_days_ago
         ).group_by(SalesRecord.sales_person_name).order_by(db.func.sum(SalesRecord.grand_total_amount).desc()).all()
 
+        # --- Weekly Sales Data (Real Data) ---
+        # Get current week start (Monday)
+        today = datetime.now().date()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        
+        weekly_sales_data = []
+        days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        
+        for i in range(7):
+            current_day = week_start + timedelta(days=i)
+            day_sales = db.session.query(
+                db.func.sum(SalesRecord.grand_total_amount)
+            ).filter(
+                SalesRecord.business_id == business_id,
+                db.func.date(SalesRecord.transaction_date) == current_day
+            ).scalar() or 0.0
+            
+            weekly_sales_data.append({
+                'day': days_of_week[i],
+                'date': current_day.strftime('%Y-%m-%d'),
+                'amount': day_sales
+            })
+
+        # --- Monthly Sales Data (Real Data) ---
+        # Get current month start and end
+        month_start = today.replace(day=1)
+        if month_start.month == 12:
+            month_end = month_start.replace(year=month_start.year+1, month=1) - timedelta(days=1)
+        else:
+            month_end = month_start.replace(month=month_start.month+1) - timedelta(days=1)
+        
+        monthly_sales_data = []
+        current_date = month_start
+        
+        while current_date <= month_end:
+            day_sales = db.session.query(
+                db.func.sum(SalesRecord.grand_total_amount)
+            ).filter(
+                SalesRecord.business_id == business_id,
+                db.func.date(SalesRecord.transaction_date) == current_date
+            ).scalar() or 0.0
+            
+            monthly_sales_data.append({
+                'date': current_date.strftime('%Y-%m-%d'),
+                'amount': day_sales
+            })
+            current_date += timedelta(days=1)
 
         # --- Inventory Stock Summary (all active items) ---
         inventory_summary = InventoryItem.query.filter_by(business_id=business_id, is_active=True).order_by(InventoryItem.product_name).all()
@@ -6342,21 +6428,21 @@ def create_app():
         expired_items = []
         expiring_soon_items = []
         if business_type == 'Pharmacy':
-            today = date.today()
-            three_months_from_now = today + timedelta(days=90)
+            today_date = date.today()
+            three_months_from_now = today_date + timedelta(days=90)
             
             expired_items = InventoryItem.query.filter(
                 InventoryItem.business_id == business_id,
                 InventoryItem.is_active == True,
                 InventoryItem.expiry_date != None,
-                InventoryItem.expiry_date < today
+                InventoryItem.expiry_date < today_date
             ).order_by(InventoryItem.expiry_date).all()
 
             expiring_soon_items = InventoryItem.query.filter(
                 InventoryItem.business_id == business_id,
                 InventoryItem.is_active == True,
                 InventoryItem.expiry_date != None,
-                InventoryItem.expiry_date >= today,
+                InventoryItem.expiry_date >= today_date,
                 InventoryItem.expiry_date <= three_months_from_now
             ).order_by(InventoryItem.expiry_date).all()
 
@@ -6365,7 +6451,8 @@ def create_app():
         rental_records = [] # Initialize for all business types
         if business_type == 'Hardware':
             # Assuming Company model exists and has business_id
-            companies = Company.query.filter_by(business_id=business_id, is_active=True).all()        # Assuming RentalRecord model exists and has business_id and date_recorded
+            companies = Company.query.filter_by(business_id=business_id, is_active=True).all()
+            # Assuming RentalRecord model exists and has business_id and date_recorded
             rental_records = RentalRecord.query.filter_by(business_id=business_id).order_by(RentalRecord.rent_date.desc()).all()
 
         return render_template('reports.html',
@@ -6377,10 +6464,16 @@ def create_app():
                             total_sale_value_of_stock=total_sale_value_of_stock,
                             total_potential_gross_profit=total_potential_gross_profit,
                             overall_stock_profit_margin=overall_stock_profit_margin,
+                            total_inventory_count=total_inventory_count,  # NEW: Total stock quantities available
+                            stocks_by_category=stocks_by_category,  # NEW: Stock quantities by category
                             
                             # Sales Metrics
-                            total_sales_amount=total_sales_amount, # NOW MATCHES TEMPLATE EXPECTATION
+                            total_sales_amount=total_sales_amount,
                             sales_by_person=sales_by_person,
+                            
+                            # Weekly and Monthly Data (Real data, not mock)
+                            weekly_sales_data=weekly_sales_data,
+                            monthly_sales_data=monthly_sales_data,
                             
                             # Inventory Details
                             inventory_summary=inventory_summary,
@@ -6395,6 +6488,212 @@ def create_app():
                             start_date=start_date_str, # Passed for filter persistence
                             end_date=end_date_str      # Passed for filter persistence
         )
+
+    @app.route('/gra_tax_report')
+    def gra_tax_report():
+        """Ghana Revenue Authority Tax Report for Medium and Small Enterprises"""
+        # ACCESS CONTROL: Only admin can view tax reports
+        if session.get('role') != 'admin':
+            flash('You do not have permission to view tax reports.', 'danger')
+            return redirect(url_for('dashboard'))
+
+        business_id = get_current_business_id()
+        if not business_id:
+            flash('No business selected. Please select a business to view tax reports.', 'warning')
+            return redirect(url_for('dashboard'))
+
+        # Get the business information
+        business = Business.query.get(business_id)
+        if not business:
+            flash('Business not found.', 'danger')
+            return redirect(url_for('dashboard'))
+
+        # Get date range for tax calculation (default to current financial year)
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+        
+        # Default to current financial year (January 1 to December 31)
+        current_year = datetime.now().year
+        if not start_date_str:
+            start_date = datetime(current_year, 1, 1)
+        else:
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            except ValueError:
+                start_date = datetime(current_year, 1, 1)
+                flash('Invalid start date format. Using January 1st of current year.', 'warning')
+        
+        if not end_date_str:
+            end_date = datetime(current_year, 12, 31, 23, 59, 59)
+        else:
+            try:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1) - timedelta(microseconds=1)
+            except ValueError:
+                end_date = datetime(current_year, 12, 31, 23, 59, 59)
+                flash('Invalid end date format. Using December 31st of current year.', 'warning')
+
+        # Calculate total revenue for the business within the date range
+        total_revenue = db.session.query(
+            db.func.sum(SalesRecord.grand_total_amount)
+        ).filter(
+            SalesRecord.business_id == business_id,
+            SalesRecord.transaction_date >= start_date,
+            SalesRecord.transaction_date <= end_date
+        ).scalar() or 0.0
+
+        # Calculate total costs (using purchase prices from inventory)
+        total_costs = 0.0
+        # Get all sales in the period and calculate their costs
+        sales_in_period = SalesRecord.query.filter(
+            SalesRecord.business_id == business_id,
+            SalesRecord.transaction_date >= start_date,
+            SalesRecord.transaction_date <= end_date
+        ).all()
+        
+        for sale in sales_in_period:
+            # Find the inventory item to get purchase price
+            # Handle different possible field names for product identification
+            product_identifier = None
+            
+            # Try different field names that might exist
+            if hasattr(sale, 'product_name'):
+                product_identifier = sale.product_name
+            elif hasattr(sale, 'item_name'):
+                product_identifier = sale.item_name
+            elif hasattr(sale, 'product_id'):
+                # If we have a product_id, find by ID instead
+                inventory_item = InventoryItem.query.filter_by(
+                    business_id=business_id,
+                    id=sale.product_id
+                ).first()
+            else:
+                # Skip this sale if we can't identify the product
+                continue
+            
+            if product_identifier:
+                inventory_item = InventoryItem.query.filter_by(
+                    business_id=business_id,
+                    product_name=product_identifier
+                ).first()
+            
+            if inventory_item:
+                # Calculate cost based on quantity sold and purchase price
+                purchase_price_per_unit = inventory_item.purchase_price or 0.0
+                if inventory_item.number_of_tabs and inventory_item.number_of_tabs > 0:
+                    purchase_price_per_unit = purchase_price_per_unit / inventory_item.number_of_tabs
+                
+                # Handle different possible field names for quantity
+                quantity_sold = 0.0
+                if hasattr(sale, 'quantity_sold'):
+                    quantity_sold = sale.quantity_sold or 0.0
+                elif hasattr(sale, 'quantity'):
+                    quantity_sold = sale.quantity or 0.0
+                elif hasattr(sale, 'amount_sold'):
+                    quantity_sold = sale.amount_sold or 0.0
+                
+                total_costs += quantity_sold * purchase_price_per_unit
+
+        # Calculate gross profit
+        gross_profit = total_revenue - total_costs
+        
+        # GRA Tax Calculations for Small and Medium Enterprises (SMEs)
+        # Based on Ghana's tax structure for SMEs
+        
+        # Income Tax Calculation
+        # For SMEs in Ghana: 0% on first GHS 30,000, then graduated rates
+        income_tax = 0.0
+        if gross_profit > 30000:
+            # Simplified calculation - in reality, this would follow GRA graduated rates
+            if gross_profit <= 120000:
+                # 5% on income between GHS 30,001 and GHS 120,000
+                income_tax = (gross_profit - 30000) * 0.05
+            else:
+                # 5% on first GHS 90,000 above exemption, then higher rates
+                income_tax = 90000 * 0.05
+                if gross_profit > 120000:
+                    # 10% on income above GHS 120,000 (simplified)
+                    income_tax += (gross_profit - 120000) * 0.10
+        
+        # VAT Calculation (if applicable)
+        # Standard VAT rate in Ghana is 12.5% + levies (simplified to 15% total)
+        vat_threshold = 200000  # GHS 200,000 annual turnover threshold
+        vat_amount = 0.0
+        vat_applicable = total_revenue > vat_threshold
+        
+        if vat_applicable:
+            # VAT is calculated on sales, not profit
+            vat_amount = total_revenue * 0.15  # 15% (simplified)
+        
+        # National Health Insurance Levy (NHIL) - 2.5% on VAT exclusive turnover
+        nhil_amount = 0.0
+        if vat_applicable:
+            nhil_amount = (total_revenue / 1.15) * 0.025  # Remove VAT first, then apply 2.5%
+        
+        # Ghana Education Trust Fund (GETFund) Levy - 2.5% on VAT exclusive turnover
+        getfund_amount = 0.0
+        if vat_applicable:
+            getfund_amount = (total_revenue / 1.15) * 0.025
+        
+        # COVID-19 Health Recovery Levy - 1% on VAT exclusive turnover (if still applicable)
+        covid_levy = 0.0
+        if vat_applicable:
+            covid_levy = (total_revenue / 1.15) * 0.01
+        
+        # Total tax liability
+        total_tax_liability = income_tax + vat_amount + nhil_amount + getfund_amount + covid_levy
+        
+        # Quarterly breakdown
+        quarterly_data = []
+        for quarter in range(1, 5):
+            if quarter == 1:
+                q_start = start_date.replace(month=1, day=1)
+                q_end = start_date.replace(month=3, day=31, hour=23, minute=59, second=59)
+            elif quarter == 2:
+                q_start = start_date.replace(month=4, day=1)
+                q_end = start_date.replace(month=6, day=30, hour=23, minute=59, second=59)
+            elif quarter == 3:
+                q_start = start_date.replace(month=7, day=1)
+                q_end = start_date.replace(month=9, day=30, hour=23, minute=59, second=59)
+            else:
+                q_start = start_date.replace(month=10, day=1)
+                q_end = start_date.replace(month=12, day=31, hour=23, minute=59, second=59)
+            
+            # Ensure we don't go beyond the selected end date
+            q_end = min(q_end, end_date)
+            
+            q_revenue = db.session.query(
+                db.func.sum(SalesRecord.grand_total_amount)
+            ).filter(
+                SalesRecord.business_id == business_id,
+                SalesRecord.transaction_date >= q_start,
+                SalesRecord.transaction_date <= q_end
+            ).scalar() or 0.0
+            
+            quarterly_data.append({
+                'quarter': f'Q{quarter}',
+                'start_date': q_start.strftime('%Y-%m-%d'),
+                'end_date': q_end.strftime('%Y-%m-%d'),
+                'revenue': q_revenue,
+                'vat_due': q_revenue * 0.15 if vat_applicable else 0.0
+            })
+        
+        return render_template('gra_tax_report.html',
+                            business=business,
+                            start_date=start_date.strftime('%Y-%m-%d'),
+                            end_date=end_date.strftime('%Y-%m-%d'),
+                            total_revenue=total_revenue,
+                            total_costs=total_costs,
+                            gross_profit=gross_profit,
+                            income_tax=income_tax,
+                            vat_amount=vat_amount,
+                            vat_applicable=vat_applicable,
+                            vat_threshold=vat_threshold,
+                            nhil_amount=nhil_amount,
+                            getfund_amount=getfund_amount,
+                            covid_levy=covid_levy,
+                            total_tax_liability=total_tax_liability,
+                            quarterly_data=quarterly_data,
+                            current_year=current_year)
 
     @app.route('/debug_sales_json')
     def debug_sales_json():

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRA Tax Report - {{ business.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        @media print {
+            body {
+                margin: 0;
+                font-size: 12px;
+            }
+            .no-print {
+                display: none;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+        }
+
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f3f4f6;
+            color: #333;
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: #1a202c;
+            color: #ffffff;
+            padding: 1.5rem;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            overflow-y: auto;
+        }
+
+        .main-content {
+            margin-left: 250px;
+            padding: 1.5rem;
+        }
+
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.75rem;
+            color: #ffffff;
+            text-decoration: none;
+            transition: background-color 0.2s;
+        }
+
+        .sidebar a i {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+
+        .sidebar a:hover {
+            background-color: #2d3748;
+        }
+
+        .sidebar a.active {
+            background-color: #4a5568;
+            font-weight: bold;
+        }
+
+        .back-button {
+            background-color: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 20px 10px 20px 0;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-button:hover {
+            background-color: #545b62;
+        }
+
+        .print-button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 20px 0;
+        }
+
+        .print-button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                padding-bottom: 0;
+            }
+            .main-content {
+                margin-left: 0;
+                padding-top: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar no-print">
+        <h2 class="text-2xl font-bold mb-6 text-center">{{ business.name }}</h2>
+        <nav>
+            <a href="{{ url_for('dashboard') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-tachometer-alt mr-3"></i> Dashboard
+            </a>
+            <a href="{{ url_for('reports') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-file-alt mr-3"></i> Reports
+            </a>
+            <a href="{{ url_for('gra_tax_report') }}" class="active flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-calculator mr-3"></i> GRA Tax Report
+            </a>
+            <a href="{{ url_for('logout') }}" class="flex items-center p-3 rounded-lg text-white hover:bg-gray-700 transition duration-200">
+                <i class="fas fa-sign-out-alt mr-3"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <!-- Print Controls -->
+        <div class="no-print mb-6">
+            <a href="{{ url_for('reports') }}" class="back-button">← Back to Reports</a>
+            <button onclick="window.print()" class="print-button">🖨️ Print Report</button>
+        </div>
+
+        <!-- Report Header -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <div class="text-center border-b-2 border-gray-300 pb-6">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">{{ business.name }}</h1>
+                <h2 class="text-xl font-semibold text-gray-600 mb-2">Ghana Revenue Authority (GRA) Tax Report</h2>
+                <p class="text-sm text-gray-500">Small and Medium Enterprise Tax Assessment</p>
+                <p class="text-sm text-gray-500">Period: {{ start_date }} to {{ end_date }}</p>
+            </div>
+        </div>
+
+        <!-- Business Information -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Business Information</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <p><strong>Business Name:</strong> {{ business.name }}</p>
+                    <p><strong>Business Type:</strong> {{ business.type }}</p>
+                    <p><strong>Address:</strong> {{ business.address or 'Not specified' }}</p>
+                </div>
+                <div>
+                    <p><strong>Contact:</strong> {{ business.contact or 'Not specified' }}</p>
+                    <p><strong>Email:</strong> {{ business.email or 'Not specified' }}</p>
+                    <p><strong>Report Period:</strong> {{ start_date }} to {{ end_date }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Financial Summary -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">📊 Financial Summary</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h4 class="font-medium text-blue-700">Total Revenue</h4>
+                    <p class="text-2xl font-bold text-blue-800">GH₵{{ "%.2f"|format(total_revenue) }}</p>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <h4 class="font-medium text-red-700">Total Costs</h4>
+                    <p class="text-2xl font-bold text-red-800">GH₵{{ "%.2f"|format(total_costs) }}</p>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h4 class="font-medium text-green-700">Gross Profit</h4>
+                    <p class="text-2xl font-bold text-green-800">GH₵{{ "%.2f"|format(gross_profit) }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tax Calculations -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">💰 Tax Calculations</h3>
+            
+            <!-- Income Tax -->
+            <div class="mb-6">
+                <h4 class="font-semibold text-gray-600 mb-2">Income Tax</h4>
+                <div class="bg-gray-50 p-4 rounded">
+                    <p class="text-sm text-gray-600">Ghana SME Income Tax Structure:</p>
+                    <ul class="text-sm text-gray-600 ml-4 list-disc">
+                        <li>First GH₵30,000: 0% (Tax-exempt)</li>
+                        <li>GH₵30,001 - GH₵120,000: 5%</li>
+                        <li>Above GH₵120,000: 10%</li>
+                    </ul>
+                    <p class="mt-2 font-semibold">Calculated Income Tax: <span class="text-lg text-blue-600">GH₵{{ "%.2f"|format(income_tax) }}</span></p>
+                </div>
+            </div>
+
+            <!-- VAT Section -->
+            <div class="mb-6">
+                <h4 class="font-semibold text-gray-600 mb-2">Value Added Tax (VAT)</h4>
+                <div class="bg-gray-50 p-4 rounded">
+                    {% if vat_applicable %}
+                        <p class="text-sm text-gray-600">VAT Threshold: GH₵{{ "%.2f"|format(vat_threshold) }}</p>
+                        <p class="text-sm text-green-600">✓ Your business exceeds the VAT threshold - VAT applicable</p>
+                        <p class="text-sm text-gray-600">VAT Rate: 15% (including levies)</p>
+                        <p class="mt-2 font-semibold">VAT Amount: <span class="text-lg text-blue-600">GH₵{{ "%.2f"|format(vat_amount) }}</span></p>
+                    {% else %}
+                        <p class="text-sm text-gray-600">VAT Threshold: GH₵{{ "%.2f"|format(vat_threshold) }}</p>
+                        <p class="text-sm text-orange-600">⚠ Your business is below the VAT threshold - VAT not applicable</p>
+                        <p class="mt-2 font-semibold">VAT Amount: <span class="text-lg text-gray-600">GH₵0.00</span></p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Other Levies -->
+            {% if vat_applicable %}
+            <div class="mb-6">
+                <h4 class="font-semibold text-gray-600 mb-2">Other Levies and Contributions</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-yellow-50 p-3 rounded">
+                        <h5 class="font-medium text-yellow-700">NHIL (2.5%)</h5>
+                        <p class="text-lg font-semibold text-yellow-800">GH₵{{ "%.2f"|format(nhil_amount) }}</p>
+                    </div>
+                    <div class="bg-purple-50 p-3 rounded">
+                        <h5 class="font-medium text-purple-700">GETFund Levy (2.5%)</h5>
+                        <p class="text-lg font-semibold text-purple-800">GH₵{{ "%.2f"|format(getfund_amount) }}</p>
+                    </div>
+                    <div class="bg-red-50 p-3 rounded">
+                        <h5 class="font-medium text-red-700">COVID-19 Levy (1%)</h5>
+                        <p class="text-lg font-semibold text-red-800">GH₵{{ "%.2f"|format(covid_levy) }}</p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Total Tax Liability -->
+            <div class="border-t-2 border-gray-300 pt-4">
+                <h4 class="font-bold text-lg text-gray-700 mb-2">Total Tax Liability</h4>
+                <div class="bg-indigo-50 p-4 rounded-lg">
+                    <p class="text-2xl font-bold text-indigo-800">GH₵{{ "%.2f"|format(total_tax_liability) }}</p>
+                    <p class="text-sm text-gray-600 mt-1">
+                        {% if total_revenue > 0 %}
+                            Effective Tax Rate: {{ "%.2f"|format((total_tax_liability/total_revenue)*100) }}% of total revenue
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quarterly Breakdown -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">📅 Quarterly Revenue Breakdown</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white">
+                    <thead>
+                        <tr class="bg-gray-100 border-b">
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Quarter</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Period</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">Revenue (GH₵)</th>
+                            {% if vat_applicable %}
+                            <th class="py-3 px-4 text-left text-sm font-semibold text-gray-600">VAT Due (GH₵)</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for quarter in quarterly_data %}
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-3 px-4 text-gray-700 font-medium">{{ quarter.quarter }}</td>
+                            <td class="py-3 px-4 text-gray-700">{{ quarter.start_date }} to {{ quarter.end_date }}</td>
+                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(quarter.revenue) }}</td>
+                            {% if vat_applicable %}
+                            <td class="py-3 px-4 text-gray-700">{{ "%.2f"|format(quarter.vat_due) }}</td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Important Notes -->
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <h3 class="font-semibold text-yellow-800 mb-2">⚠️ Important Tax Notes</h3>
+            <ul class="text-sm text-yellow-700 space-y-1">
+                <li>• This report is based on recorded sales transactions in your business system.</li>
+                <li>• Tax calculations are simplified estimates based on Ghana's SME tax structure as of 2025.</li>
+                <li>• Please consult with a qualified tax advisor or the GRA for accurate tax obligations.</li>
+                <li>• VAT registration is mandatory for businesses with annual turnover exceeding GH₵{{ "%.2f"|format(vat_threshold) }}.</li>
+                <li>• Tax rates and thresholds may change - verify current rates with GRA.</li>
+                <li>• This report should be used for planning purposes only, not for official tax filing.</li>
+            </ul>
+        </div>
+
+        <!-- Date Range Filter -->
+        <div class="bg-white p-6 rounded-lg shadow-md no-print">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">📅 Change Date Range</h3>
+            <form method="GET" action="{{ url_for('gra_tax_report') }}" class="flex flex-wrap gap-4 items-end">
+                <div>
+                    <label for="start_date" class="block text-sm font-medium text-gray-700">Start Date</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ start_date }}" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label for="end_date" class="block text-sm font-medium text-gray-700">End Date</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ end_date }}" 
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
+                        Update Report
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-8 text-gray-500 text-sm">
+            <p>GRA Tax Report generated on {{ start_date }} for {{ business.name }}</p>
+            <p>This is a system-generated report for planning purposes only.</p>
+        </div>
+    </div>
+</body>
+</html>
